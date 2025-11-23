@@ -1,0 +1,16 @@
+# Gemini Ignore
+
+# Build artifacts
+.gradle/
+build/
+
+# IDE files
+.idea/
+
+# Local properties
+local.properties
+
+# Compiled files
+*.jar
+*.apk
+*.aab
