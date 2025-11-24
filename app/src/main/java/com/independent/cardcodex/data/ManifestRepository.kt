@@ -26,13 +26,14 @@ class ManifestRepository @Inject constructor(
             
             // 2. Fetch Species
             _importProgress.value = ImportProgress.FetchingSpecies
-            val monsters = api.fetchMonsters(manifest.monstersSource.url)
+            // manifest.monstersSource is now a direct URL string
+            val monsters = api.fetchMonsters(manifest.monstersSource)
             val speciesEntities = monsters.map { 
                 SpeciesEntity(
                     id = it.id,
-                    name = it.name,
+                    name = it.name.english,
                     types = it.types,
-                    iconUrl = "https://img.pokemondb.net/sprites/home/normal/${it.name.lowercase()}.png" // Basic heuristic
+                    iconUrl = "https://img.pokemondb.net/sprites/home/normal/${it.name.english.lowercase()}.png" // Basic heuristic
                 )
             }
             cardDao.insertSpecies(speciesEntities)
@@ -42,10 +43,11 @@ class ManifestRepository @Inject constructor(
 
             // 3. Fetch Cards
             val totalSets = manifest.setsSource.size
-            manifest.setsSource.forEachIndexed { index, setSource ->
+            // manifest.setsSource is now a List<String> (URLs)
+            manifest.setsSource.forEachIndexed { index, setUrl ->
                 _importProgress.value = ImportProgress.FetchingCards(index + 1, totalSets)
                 try {
-                    val cards = api.fetchCards(setSource.url)
+                    val cards = api.fetchCards(setUrl)
                     cards.forEach { cardEntry ->
                         val normalizedName = PokemonNameNormalizer.normalize(cardEntry.name)
                         val speciesId = speciesMap[normalizedName.lowercase()]?.id

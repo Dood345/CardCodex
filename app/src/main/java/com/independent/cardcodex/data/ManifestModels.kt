@@ -3,23 +3,19 @@ package com.independent.cardcodex.data
 import com.google.gson.annotations.SerializedName
 
 data class MasterManifest(
-    @SerializedName("monsters_source") val monstersSource: MonstersSource,
-    @SerializedName("sets_source") val setsSource: List<SetsSource>
-)
-
-data class MonstersSource(
-    val url: String
-)
-
-data class SetsSource(
-    val url: String
+    @SerializedName("monsters_source") val monstersSource: String,
+    @SerializedName("sets_source") val setsSource: List<String>
 )
 
 // For parsing the Monsters JSON
 data class MonsterEntry(
     val id: Int,
-    val name: String,
-    val types: List<String>
+    val name: NameEntry,
+    @SerializedName("type") val types: List<String>
+)
+
+data class NameEntry(
+    val english: String
 )
 
 // For parsing the Cards JSON

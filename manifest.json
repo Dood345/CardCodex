@@ -3,20 +3,9 @@
         "maintainer": "AshKetchum_99",
         "last_updated": "2025-11-23"
     },
-    "monsters_source": {
-        "url": "https://raw.githubusercontent.com/fanzeyi/pokemon.json/master/pokedex.json",
-        "format": "fanzeyi_std"
-    },
+    "monsters_source": "https://raw.githubusercontent.com/fanzeyi/pokemon.json/master/pokedex.json",
     "sets_source": [
-        {
-            "id": "base1",
-            "name": "Base Set",
-            "url": "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/base1.json"
-        },
-        {
-            "id": "swsh1",
-            "name": "Sword & Shield",
-            "url": "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/swsh1.json"
-        }
+        "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/base1.json",
+        "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/swsh1.json"
     ]
 }
