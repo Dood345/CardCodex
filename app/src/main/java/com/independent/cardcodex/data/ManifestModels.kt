@@ -19,9 +19,14 @@ data class NameEntry(
 )
 
 // For parsing the Cards JSON
+
 data class CardEntry(
     val id: String,
     val name: String,
-    val set: String,
-    @SerializedName("image") val imageUrl: String
+    @SerializedName("images") val images: CardImages
+)
+
+data class CardImages(
+    val small: String,
+    val large: String
 )

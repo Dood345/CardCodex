@@ -56,8 +56,8 @@ class ManifestRepository @Inject constructor(
                             cardId = cardEntry.id,
                             speciesId = speciesId,
                             name = cardEntry.name,
-                            set = cardEntry.set,
-                            imageUrl = cardEntry.imageUrl
+                            set = cardEntry.id.substringBefore("-", "Unknown"),
+                            imageUrl = cardEntry.images.small
                         )
                         cardDao.insertCard(cardEntity)
                     }
