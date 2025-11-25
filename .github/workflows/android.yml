@@ -1,0 +1,56 @@
+name: Android CI
+
+# Controls when the workflow will run
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the repository code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up JDK (Java Development Kit)
+      # Modern Android builds often require JDK 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # 3. Set up the Android SDK
+      # This action downloads and installs the necessary Android SDK components.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      # (Optional but Recommended) Add google-services.json from GitHub Secrets
+      # This prevents your build from failing if your app uses Firebase.
+      # First, create a secret in your repo named GOOGLE_SERVICES_JSON.
+      - name: Add google-services.json
+        run: echo '${{ secrets.GOOGLE_SERVICES_JSON }}' > app/google-services.json
+
+      # 5. Grant execute permission for gradlew
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # 6. Build the project
+      # The 'build' task compiles sources, runs tests, and packages the app.
+      # It's a good comprehensive check for a CI pipeline.
+      - name: Build with Gradle
+        run: ./gradlew build
+
+      # (Optional) Upload build artifacts
+      # This step saves the generated APK for testing or distribution.
+      # - name: Upload build artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: app-debug.apk
+      #     path: app/build/outputs/apk/debug/app-debug.apk
