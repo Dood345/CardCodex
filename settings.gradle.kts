@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PocketCollection"
+rootProject.name = "CardCodex"
 include(":app")
  

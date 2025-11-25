@@ -1,4 +1,4 @@
-package com.independent.pocketcollection.ui.theme
+package com.independent.cardcodex.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle

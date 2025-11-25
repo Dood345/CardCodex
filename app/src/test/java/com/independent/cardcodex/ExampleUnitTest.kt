@@ -1,4 +1,4 @@
-package com.independent.pocketcollection
+package com.independent.cardcodex
 
 import org.junit.Test
 
