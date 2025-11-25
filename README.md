@@ -15,5 +15,7 @@ In summary, the app aims to be a single ecosystem that seamlessly links a userâ€
 
 ## Build Status
 
+[![Actions Status][gh-actions-badge]][gh-actions]
+
 [gh-actions]: https://github.com/Dood345/CardCodex/actions
 [gh-actions-badge]: https://github.com/Dood345/CardCodex/workflows/Android%20CI/badge.svg
