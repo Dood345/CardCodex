@@ -25,13 +25,27 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "card_codex_db"
-        ).build()
+        )
+        .fallbackToDestructiveMigration()
+        .build()
     }
 
     @Provides
     @Singleton
     fun provideCardDao(db: AppDatabase): CardDao {
         return db.cardDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideCollectionDao(db: AppDatabase): com.independent.cardcodex.core_database.CollectionDao {
+        return db.collectionDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideDeckDao(db: AppDatabase): com.independent.cardcodex.core_database.DeckDao {
+        return db.deckDao()
     }
 
     @Provides

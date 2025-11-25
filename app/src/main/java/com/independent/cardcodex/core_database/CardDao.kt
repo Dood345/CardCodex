@@ -23,4 +23,39 @@ interface CardDao {
     
     @Query("SELECT * FROM cards WHERE speciesId IS NULL")
     fun getUncategorizedCards(): Flow<List<CardEntity>>
+
+    @Query("SELECT * FROM cards WHERE cardId = :cardId")
+    suspend fun getCardById(cardId: String): CardEntity?
+
+    @Query("SELECT * FROM cards WHERE name LIKE '%' || :name || '%'")
+    suspend fun getCardsByName(name: String): List<CardEntity>
+
+    @Query("""
+        SELECT DISTINCT s.* FROM species s
+        JOIN cards c ON s.id = c.speciesId
+        JOIN card_collection cc ON c.cardId = cc.cardId
+        WHERE cc.quantity > 0
+    """)
+    fun getOwnedSpecies(): Flow<List<SpeciesEntity>>
+
+    @Query("""
+        SELECT c.*, IFNULL(cc.quantity, 0) as quantity 
+        FROM cards c 
+        LEFT JOIN card_collection cc ON c.cardId = cc.cardId 
+        WHERE c.speciesId = :speciesId
+    """)
+    fun getCardsWithQuantityForSpecies(speciesId: Int): Flow<List<CardWithQuantity>>
+
+    @Query("""
+        SELECT 
+            s.*, 
+            CASE WHEN EXISTS (
+                SELECT 1 FROM cards c 
+                JOIN card_collection cc ON c.cardId = cc.cardId 
+                WHERE c.speciesId = s.id AND cc.quantity > 0
+            ) THEN 1 ELSE 0 END as isOwned
+        FROM species s
+        ORDER BY s.id ASC
+    """)
+    fun getSpeciesCollectionStatus(): Flow<List<SpeciesCollectionStatus>>
 }

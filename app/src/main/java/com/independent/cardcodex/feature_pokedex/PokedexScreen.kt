@@ -22,6 +22,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.independent.cardcodex.core_database.SpeciesEntity
 import com.independent.cardcodex.data.ImportProgress
+import com.independent.cardcodex.ui.components.SpeciesItem
 
 @Composable
 fun PokedexScreen(
@@ -101,57 +102,6 @@ fun ImportStatus(progress: ImportProgress) {
 }
 
 @Composable
-fun SpeciesItem(species: SpeciesEntity, onClick: () -> Unit) {
-    val typeColor = getTypeColor(species.types.firstOrNull())
-    
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            AsyncImage(
-                model = species.iconUrl,
-                contentDescription = species.name,
-                modifier = Modifier.size(80.dp),
-                contentScale = ContentScale.Fit,
-                error = remember {
-                    // Placeholder logic handled by fallback composable if needed, 
-                    // but AsyncImage 'error' param expects a painter.
-                    // We'll overlay the text avatar if image fails to load or is null.
-                    null 
-                }
-            )
-            
-            // Text Avatar Fallback (Simplified: Always show name at bottom)
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(typeColor.copy(alpha = 0.8f))
-                    .padding(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = species.name,
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1
-                )
-            }
-            
-            // If we wanted a true fallback for the image itself, we'd need a custom layout or state handling.
-            // For now, let's assume the iconUrl works or we just see the name.
-        }
-    }
-}
-
-@Composable
 fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
     var url by remember { mutableStateOf("https://raw.githubusercontent.com/Dood345/CardCodex/main/manifest.json") } // Default for testing
 
@@ -176,30 +126,6 @@ fun ImportDialog(onDismiss: () -> Unit, onImport: (String) -> Unit) {
             }
         }
     )
-}
-
-fun getTypeColor(type: String?): Color {
-    return when (type?.lowercase()) {
-        "fire" -> Color(0xFFEE8130)
-        "water" -> Color(0xFF6390F0)
-        "grass" -> Color(0xFF7AC74C)
-        "electric" -> Color(0xFFF7D02C)
-        "psychic" -> Color(0xFFF95587)
-        "ice" -> Color(0xFF96D9D6)
-        "dragon" -> Color(0xFF6F35FC)
-        "dark" -> Color(0xFF705746)
-        "fairy" -> Color(0xFFD685AD)
-        "normal" -> Color(0xFFA8A77A)
-        "fighting" -> Color(0xFFC22E28)
-        "flying" -> Color(0xFFA98FF3)
-        "poison" -> Color(0xFFA33EA1)
-        "ground" -> Color(0xFFE2BF65)
-        "rock" -> Color(0xFFB6A136)
-        "bug" -> Color(0xFFA6B91A)
-        "ghost" -> Color(0xFF735797)
-        "steel" -> Color(0xFFB7B7CE)
-        else -> Color.Gray
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
