@@ -15,7 +15,7 @@ import androidx.room.TypeConverters
     version = 3, 
     exportSchema = false
 )
-@TypeConverters(StringListConverter::class)
+@TypeConverters(StringListConverter::class, CardConverters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun cardDao(): CardDao
     abstract fun collectionDao(): CollectionDao

@@ -67,7 +67,23 @@ class ManifestRepository @Inject constructor(
                             imageUrl = cardEntry.images.small,
                             supertype = cardEntry.supertype,
                             subtypes = cardEntry.subtypes ?: emptyList(),
-                            types = cardEntry.types ?: emptyList()
+                            types = cardEntry.types ?: emptyList(),
+                            level = cardEntry.level,
+                            hp = cardEntry.hp,
+                            evolvesFrom = cardEntry.evolvesFrom,
+                            evolvesTo = cardEntry.evolvesTo,
+                            rules = cardEntry.rules,
+                            abilities = cardEntry.abilities,
+                            attacks = cardEntry.attacks,
+                            weaknesses = cardEntry.weaknesses,
+                            retreatCost = cardEntry.retreatCost,
+                            convertedRetreatCost = cardEntry.convertedRetreatCost,
+                            number = cardEntry.number,
+                            artist = cardEntry.artist,
+                            rarity = cardEntry.rarity,
+                            flavorText = cardEntry.flavorText,
+                            nationalPokedexNumbers = cardEntry.nationalPokedexNumbers,
+                            legalities = cardEntry.legalities
                         )
                         cardDao.insertCard(cardEntity)
                     }
