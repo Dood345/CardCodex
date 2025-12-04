@@ -1,10 +1,12 @@
 package com.independent.cardcodex.core_database
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -13,7 +15,16 @@ interface DeckDao {
     suspend fun insertDeck(deck: DeckEntity): Long
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertDeckCard(crossRef: DeckCardCrossRef)
+    suspend fun insertDeckCardCrossRef(crossRef: DeckCardCrossRef)
+
+    @Query("SELECT * FROM deck_card_cross_ref WHERE deckId = :deckId AND cardId = :cardId")
+    suspend fun getDeckCardCrossRef(deckId: Long, cardId: String): DeckCardCrossRef?
+
+    @Update
+    suspend fun updateDeckCardCrossRef(crossRef: DeckCardCrossRef)
+
+    @Delete
+    suspend fun deleteDeckCardCrossRef(crossRef: DeckCardCrossRef)
 
     @Query("DELETE FROM deck_card_cross_ref WHERE deckId = :deckId AND cardId = :cardId")
     suspend fun removeCardFromDeck(deckId: Long, cardId: String)
@@ -27,6 +38,14 @@ interface DeckDao {
     @Transaction
     @Query("SELECT * FROM decks WHERE id = :deckId")
     fun getDeckWithCards(deckId: Long): Flow<DeckWithCards>
+
+    @Query("""
+        SELECT c.*, ref.quantity 
+        FROM cards c 
+        JOIN deck_card_cross_ref ref ON c.cardId = ref.cardId 
+        WHERE ref.deckId = :deckId
+    """)
+    fun getCardsInDeck(deckId: Long): Flow<List<CardWithDeckQuantity>>
 
     // Completeness Query
     // We calculate the number of cards we have for the deck vs total cards in deck.

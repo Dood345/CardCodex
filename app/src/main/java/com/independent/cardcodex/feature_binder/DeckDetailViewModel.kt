@@ -36,7 +36,7 @@ class DeckDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val result = importUseCase(text)
             result.cards.forEach { parsedCard ->
-                deckDao.insertDeckCard(
+                deckDao.insertDeckCardCrossRef(
                     DeckCardCrossRef(
                         deckId = deckId,
                         cardId = parsedCard.card.cardId,

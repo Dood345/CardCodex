@@ -15,7 +15,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.independent.cardcodex.ui.util.EnergyIconProvider
+
+enum class CodexCategory {
+    All, Pokemon, Trainer, Energy
+}
 
 @HiltViewModel
 class PokedexViewModel @Inject constructor(
@@ -24,13 +31,21 @@ class PokedexViewModel @Inject constructor(
     private val energyIconProvider: EnergyIconProvider
 ) : ViewModel() {
 
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _selectedCategory = MutableStateFlow(CodexCategory.All)
+    val selectedCategory: StateFlow<CodexCategory> = _selectedCategory.asStateFlow()
+
     val importProgress: StateFlow<ImportProgress> = repository.importProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ImportProgress.Idle)
 
-    val codexEntries: StateFlow<List<CodexEntry>> = kotlinx.coroutines.flow.combine(
+    val codexEntries: StateFlow<List<CodexEntry>> = combine(
         cardDao.getAllSpecies(),
-        cardDao.getUncategorizedCards()
-    ) { speciesList, uncategorizedList ->
+        cardDao.getUncategorizedCards(),
+        _searchQuery,
+        _selectedCategory
+    ) { speciesList: List<SpeciesEntity>, uncategorizedList: List<CardEntity>, query: String, category: CodexCategory ->
         val speciesEntries = speciesList.map { species ->
             CodexEntry(
                 id = species.id.toString(),
@@ -62,10 +77,45 @@ class PokedexViewModel @Inject constructor(
                     speciesId = null
                 )
             }
-            .sortedBy { it.name }
 
-        speciesEntries + otherEntries
+        // Merge
+        val allEntries = speciesEntries + otherEntries
+
+        // Filter & Sort
+        allEntries
+            .filter { entry -> 
+                (query.isBlank() || entry.name.contains(query, ignoreCase = true)) &&
+                when (category) {
+                    CodexCategory.All -> true
+                    CodexCategory.Pokemon -> entry.isSpecies
+                    CodexCategory.Trainer -> !entry.isSpecies && entry.type == "Trainer"
+                    CodexCategory.Energy -> !entry.isSpecies && entry.type == "Energy"
+                }
+            }
+            .sortedWith(compareBy<CodexEntry> { 
+                // Sort Order: Pokemon (0) -> Trainer (1) -> Energy (2) -> Other (3)
+                when {
+                    it.isSpecies -> 0
+                    it.type == "Trainer" -> 1
+                    it.type == "Energy" -> 2
+                    else -> 3
+                }
+            }.thenBy { 
+                // Secondary Sort: ID for Pokemon, Name for others
+                if (it.isSpecies) it.speciesId else 0 
+            }.thenBy { 
+                it.name 
+            })
+
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun onSearchQueryChange(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun onCategorySelect(category: CodexCategory) {
+        _selectedCategory.value = category
+    }
 
     fun startImport(url: String) {
         viewModelScope.launch {

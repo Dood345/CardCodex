@@ -13,7 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.independent.cardcodex.feature_binder.DeckDetailScreen
+import com.independent.cardcodex.feature_binder.DeckBuilderScreen
 import com.independent.cardcodex.feature_pokedex.SpeciesDetailScreen
 import com.independent.cardcodex.feature_pokedex.CardGroupDetailScreen
 import com.independent.cardcodex.ui.MainScreen
@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
                             arguments = listOf(navArgument("deckId") { type = NavType.LongType })
                         ) { backStackEntry ->
                             val deckId = backStackEntry.arguments?.getLong("deckId") ?: return@composable
-                            DeckDetailScreen(
+                            DeckBuilderScreen(
                                 deckId = deckId,
                                 onBackClick = { navController.popBackStack() }
                             )

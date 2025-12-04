@@ -66,4 +66,36 @@ interface CardDao {
         ORDER BY s.id ASC
     """)
     fun getSpeciesCollectionStatus(): Flow<List<SpeciesCollectionStatus>>
+
+    @Query("""
+        SELECT 
+            c.*, 
+            IFNULL(cc.quantity, 0) as totalQuantity,
+            MAX(0, IFNULL(cc.quantity, 0) - IFNULL((SELECT SUM(quantity) FROM deck_card_cross_ref WHERE cardId = c.cardId), 0)) as availableQuantity
+        FROM cards c
+        LEFT JOIN card_collection cc ON c.cardId = cc.cardId
+    """)
+    fun getAllCardsWithAvailability(): Flow<List<CardWithAvailability>>
+
+    @Query("""
+        SELECT 
+            c.*, 
+            IFNULL(cc.quantity, 0) as totalQuantity,
+            MAX(0, IFNULL(cc.quantity, 0) - IFNULL((SELECT SUM(quantity) FROM deck_card_cross_ref WHERE cardId = c.cardId), 0)) as availableQuantity
+        FROM cards c
+        LEFT JOIN card_collection cc ON c.cardId = cc.cardId
+        WHERE c.speciesId = :speciesId
+    """)
+    fun getCardsWithAvailabilityForSpecies(speciesId: Int): Flow<List<CardWithAvailability>>
+
+    @Query("""
+        SELECT 
+            c.*, 
+            IFNULL(cc.quantity, 0) as totalQuantity,
+            MAX(0, IFNULL(cc.quantity, 0) - IFNULL((SELECT SUM(quantity) FROM deck_card_cross_ref WHERE cardId = c.cardId), 0)) as availableQuantity
+        FROM cards c
+        LEFT JOIN card_collection cc ON c.cardId = cc.cardId
+        WHERE c.name = :name
+    """)
+    fun getCardsWithAvailabilityByName(name: String): Flow<List<CardWithAvailability>>
 }
