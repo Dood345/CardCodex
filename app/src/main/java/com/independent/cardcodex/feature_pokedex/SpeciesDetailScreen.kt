@@ -67,7 +67,7 @@ fun CardDetailsSection(title: String, content: @Composable () -> Unit) {
 
 @Composable
 fun AbilityDisplay(ability: Ability) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(start = 20.dp)) {
         Text(text = "${ability.name} (${ability.type})", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
         Text(text = ability.text, style = MaterialTheme.typography.bodySmall)
     }
@@ -86,7 +86,7 @@ fun AbilitiesDisplay(abilities: List<Ability>?) {
 
 @Composable
 fun AttackDisplay(attack: Attack) {
-    Column(modifier = Modifier.fillMaxWidth()) {
+    Column(modifier = Modifier.fillMaxWidth().padding(start = 20.dp)) {
         Text(text = attack.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
         Text(text = "Cost: ${attack.cost.joinToString(", ")} (Total: ${attack.convertedEnergyCost})", style = MaterialTheme.typography.bodySmall)
         attack.damage?.let { Text(text = "Damage: $it", style = MaterialTheme.typography.bodySmall) }
@@ -107,7 +107,7 @@ fun AttacksDisplay(attacks: List<Attack>?) {
 
 @Composable
 fun WeaknessDisplay(weakness: Weakness) {
-    Text(text = "${weakness.type}: ${weakness.value}", style = MaterialTheme.typography.bodySmall)
+    Text(text = "${weakness.type}: ${weakness.value}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp))
 }
 
 @Composable
@@ -125,7 +125,7 @@ fun WeaknessesDisplay(weaknesses: List<Weakness>?) {
 fun RetreatCostDisplay(retreatCost: List<String>?) {
     retreatCost?.takeIf { it.isNotEmpty() }?.let {
         CardDetailsSection(title = "Retreat Cost") {
-            Text(text = it.joinToString(", "), style = MaterialTheme.typography.bodySmall)
+            Text(text = it.joinToString(", "), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp))
         }
     }
 }
@@ -135,7 +135,7 @@ fun RulesDisplay(rules: List<String>?) {
     rules?.takeIf { it.isNotEmpty() }?.let {
         CardDetailsSection(title = "Rules") {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                it.forEach { rule -> Text(text = rule, style = MaterialTheme.typography.bodySmall) }
+                it.forEach { rule -> Text(text = rule, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp)) }
             }
         }
     }
@@ -145,7 +145,7 @@ fun RulesDisplay(rules: List<String>?) {
 fun LegalitiesDisplay(legalities: Legalities?) {
     legalities?.let {
         CardDetailsSection(title = "Legalities") {
-            it.unlimited?.let { legal -> Text(text = "Unlimited: $legal", style = MaterialTheme.typography.bodySmall) }
+            it.unlimited?.let { legal -> Text(text = "Unlimited: $legal", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp)) }
         }
     }
 }
@@ -282,19 +282,19 @@ fun SpeciesDetailCardItem(
 
                     card.flavorText?.let {
                         CardDetailsSection(title = "Flavor Text") {
-                            Text(text = it, style = MaterialTheme.typography.bodySmall)
+                            Text(text = it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp))
                         }
                     }
 
                     card.rarity?.let {
                         CardDetailsSection(title = "Rarity") {
-                            Text(text = it, style = MaterialTheme.typography.bodySmall)
+                            Text(text = it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp))
                         }
                     }
 
                     card.artist?.let {
                         CardDetailsSection(title = "Artist") {
-                            Text(text = it, style = MaterialTheme.typography.bodySmall)
+                            Text(text = it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 20.dp))
                         }
                     }
 
