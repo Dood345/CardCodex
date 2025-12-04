@@ -98,4 +98,12 @@ interface CardDao {
         WHERE c.name = :name
     """)
     fun getCardsWithAvailabilityByName(name: String): Flow<List<CardWithAvailability>>
+
+    @Query("""
+        SELECT c.* FROM cards c
+        JOIN card_collection cc ON c.cardId = cc.cardId
+        WHERE c.speciesId IS NULL AND cc.quantity > 0
+        GROUP BY c.name
+    """)
+    fun getOwnedUncategorizedCards(): Flow<List<CardEntity>>
 }

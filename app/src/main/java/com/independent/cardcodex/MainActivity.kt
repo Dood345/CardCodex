@@ -43,9 +43,6 @@ class MainActivity : ComponentActivity() {
                                         navController.navigate("card_group_detail/${entry.name}")
                                     }
                                 },
-                                onCollectionSpeciesClick = { speciesId ->
-                                    navController.navigate("species_detail/$speciesId")
-                                },
                                 onDeckClick = { deckId ->
                                     navController.navigate("deck_detail/$deckId")
                                 }

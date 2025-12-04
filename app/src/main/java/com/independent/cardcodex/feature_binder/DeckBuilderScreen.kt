@@ -137,7 +137,7 @@ fun DeckBuilderScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    items(CodexCategory.values().toList()) { category ->
+                    items(CodexCategory.entries.toList()) { category ->
                         FilterChip(
                             selected = selectedCategory == category,
                             onClick = { viewModel.onCategorySelect(category) },

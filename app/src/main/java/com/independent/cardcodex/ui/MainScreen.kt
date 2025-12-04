@@ -34,7 +34,6 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 @Composable
 fun MainScreen(
     onCodexEntryClick: (CodexEntry) -> Unit,
-    onCollectionSpeciesClick: (Int) -> Unit,
     onDeckClick: (Long) -> Unit
 ) {
     val navController = rememberNavController()
@@ -73,7 +72,7 @@ fun MainScreen(
                 PokedexScreen(onEntryClick = onCodexEntryClick)
             }
             composable(Screen.Collection.route) {
-                CollectionScreen(onSpeciesClick = onCollectionSpeciesClick)
+                CollectionScreen(onEntryClick = onCodexEntryClick)
             }
             composable(Screen.Decks.route) {
                 DecksScreen(onDeckClick = onDeckClick)
