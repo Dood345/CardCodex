@@ -4,6 +4,7 @@ import com.google.gson.annotations.SerializedName
 
 data class MasterManifest(
     @SerializedName("monsters_source") val monstersSource: String,
+    @SerializedName("energy_icons_base_url") val energyIconsBaseUrl: String?,
     @SerializedName("sets_source") val setsSource: List<String>
 )
 
@@ -23,6 +24,9 @@ data class NameEntry(
 data class CardEntry(
     val id: String,
     val name: String,
+    val supertype: String?,
+    val subtypes: List<String>?,
+    val types: List<String>?,
     @SerializedName("images") val images: CardImages
 )
 

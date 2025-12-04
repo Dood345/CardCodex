@@ -47,6 +47,14 @@ interface CardDao {
     fun getCardsWithQuantityForSpecies(speciesId: Int): Flow<List<CardWithQuantity>>
 
     @Query("""
+        SELECT c.*, IFNULL(cc.quantity, 0) as quantity 
+        FROM cards c 
+        LEFT JOIN card_collection cc ON c.cardId = cc.cardId 
+        WHERE c.name = :name
+    """)
+    fun getCardsWithQuantityByName(name: String): Flow<List<CardWithQuantity>>
+
+    @Query("""
         SELECT 
             s.*, 
             CASE WHEN EXISTS (

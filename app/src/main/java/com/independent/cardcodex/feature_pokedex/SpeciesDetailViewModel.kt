@@ -21,6 +21,10 @@ class SpeciesDetailViewModel @Inject constructor(
         return cardDao.getCardsWithQuantityForSpecies(speciesId)
     }
 
+    fun getCardsByName(name: String): Flow<List<CardWithQuantity>> {
+        return cardDao.getCardsWithQuantityByName(name)
+    }
+
     fun updateQuantity(cardId: String, newQuantity: Int) {
         viewModelScope.launch {
             collectionDao.insertOrUpdate(CardCollectionEntity(cardId, newQuantity))

@@ -4,6 +4,7 @@
         "last_updated": "2025-11-23"
     },
     "monsters_source": "https://raw.githubusercontent.com/fanzeyi/pokemon.json/master/pokedex.json",
+    "energy_icons_base_url": "https://raw.githubusercontent.com/duiker101/pokemon-type-svg-icons/master/icons/",
     "sets_source": [
         "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/base1.json",
         "https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/swsh1.json"

@@ -18,7 +18,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.independent.cardcodex.ui.components.SpeciesItem
+import com.independent.cardcodex.ui.components.CodexItem
+import com.independent.cardcodex.feature_pokedex.CodexEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,8 +40,16 @@ fun CollectionScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(speciesStatusList) { status ->
-                    SpeciesItem(
-                        species = status.species, 
+                    val entry = CodexEntry(
+                        id = status.species.id.toString(),
+                        name = status.species.name,
+                        iconUrl = status.species.iconUrl,
+                        type = status.species.types.firstOrNull(),
+                        isSpecies = true,
+                        speciesId = status.species.id
+                    )
+                    CodexItem(
+                        entry = entry, 
                         onClick = { onSpeciesClick(status.species.id) },
                         isOwned = status.isOwned
                     )

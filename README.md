@@ -12,3 +12,53 @@ The application is designed around three primary feature pillars:
 4.  **Wishlist/Wanted Feature**: The app includes a feature to **make note of cards you want to add to your collection**. This feature is integrated seamlessly by automatically generating a "Cards Missing" list (the Wishlist) when a user saves a deck built in "theorycrafting" mode, instantly showing what they need to acquire.
 
 In summary, the app aims to be a single ecosystem that seamlessly links a user’s physical card inventory (The Collection) with their competitive planning tool (The Deck Builder).
+
+Issues to be implemented
+Add trainers (item, stadiums, tools, and supporters) and energy icons to codex
+enhancement
+New feature or request
+
+Status: Open.
+#12 In Dood345/CardCodex;· Dood345 opened last week
+Users wishlists
+enhancement
+New feature or request
+
+Status: Open.
+#7 In Dood345/CardCodex;· Dood345 opened last week
+Sharing Decks, Comparing to inventory adding missing cards to Wishlist
+enhancement
+New feature or request
+
+Status: Open.
+#6 In Dood345/CardCodex;· Dood345 opened last week
+Some of the pokemon have missing images
+enhancement
+New feature or request
+
+Status: Open.
+#5 In Dood345/CardCodex;· Dood345 opened last week
+Creating collections of cards that the user has
+enhancement
+New feature or request
+
+Status: Open.
+#4 In Dood345/CardCodex;· Dood345 opened last week
+Deck Suggestions
+enhancement
+New feature or request
+
+Status: Open.
+#3 In Dood345/CardCodex;· Dood345 opened last week
+Creating Decks
+enhancement
+New feature or request
+
+Status: Open.
+#2 In Dood345/CardCodex;· Dood345 opened last week
+Sorting/Filtering Pokemon
+enhancement
+New feature or request
+
+Status: Open.
+#1 In Dood345/CardCodex;· Dood345 opened last week

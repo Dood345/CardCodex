@@ -15,25 +15,61 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import com.independent.cardcodex.ui.util.EnergyIconProvider
+
 @HiltViewModel
 class PokedexViewModel @Inject constructor(
     private val repository: ManifestRepository,
-    private val cardDao: CardDao
+    private val cardDao: CardDao,
+    private val energyIconProvider: EnergyIconProvider
 ) : ViewModel() {
 
     val importProgress: StateFlow<ImportProgress> = repository.importProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ImportProgress.Idle)
 
-    val allSpecies: StateFlow<List<SpeciesEntity>> = cardDao.getAllSpecies()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val codexEntries: StateFlow<List<CodexEntry>> = kotlinx.coroutines.flow.combine(
+        cardDao.getAllSpecies(),
+        cardDao.getUncategorizedCards()
+    ) { speciesList, uncategorizedList ->
+        val speciesEntries = speciesList.map { species ->
+            CodexEntry(
+                id = species.id.toString(),
+                name = species.name,
+                iconUrl = species.iconUrl,
+                type = species.types.firstOrNull(),
+                isSpecies = true,
+                speciesId = species.id
+            )
+        }
+
+        val otherEntries = uncategorizedList
+            .groupBy { it.name }
+            .map { (name, cards) ->
+                val firstCard = cards.first()
+                
+                var iconUrl = firstCard.imageUrl
+                if (firstCard.supertype == "Energy") {
+                     val energyType = name.substringBefore(" Energy").trim()
+                     iconUrl = energyIconProvider.getIconUrl(energyType) ?: firstCard.imageUrl
+                }
+
+                CodexEntry(
+                    id = name,
+                    name = name,
+                    iconUrl = iconUrl,
+                    type = firstCard.supertype ?: "Trainer",
+                    isSpecies = false,
+                    speciesId = null
+                )
+            }
+            .sortedBy { it.name }
+
+        speciesEntries + otherEntries
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun startImport(url: String) {
         viewModelScope.launch {
             repository.startImport(url)
         }
-    }
-
-    fun getCardsForSpecies(speciesId: Int): Flow<List<CardEntity>> {
-        return cardDao.getCardsForSpecies(speciesId)
     }
 }

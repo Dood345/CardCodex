@@ -23,6 +23,7 @@ import androidx.navigation.compose.rememberNavController
 import com.independent.cardcodex.feature_binder.CollectionScreen
 import com.independent.cardcodex.feature_binder.DecksScreen
 import com.independent.cardcodex.feature_pokedex.PokedexScreen
+import com.independent.cardcodex.feature_pokedex.CodexEntry
 
 sealed class Screen(val route: String, val title: String, val icon: ImageVector) {
     object Codex : Screen("codex", "Codex", Icons.Default.Home)
@@ -32,7 +33,8 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
 
 @Composable
 fun MainScreen(
-    onSpeciesClick: (Int) -> Unit,
+    onCodexEntryClick: (CodexEntry) -> Unit,
+    onCollectionSpeciesClick: (Int) -> Unit,
     onDeckClick: (Long) -> Unit
 ) {
     val navController = rememberNavController()
@@ -68,10 +70,10 @@ fun MainScreen(
             modifier = Modifier.padding(innerPadding)
         ) {
             composable(Screen.Codex.route) {
-                PokedexScreen(onSpeciesClick = onSpeciesClick)
+                PokedexScreen(onEntryClick = onCodexEntryClick)
             }
             composable(Screen.Collection.route) {
-                CollectionScreen(onSpeciesClick = onSpeciesClick)
+                CollectionScreen(onSpeciesClick = onCollectionSpeciesClick)
             }
             composable(Screen.Decks.route) {
                 DecksScreen(onDeckClick = onDeckClick)

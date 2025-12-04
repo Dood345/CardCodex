@@ -15,6 +15,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.independent.cardcodex.feature_binder.DeckDetailScreen
 import com.independent.cardcodex.feature_pokedex.SpeciesDetailScreen
+import com.independent.cardcodex.feature_pokedex.CardGroupDetailScreen
 import com.independent.cardcodex.ui.MainScreen
 import com.independent.cardcodex.ui.theme.CardCodexTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -35,7 +36,14 @@ class MainActivity : ComponentActivity() {
                     NavHost(navController = navController, startDestination = "home") {
                         composable("home") {
                             MainScreen(
-                                onSpeciesClick = { speciesId ->
+                                onCodexEntryClick = { entry ->
+                                    if (entry.isSpecies && entry.speciesId != null) {
+                                        navController.navigate("species_detail/${entry.speciesId}")
+                                    } else {
+                                        navController.navigate("card_group_detail/${entry.name}")
+                                    }
+                                },
+                                onCollectionSpeciesClick = { speciesId ->
                                     navController.navigate("species_detail/$speciesId")
                                 },
                                 onDeckClick = { deckId ->
@@ -51,6 +59,17 @@ class MainActivity : ComponentActivity() {
                             val speciesId = backStackEntry.arguments?.getInt("speciesId") ?: return@composable
                             SpeciesDetailScreen(
                                 speciesId = speciesId,
+                                onBackClick = { navController.popBackStack() }
+                            )
+                        }
+
+                        composable(
+                            route = "card_group_detail/{cardName}",
+                            arguments = listOf(navArgument("cardName") { type = NavType.StringType })
+                        ) { backStackEntry ->
+                            val cardName = backStackEntry.arguments?.getString("cardName") ?: return@composable
+                            CardGroupDetailScreen(
+                                cardName = cardName,
                                 onBackClick = { navController.popBackStack() }
                             )
                         }

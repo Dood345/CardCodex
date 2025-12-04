@@ -23,5 +23,7 @@ data class CardEntity(
     val name: String,
     val set: String,
     val imageUrl: String,
-    val inventoryCount: Int = 0
+    val supertype: String?,
+    val subtypes: List<String> = emptyList(),
+    val types: List<String> = emptyList()
 )

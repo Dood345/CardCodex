@@ -1,5 +1,6 @@
 package com.independent.cardcodex.data
 
+import android.content.SharedPreferences
 import com.independent.cardcodex.core_database.CardDao
 import com.independent.cardcodex.core_database.CardEntity
 import com.independent.cardcodex.core_database.SpeciesEntity
@@ -12,7 +13,8 @@ import javax.inject.Singleton
 @Singleton
 class ManifestRepository @Inject constructor(
     private val api: ManifestApi,
-    private val cardDao: CardDao
+    private val cardDao: CardDao,
+    private val prefs: SharedPreferences
 ) {
 
     private val _importProgress = MutableStateFlow<ImportProgress>(ImportProgress.Idle)
@@ -23,6 +25,11 @@ class ManifestRepository @Inject constructor(
         try {
             // 1. Fetch Manifest
             val manifest = api.fetchManifest(manifestUrl)
+            
+            // Save Energy Icons Base URL
+            manifest.energyIconsBaseUrl?.let { url ->
+                prefs.edit().putString("energy_icons_base_url", url).apply()
+            }
             
             // 2. Fetch Species
             _importProgress.value = ImportProgress.FetchingSpecies
@@ -57,7 +64,10 @@ class ManifestRepository @Inject constructor(
                             speciesId = speciesId,
                             name = cardEntry.name,
                             set = cardEntry.id.substringBefore("-", "Unknown"),
-                            imageUrl = cardEntry.images.small
+                            imageUrl = cardEntry.images.small,
+                            supertype = cardEntry.supertype,
+                            subtypes = cardEntry.subtypes ?: emptyList(),
+                            types = cardEntry.types ?: emptyList()
                         )
                         cardDao.insertCard(cardEntity)
                     }

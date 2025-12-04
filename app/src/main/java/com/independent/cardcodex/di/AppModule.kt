@@ -14,9 +14,17 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import javax.inject.Singleton
 
+import android.content.SharedPreferences
+
 @Module
 @InstallIn(SingletonComponent::class)
 object AppModule {
+
+    @Provides
+    @Singleton
+    fun provideSharedPreferences(@ApplicationContext context: Context): SharedPreferences {
+        return context.getSharedPreferences("card_codex_prefs", Context.MODE_PRIVATE)
+    }
 
     @Provides
     @Singleton
@@ -27,6 +35,7 @@ object AppModule {
             "card_codex_db"
         )
         .fallbackToDestructiveMigration()
+        .fallbackToDestructiveMigrationOnDowngrade()
         .build()
     }
 

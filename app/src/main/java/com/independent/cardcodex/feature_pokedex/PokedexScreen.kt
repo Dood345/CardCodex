@@ -22,14 +22,14 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.independent.cardcodex.core_database.SpeciesEntity
 import com.independent.cardcodex.data.ImportProgress
-import com.independent.cardcodex.ui.components.SpeciesItem
+import com.independent.cardcodex.ui.components.CodexItem
 
 @Composable
 fun PokedexScreen(
-    onSpeciesClick: (Int) -> Unit,
+    onEntryClick: (CodexEntry) -> Unit,
     viewModel: PokedexViewModel = hiltViewModel()
 ) {
-    val speciesList by viewModel.allSpecies.collectAsState()
+    val codexEntries by viewModel.codexEntries.collectAsState()
     val importProgress by viewModel.importProgress.collectAsState()
     var showImportDialog by remember { mutableStateOf(false) }
 
@@ -56,8 +56,8 @@ fun PokedexScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(speciesList) { species ->
-                    SpeciesItem(species, onClick = { onSpeciesClick(species.id) })
+                items(codexEntries) { entry ->
+                    CodexItem(entry, onClick = { onEntryClick(entry) })
                 }
             }
         }

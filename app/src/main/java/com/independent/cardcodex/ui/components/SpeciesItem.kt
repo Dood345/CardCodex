@@ -20,19 +20,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.independent.cardcodex.core_database.SpeciesEntity
-
+import coil.decode.SvgDecoder
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
+import com.independent.cardcodex.feature_pokedex.CodexEntry
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.ColorFilter
 
 @Composable
-fun SpeciesItem(
-    species: SpeciesEntity, 
+fun CodexItem(
+    entry: CodexEntry, 
     onClick: () -> Unit,
     isOwned: Boolean = true
 ) {
-    val typeColor = getTypeColor(species.types.firstOrNull())
+    val typeColor = getTypeColor(entry.type)
     
+    // Determine Scale Type based on content
+    val scaleType = when {
+        entry.isSpecies -> ContentScale.Fit
+        entry.iconUrl.endsWith(".svg", ignoreCase = true) -> ContentScale.Fit
+        else -> ContentScale.Crop
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -48,11 +57,14 @@ fun SpeciesItem(
             contentAlignment = Alignment.Center
         ) {
             AsyncImage(
-                model = species.iconUrl,
-                contentDescription = species.name,
-                modifier = Modifier.size(80.dp),
-                contentScale = ContentScale.Fit,
-                colorFilter = if (!isOwned) ColorFilter.tint(Color.Black, BlendMode.SrcIn) else null,
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(entry.iconUrl)
+                    .decoderFactory(SvgDecoder.Factory())
+                    .build(),
+                contentDescription = entry.name,
+                modifier = Modifier.size(if (scaleType == ContentScale.Crop) 120.dp else 80.dp),
+                contentScale = scaleType,
+                colorFilter = if (!isOwned && scaleType == ContentScale.Fit) ColorFilter.tint(Color.Black, BlendMode.SrcIn) else null,
                 error = remember { null }
             )
             
@@ -65,7 +77,7 @@ fun SpeciesItem(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (isOwned) species.name else "???",
+                    text = if (isOwned) entry.name else "???",
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1
@@ -84,9 +96,9 @@ fun getTypeColor(type: String?): Color {
         "psychic" -> Color(0xFFF95587)
         "ice" -> Color(0xFF96D9D6)
         "dragon" -> Color(0xFF6F35FC)
-        "dark" -> Color(0xFF705746)
+        "dark", "darkness" -> Color(0xFF705746)
         "fairy" -> Color(0xFFD685AD)
-        "normal" -> Color(0xFFA8A77A)
+        "normal", "colorless" -> Color(0xFFA8A77A)
         "fighting" -> Color(0xFFC22E28)
         "flying" -> Color(0xFFA98FF3)
         "poison" -> Color(0xFFA33EA1)
@@ -94,7 +106,8 @@ fun getTypeColor(type: String?): Color {
         "rock" -> Color(0xFFB6A136)
         "bug" -> Color(0xFFA6B91A)
         "ghost" -> Color(0xFF735797)
-        "steel" -> Color(0xFFB7B7CE)
+        "steel", "metal" -> Color(0xFFB7B7CE)
+        "electric", "lightning" -> Color(0xFFF7D02C)
         else -> Color.Gray
     }
 }
