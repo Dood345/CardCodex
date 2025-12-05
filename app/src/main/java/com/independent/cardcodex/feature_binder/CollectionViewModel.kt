@@ -24,15 +24,15 @@ class CollectionViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _selectedCategory = MutableStateFlow(CodexCategory.All)
-    val selectedCategory: StateFlow<CodexCategory> = _selectedCategory.asStateFlow()
+    private val _selectedCategories = MutableStateFlow<Set<CodexCategory>>(setOf(CodexCategory.All))
+    val selectedCategories: StateFlow<Set<CodexCategory>> = _selectedCategories.asStateFlow()
 
     val collectionEntries: StateFlow<List<CodexEntry>> = combine(
         cardDao.getSpeciesCollectionStatus(),
-        cardDao.getOwnedUncategorizedCards(),
+        cardDao.getAllUncategorizedCardsWithStatus(),
         _searchQuery,
-        _selectedCategory
-    ) { speciesStatusList, uncategorizedList, query, category ->
+        _selectedCategories
+    ) { speciesStatusList, uncategorizedList, query, categories ->
         // 1. Map Species (Owned & Unowned)
         val speciesEntries = speciesStatusList
             .map { status ->
@@ -47,12 +47,25 @@ class CollectionViewModel @Inject constructor(
                 )
             }
 
-        // 2. Map Owned Uncategorized (Trainers/Energy)
-        val otherEntries = uncategorizedList.map { card ->
+        // 2. Map Uncategorized (Trainers/Energy) - Owned & Unowned
+        val otherEntries = uncategorizedList.map { status ->
+            val card = status.card
+            val isOwned = status.isOwned
             var iconUrl = card.imageUrl
+            
             if (card.supertype == "Energy") {
                  val energyType = card.name.substringBefore(" Energy").trim()
+                 // Only use the energy icon provider if we have a mapping, or fallback to card image
+                 // If not owned, we might override this below
                  iconUrl = energyIconProvider.getIconUrl(energyType) ?: card.imageUrl
+            }
+
+            if (!isOwned) {
+                if (card.supertype == "Trainer") {
+                    iconUrl = "placeholder:trainer"
+                } else if (card.supertype == "Energy") {
+                    iconUrl = "placeholder:energy"
+                }
             }
 
             CodexEntry(
@@ -61,7 +74,8 @@ class CollectionViewModel @Inject constructor(
                 iconUrl = iconUrl,
                 type = card.supertype ?: "Trainer",
                 isSpecies = false,
-                speciesId = null
+                speciesId = null,
+                isOwned = isOwned
             )
         }
 
@@ -71,12 +85,15 @@ class CollectionViewModel @Inject constructor(
         allEntries
             .filter { entry -> 
                 (query.isBlank() || entry.name.contains(query, ignoreCase = true)) &&
-                when (category) {
-                    CodexCategory.All -> true
-                    CodexCategory.Pokemon -> entry.isSpecies
-                    CodexCategory.Trainer -> !entry.isSpecies && entry.type == "Trainer"
-                    CodexCategory.Energy -> !entry.isSpecies && entry.type == "Energy"
-                }
+                (categories.contains(CodexCategory.All) || 
+                 categories.any { category ->
+                    when (category) {
+                        CodexCategory.Pokemon -> entry.isSpecies
+                        CodexCategory.Trainer -> !entry.isSpecies && entry.type == "Trainer"
+                        CodexCategory.Energy -> !entry.isSpecies && entry.type == "Energy"
+                        else -> false
+                    }
+                 })
             }
             .sortedWith(compareBy<CodexEntry> { 
                 when {
@@ -98,6 +115,25 @@ class CollectionViewModel @Inject constructor(
     }
 
     fun onCategorySelect(category: CodexCategory) {
-        _selectedCategory.value = category
+        _selectedCategories.value = if (category == CodexCategory.All) {
+            setOf(CodexCategory.All)
+        } else {
+            val current = _selectedCategories.value.toMutableSet()
+            if (current.contains(CodexCategory.All)) {
+                current.remove(CodexCategory.All)
+            }
+            
+            if (current.contains(category)) {
+                current.remove(category)
+            } else {
+                current.add(category)
+            }
+            
+            if (current.isEmpty()) {
+                setOf(CodexCategory.All)
+            } else {
+                current
+            }
+        }
     }
 }

@@ -42,7 +42,7 @@ fun CollectionScreen(
 ) {
     val collectionEntries by viewModel.collectionEntries.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val selectedCategories by viewModel.selectedCategories.collectAsState()
 
     Scaffold(
         topBar = { TopAppBar(title = { Text("My Collection") }) }
@@ -79,11 +79,12 @@ fun CollectionScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     this.items(CodexCategory.values().toList()) { category ->
+                        val isSelected = selectedCategories.contains(category)
                         FilterChip(
-                            selected = selectedCategory == category,
+                            selected = isSelected,
                             onClick = { viewModel.onCategorySelect(category) },
                             label = { Text(category.name) },
-                            leadingIcon = if (selectedCategory == category) {
+                            leadingIcon = if (isSelected) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else null
                         )

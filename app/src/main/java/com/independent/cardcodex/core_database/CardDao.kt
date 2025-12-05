@@ -106,4 +106,18 @@ interface CardDao {
         GROUP BY c.name
     """)
     fun getOwnedUncategorizedCards(): Flow<List<CardEntity>>
+
+    @Query("""
+        SELECT 
+            c.*, 
+            CASE WHEN EXISTS (
+                SELECT 1 FROM cards c2 
+                JOIN card_collection cc ON c2.cardId = cc.cardId 
+                WHERE c2.name = c.name AND cc.quantity > 0
+            ) THEN 1 ELSE 0 END as isOwned
+        FROM cards c
+        WHERE c.speciesId IS NULL
+        GROUP BY c.name
+    """)
+    fun getAllUncategorizedCardsWithStatus(): Flow<List<CardWithOwnedStatus>>
 }

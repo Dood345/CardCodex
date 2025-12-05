@@ -1,5 +1,6 @@
 package com.independent.cardcodex.ui.components
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -16,16 +17,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import coil.request.ImageRequest
-import androidx.compose.ui.platform.LocalContext
+import com.independent.cardcodex.R
 import com.independent.cardcodex.feature_pokedex.CodexEntry
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.ColorFilter
 
 @Composable
 fun CodexItem(
@@ -56,17 +59,31 @@ fun CodexItem(
             modifier = Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(entry.iconUrl)
-                    .decoderFactory(SvgDecoder.Factory())
-                    .build(),
-                contentDescription = entry.name,
-                modifier = Modifier.size(if (scaleType == ContentScale.Crop) 120.dp else 80.dp),
-                contentScale = scaleType,
-                colorFilter = if (!isOwned && scaleType == ContentScale.Fit) ColorFilter.tint(Color.Black, BlendMode.SrcIn) else null,
-                error = remember { null }
-            )
+            if (entry.iconUrl.startsWith("placeholder:")) {
+                 val iconRes = when (entry.iconUrl) {
+                     "placeholder:trainer" -> R.drawable.ic_trainer_placeholder
+                     "placeholder:energy" -> R.drawable.ic_energy_placeholder
+                     else -> R.drawable.ic_trainer_placeholder // Default fallback
+                 }
+                 Image(
+                     painter = painterResource(id = iconRes),
+                     contentDescription = entry.name,
+                     modifier = Modifier.size(64.dp),
+                     colorFilter = ColorFilter.tint(Color.DarkGray)
+                 )
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(entry.iconUrl)
+                        .decoderFactory(SvgDecoder.Factory())
+                        .build(),
+                    contentDescription = entry.name,
+                    modifier = Modifier.size(if (scaleType == ContentScale.Crop) 120.dp else 80.dp),
+                    contentScale = scaleType,
+                    colorFilter = if (!isOwned && scaleType == ContentScale.Fit) ColorFilter.tint(Color.Black, BlendMode.SrcIn) else null,
+                    error = remember { null }
+                )
+            }
             
             Box(
                 modifier = Modifier
@@ -77,7 +94,7 @@ fun CodexItem(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (isOwned) entry.name else "???",
+                    text = if (isOwned) entry.name else if (entry.isSpecies) "???" else entry.name,
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1

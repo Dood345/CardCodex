@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.independent.cardcodex.core_database.CardEntity
 
+import androidx.compose.ui.res.painterResource
+import com.independent.cardcodex.R
+
 @Composable
 fun CardItem(
     card: CardEntity,
@@ -42,13 +45,33 @@ fun CardItem(
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Box(modifier = Modifier.fillMaxSize()) {
-            AsyncImage(
-                model = card.imageUrl,
-                contentDescription = card.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                colorFilter = colorMatrix?.let { ColorFilter.colorMatrix(it) }
-            )
+            if (!isOwned && card.supertype == "Trainer") {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_trainer_placeholder),
+                    contentDescription = "Trainer Placeholder",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp), // Add some padding for the icon
+                    colorFilter = ColorFilter.tint(Color.Gray)
+                )
+            } else if (!isOwned && card.supertype == "Energy") {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_energy_placeholder),
+                    contentDescription = "Energy Placeholder",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(32.dp),
+                    colorFilter = ColorFilter.tint(Color.Gray)
+                )
+            } else {
+                AsyncImage(
+                    model = card.imageUrl,
+                    contentDescription = card.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    colorFilter = colorMatrix?.let { ColorFilter.colorMatrix(it) }
+                )
+            }
             
             if (!isOwned) {
                 // Optional: Add a "Not Owned" overlay or just rely on grayscale
