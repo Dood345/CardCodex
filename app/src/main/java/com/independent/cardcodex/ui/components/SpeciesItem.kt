@@ -94,7 +94,7 @@ fun CodexItem(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = if (isOwned) entry.name else if (entry.isSpecies) "???" else entry.name,
+                    text = if (isOwned) entry.name else if (entry.isSpecies) "???" else if (entry.type == "Trainer" || entry.type == "Energy") "???" else entry.name,
                     color = Color.White,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1

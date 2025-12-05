@@ -39,7 +39,7 @@ fun PokedexScreen(
     val codexEntries by viewModel.codexEntries.collectAsState()
     val importProgress by viewModel.importProgress.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
-    val selectedCategory by viewModel.selectedCategory.collectAsState()
+    val selectedCategories by viewModel.selectedCategories.collectAsState()
     
     var showImportDialog by remember { mutableStateOf(false) }
 
@@ -86,11 +86,12 @@ fun PokedexScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     this.items(CodexCategory.values().toList()) { category ->
+                        val isSelected = selectedCategories.contains(category)
                         FilterChip(
-                            selected = selectedCategory == category,
+                            selected = isSelected,
                             onClick = { viewModel.onCategorySelect(category) },
                             label = { Text(category.name) },
-                            leadingIcon = if (selectedCategory == category) {
+                            leadingIcon = if (isSelected) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
                             } else null
                         )

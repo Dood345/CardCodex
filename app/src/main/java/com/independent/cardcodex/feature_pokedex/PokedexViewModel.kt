@@ -34,8 +34,8 @@ class PokedexViewModel @Inject constructor(
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
 
-    private val _selectedCategory = MutableStateFlow(CodexCategory.All)
-    val selectedCategory: StateFlow<CodexCategory> = _selectedCategory.asStateFlow()
+    private val _selectedCategories = MutableStateFlow<Set<CodexCategory>>(setOf(CodexCategory.All))
+    val selectedCategories: StateFlow<Set<CodexCategory>> = _selectedCategories.asStateFlow()
 
     val importProgress: StateFlow<ImportProgress> = repository.importProgress
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ImportProgress.Idle)
@@ -44,8 +44,8 @@ class PokedexViewModel @Inject constructor(
         cardDao.getAllSpecies(),
         cardDao.getUncategorizedCards(),
         _searchQuery,
-        _selectedCategory
-    ) { speciesList: List<SpeciesEntity>, uncategorizedList: List<CardEntity>, query: String, category: CodexCategory ->
+        _selectedCategories
+    ) { speciesList: List<SpeciesEntity>, uncategorizedList: List<CardEntity>, query: String, categories: Set<CodexCategory> ->
         val speciesEntries = speciesList.map { species ->
             CodexEntry(
                 id = species.id.toString(),
@@ -85,12 +85,15 @@ class PokedexViewModel @Inject constructor(
         allEntries
             .filter { entry -> 
                 (query.isBlank() || entry.name.contains(query, ignoreCase = true)) &&
-                when (category) {
-                    CodexCategory.All -> true
-                    CodexCategory.Pokemon -> entry.isSpecies
-                    CodexCategory.Trainer -> !entry.isSpecies && entry.type == "Trainer"
-                    CodexCategory.Energy -> !entry.isSpecies && entry.type == "Energy"
-                }
+                (categories.contains(CodexCategory.All) || 
+                 categories.any { category ->
+                    when (category) {
+                        CodexCategory.Pokemon -> entry.isSpecies
+                        CodexCategory.Trainer -> !entry.isSpecies && entry.type == "Trainer"
+                        CodexCategory.Energy -> !entry.isSpecies && entry.type == "Energy"
+                        else -> false // Should not happen with current categories
+                    }
+                 })
             }
             .sortedWith(compareBy<CodexEntry> { 
                 // Sort Order: Pokemon (0) -> Trainer (1) -> Energy (2) -> Other (3)
@@ -114,7 +117,26 @@ class PokedexViewModel @Inject constructor(
     }
 
     fun onCategorySelect(category: CodexCategory) {
-        _selectedCategory.value = category
+        _selectedCategories.value = if (category == CodexCategory.All) {
+            setOf(CodexCategory.All)
+        } else {
+            val current = _selectedCategories.value.toMutableSet()
+            if (current.contains(CodexCategory.All)) {
+                current.remove(CodexCategory.All)
+            }
+            
+            if (current.contains(category)) {
+                current.remove(category)
+            } else {
+                current.add(category)
+            }
+            
+            if (current.isEmpty()) {
+                setOf(CodexCategory.All)
+            } else {
+                current
+            }
+        }
     }
 
     fun startImport(url: String) {
