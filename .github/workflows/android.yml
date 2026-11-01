@@ -51,6 +51,6 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
-          name: cardcodex-debug.apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: cardcodex-debug-apks
+          path: android/app/build/outputs/apk/debug/*.apk
           retention-days: 30

@@ -88,9 +88,13 @@ JDK 21 and the Android SDK (Android Studio installs both; its bundled JBR works 
 ```bash
 npm run android:sync       # vite build + copy web assets + plugins into android/
 cd android && ./gradlew assembleDebug
-# → android/app/build/outputs/apk/debug/app-debug.apk
-adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+# → android/app/build/outputs/apk/debug/app-<abi>-debug.apk (arm64-v8a for phones,
+#   x86_64 for the emulator) plus app-universal-debug.apk
+adb install -r android/app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
 ```
+
+The build produces one APK per CPU architecture because ML Kit's native text-recognition
+libraries are large (the universal APK is ~55 MB, the arm64 one ~25 MB).
 
 Or open `android/` in Android Studio (`npm run android:open`) and run it on a device or emulator.
 GitHub Actions builds the web app and a debug APK on every push; the APK is attached as a workflow

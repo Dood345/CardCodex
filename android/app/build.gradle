@@ -22,6 +22,17 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
+    // ML Kit ships native text-recognition libraries for every ABI (~45 MB in
+    // one universal APK). Per-ABI APKs keep each download to roughly a third of
+    // that; the universal one is still produced for emulators and sideloading.
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            universalApk true
+        }
+    }
 }
 
 repositories {
