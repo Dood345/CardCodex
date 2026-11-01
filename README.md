@@ -50,7 +50,12 @@ with Capacitor. Your collection lives only on your device.
   One tap adds the whole page; the grid can be adjusted and the same frame rescanned, and "Save
   capture" shares the frame with a report of what was read, for pages that scan badly. Each pocket
   is read with a margin, tightened to the card, and its number line read again magnified; on
-  Android two frames are captured and their reads merged.
+  Android two frames are captured and their reads merged. "Capture page" takes a full-resolution
+  photo through the camera's still pipeline (4032×3024 on a 12 MP phone) rather than copying the
+  preview, so the small collector-number line is ~28 px tall instead of ~13 and pins the printing;
+  the review header shows the captured size. While you aim, the guide tells you when a shot would
+  not read — *Move closer*, *Flatten the phone*, *More light*, *Hold still* — and the capture
+  button turns amber with the reason (it still captures).
 - **Picks up where you left off** – leaving the Scan tab (to look something up) and coming back
   keeps the camera, the photo or the page review you had open; an interrupted page review even
   survives the app being killed. Live scanning shows a confidence bar that fills while successive

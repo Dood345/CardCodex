@@ -155,3 +155,34 @@ export function visibleRegion(frameW: number, frameH: number, t: CoverTransform,
     h: Math.max(0, Math.min(frameH - y, elemH / t.scale)),
   };
 }
+
+/** A pixel size. */
+export interface Size {
+  w: number;
+  h: number;
+}
+
+/**
+ * Where the preview frame sits inside a full-resolution photo taken from the
+ * same camera (photo px): photoX = previewX · scale + offsetX.
+ *
+ * Model: the photo, at the largest size the camera offers, covers the whole
+ * sensor; every stream is a centred crop of the sensor with its own aspect
+ * (a 16:9 preview is a band of the 4:3 sensor, a 4:3 preview the sensor
+ * itself). The preview is therefore scaled uniformly until it fits inside the
+ * photo and centred: a pure scale when the aspects agree, a scale plus a
+ * centred band when they do not. Pass both sizes in the same orientation
+ * (see orientLike): photo capabilities are reported in sensor orientation,
+ * the decoded photo and the preview in the device's.
+ */
+export function previewToPhoto(preview: Size, photo: Size): CoverTransform {
+  if (preview.w <= 0 || preview.h <= 0 || photo.w <= 0 || photo.h <= 0) return { scale: 1, offsetX: 0, offsetY: 0 };
+  const scale = Math.min(photo.w / preview.w, photo.h / preview.h);
+  return { scale, offsetX: (photo.w - preview.w * scale) / 2, offsetY: (photo.h - preview.h * scale) / 2 };
+}
+
+/** `size` with its sides swapped when it is landscape and `like` portrait (or the reverse). */
+export function orientLike(size: Size, like: Size): Size {
+  const portrait = (s: Size) => s.h > s.w;
+  return like.w !== like.h && size.w !== size.h && portrait(size) !== portrait(like) ? { w: size.h, h: size.w } : size;
+}

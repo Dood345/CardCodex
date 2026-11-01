@@ -9,7 +9,22 @@ export { buildScanIndex, matchObservations, scanLines, findNames, printingsOf, c
 export { createYgoMatcher } from './ygo/match';
 export { parseLines, type ParseContext } from './parse';
 export { normalizeName, canonicalNum } from './ocr-normalize';
-export { startCamera, stopCamera, grabFrame, coverTransform, mapBox, unmapBox, visibleRegion, CameraError, type CoverTransform } from './camera';
+export {
+  startCamera,
+  stopCamera,
+  grabFrame,
+  coverTransform,
+  mapBox,
+  unmapBox,
+  visibleRegion,
+  previewToPhoto,
+  orientLike,
+  CameraError,
+  type CoverTransform,
+  type Size,
+} from './camera';
+export { takePhoto, probePhotoSize, imageCaptureFor, type PhotoResult, type TakePhotoOptions } from './photo';
+export { adviseCapture, sharpness, wantedCardPx, type CaptureAdvice, type GuidanceMetrics, type AdviceKind } from './guidance';
 export { updateTracks, type Track } from './tracker';
 export { useCardScanner, type UseCardScannerOptions, type CardScanner, type ScannerStatus } from './useCardScanner';
 export { isMlkitAvailable } from './mlkit';

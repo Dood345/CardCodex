@@ -21,16 +21,21 @@ import {
   coverTransform,
   grabFrame,
   mapBox,
+  orientLike,
+  previewToPhoto,
   startCamera,
   stopCamera,
   unmapBox,
   visibleRegion,
   type Box,
+  type CoverTransform,
   type ScanAlternative,
   type ScanMatcher,
+  type Size,
   type TextRecognizer,
 } from '@/scanner';
-import { fitGridOnSource } from '@/scanner/grid';
+import { GRID_SAMPLE_WIDTH, fitGrid, sampleBoxToRegion, sampleRgba } from '@/scanner/grid';
+import { adviseCapture, measureGuidance, type CaptureAdvice, type GuidanceMetrics } from '@/scanner/guidance';
 import {
   PAGE_LAYOUTS,
   boxToFrac,
@@ -43,6 +48,7 @@ import {
   type PageSource,
   type PocketEntry,
 } from '@/scanner/page';
+import { probePhotoSize, takePhoto } from '@/scanner/photo';
 import { Chip } from '@/ui/components';
 import { CameraIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
 import { PageGuide, type GuideState } from './PageGuide';
@@ -56,26 +62,35 @@ import {
   patchScanSession,
   saveReview,
   useScanSession,
+  type CaptureInfo,
   type PageStill,
   type PocketState,
 } from './session';
 import { BLANK_POSTER, CameraPlaceholder, containTransform, CorrectionSheet, fileToBitmap } from './shared';
 
-/** Camera captures are taken at the stream's full resolution (≤ this). */
+/** Preview-frame captures (the fallback when the camera gives no photo) are taken at the stream's full resolution (≤ this). */
 const CAPTURE_MAX_WIDTH = 4096;
 /** Page mode asks for a 4:3 stream: more of the page in the frame, and more pixels per pocket, than 16:9. */
 const PAGE_CAMERA = { facingMode: 'environment' as const, width: 2560, height: 1920 };
-/** Live grid fits per second (each ~10–15 ms on a 320 px sample). */
+/** Live grid fits per second (each ~10–15 ms on a 320 px sample, plus ~15 ms of guidance when the grid is found). */
 const FIT_INTERVAL_MS = 300;
 /** Consecutive fits within LOCK_TOLERANCE (fractions of the view) before the guide reads "Page found". */
 const LOCK_FITS = 3;
 const LOCK_TOLERANCE = 0.015;
 /** Missed fits before a locked guide goes back to searching. */
 const UNLOCK_MISSES = 4;
+/** Consecutive fits that must agree on a piece of advice before it is shown (a single soft frame is not "hold still"). */
+const ADVICE_FITS = 2;
 /** Still photos get a finer sample than the live loop. */
 const STILL_SAMPLE_WIDTH = 400;
-/** Gap between the two frames of a capture (long enough for a different focus/exposure sample, short enough to hold still). */
+/** Gap between the two preview frames of a fallback capture (long enough for a different focus/exposure sample, short enough to hold still). */
 const EXTRA_FRAME_DELAY_MS = 180;
+/** A photo that takes longer than this is abandoned for the preview frame. */
+const PHOTO_TIMEOUT_MS = 4000;
+/** The whole capture (both frames) should stay under this: a second photo is only taken when the first leaves room for it. */
+const CAPTURE_BUDGET_MS = 1500;
+/** Photos are decoded no longer than this on their long side (pockets are read at ≤ 1400 px; a 50 MP photo only costs memory and time). */
+const PHOTO_MAX_LONG_SIDE = 4608;
 
 /** Show a page photo (or any still) in page mode with the guide on it. */
 export async function openPagePhoto(file: File): Promise<void> {
@@ -84,10 +99,55 @@ export async function openPagePhoto(file: File): Promise<void> {
   disposeStill(prev?.still);
   patchPageSession({
     phase: 'capture',
-    still: { source: bitmap, url: URL.createObjectURL(file), w: bitmap.width, h: bitmap.height },
+    still: {
+      source: bitmap,
+      url: URL.createObjectURL(file),
+      w: bitmap.width,
+      h: bitmap.height,
+      blob: file,
+      capture: { source: 'file', preview: null, ms: 0, photoMs: [], frames: 1, extraFrom: null, guidance: null, advice: null },
+    },
     frac: null,
     auto: true,
   });
+}
+
+/** The preview frame drawn where it sits in a `w × h` photo (see previewToPhoto), so pocket boxes in photo px apply to it too. */
+function previewInPhotoSpace(video: HTMLVideoElement, w: number, h: number, t: CoverTransform): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(video, t.offsetX, t.offsetY, video.videoWidth * t.scale, video.videoHeight * t.scale);
+  return canvas;
+}
+
+const sameOrientation = (a: Size, b: Size): boolean => a.w === a.h || b.w === b.h || a.w > a.h === b.w > b.h;
+
+/** Grid fit plus the capture guidance measured on it. */
+interface FitState {
+  confidence: number;
+  locked: boolean;
+  metrics: GuidanceMetrics | null;
+  /** Advice confirmed over ADVICE_FITS fits (null: the shot should read). */
+  advice: CaptureAdvice | null;
+}
+
+/** Tooltip for the review header's size readout: how the frame was captured. */
+function captureTitle(frame: PageStill): string {
+  const c = frame.capture;
+  if (!c) return 'Size of the captured frame';
+  const how =
+    c.source === 'photo'
+      ? `photo from the camera's still pipeline (${c.photoMs.map((m) => Math.round(m)).join(' + ')} ms)`
+      : c.source === 'preview'
+        ? 'copy of the preview frame'
+        : 'photo from the gallery';
+  const prev = c.preview ? `, preview ${c.preview.w}×${c.preview.h}` : '';
+  const extra = c.frames > 1 ? `, second frame from the ${c.extraFrom}` : '';
+  return `Size of the captured frame: ${how}${prev}${extra}`;
 }
 
 function canvasUrl(canvas: HTMLCanvasElement): Promise<string> {
@@ -139,13 +199,25 @@ export function PageScan({
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [correcting, setCorrecting] = useState<number | null>(null);
-  const [fit, setFit] = useState<{ confidence: number; locked: boolean } | null>(null);
+  const [fit, setFit] = useState<FitState | null>(null);
+  /** Largest photo the camera offers (sensor orientation), null until probed or when photos are unavailable. */
+  const [photoSize, setPhotoSize] = useState<Size | null>(null);
+  const [capturing, setCapturing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const fitRef = useRef<{ last: FracBox | null; stable: number; misses: number }>({ last: null, stable: 0, misses: 0 });
+  const fitRef = useRef<{ last: FracBox | null; stable: number; misses: number; adviceKind: string | null; adviceFits: number }>({
+    last: null,
+    stable: 0,
+    misses: 0,
+    adviceKind: null,
+    adviceFits: 0,
+  });
+  const resetFit = () => {
+    fitRef.current = { last: null, stable: 0, misses: 0, adviceKind: null, adviceFits: 0 };
+  };
   const cameraWanted = phase === 'capture' && !still && !scanning && !restoring;
 
   // A review interrupted by the app being killed: restore it.
@@ -177,6 +249,7 @@ export function PageScan({
     let cancelled = false;
     setError(null);
     setLive(false);
+    setPhotoSize(null);
     startCamera(video, PAGE_CAMERA)
       .then((stream) => {
         if (cancelled) {
@@ -184,6 +257,12 @@ export function PageScan({
           return;
         }
         streamRef.current = stream;
+        // What a capture will be: the camera's largest photo, or the preview itself.
+        return probePhotoSize(stream).then((size) => {
+          if (cancelled) return;
+          setPhotoSize(size);
+          console.info(`[page] camera ${video.videoWidth}×${video.videoHeight}, photo ${size ? `${size.w}×${size.h}` : 'unavailable (preview frames)'}`);
+        });
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -221,7 +300,7 @@ export function PageScan({
   useEffect(() => {
     if (layoutRef.current === layout.id) return;
     layoutRef.current = layout.id;
-    fitRef.current = { last: null, stable: 0, misses: 0 };
+    resetFit();
     setFit(null);
     patchPageSession({ frac: null, auto: true });
   }, [layout.id]);
@@ -263,35 +342,51 @@ export function PageScan({
 
   /* ---------- grid fitting ---------- */
 
+  /** Photo px per preview px of a capture: the photo's long side over the preview's (1 when captures are preview frames). */
+  const captureScale = useMemo(
+    () => (photoSize && frameSize.w && frameSize.h ? previewToPhoto(frameSize, orientLike(photoSize, frameSize)).scale : 1),
+    [photoSize, frameSize],
+  );
+
   useEffect(() => {
     if (phase !== 'capture' || !auto || scanning || !visible) return;
     const source: CanvasImageSource | null = still ? still.source : live ? videoRef.current : null;
     if (!source) return;
+    const cardAspect = cardMm.w / cardMm.h;
+    const scale = still ? 1 : captureScale;
     let stopped = false;
     const run = () => {
       if (stopped) return;
-      const f = fitGridOnSource(source, visible, layout, {
-        cardAspect: cardMm.w / cardMm.h,
-        sampleWidth: still ? STILL_SAMPLE_WIDTH : undefined,
-      });
+      const img = sampleRgba(source, visible, still ? STILL_SAMPLE_WIDTH : GRID_SAMPLE_WIDTH);
+      const raw = fitGrid(img, layout, { cardAspect });
       const st = fitRef.current;
-      if (f) {
-        const nf = boxToFrac(f.box, visible);
+      if (raw) {
+        const box = sampleBoxToRegion(raw.box, img, visible);
+        const nf = boxToFrac(box, visible);
+        const metrics = measureGuidance(source, img, raw, visible, layout, { cardAspect, captureScale: scale, live: !still });
+        const advice = adviseCapture(metrics, !still);
         if (still) {
           patchPageSession({ frac: nf });
-          setFit({ confidence: f.confidence, locked: true });
+          setFit({ confidence: raw.confidence, locked: true, metrics, advice });
           return;
         }
         st.stable = st.last && near(nf, st.last, LOCK_TOLERANCE) ? st.stable + 1 : 1;
         st.misses = 0;
         st.last = st.last ? lerp(st.last, nf, 0.5) : nf;
+        // Advice has to hold for ADVICE_FITS fits before it shows (what is showing stays meanwhile); "all good" shows at once.
+        const kind = advice?.kind ?? null;
+        st.adviceFits = kind === st.adviceKind ? st.adviceFits + 1 : 1;
+        st.adviceKind = kind;
+        const confirmed = kind === null ? null : st.adviceFits >= ADVICE_FITS ? advice : undefined;
         patchPageSession({ frac: st.last });
-        setFit({ confidence: f.confidence, locked: st.stable >= LOCK_FITS });
+        setFit((p) => ({ confidence: raw.confidence, locked: st.stable >= LOCK_FITS, metrics, advice: confirmed === undefined ? (p?.advice ?? null) : confirmed }));
       } else if (still) {
         setFit(null);
       } else if (++st.misses >= UNLOCK_MISSES) {
         st.stable = 0;
-        setFit((p) => (p && p.locked ? { ...p, locked: false } : p));
+        st.adviceKind = null;
+        st.adviceFits = 0;
+        setFit((p) => (p && (p.locked || p.advice) ? { ...p, locked: false, advice: null } : p));
       }
     };
     if (still) {
@@ -305,12 +400,12 @@ export function PageScan({
       stopped = true;
       window.clearInterval(id);
     };
-  }, [phase, auto, scanning, still, live, visible, layout, cardMm]);
+  }, [phase, auto, scanning, still, live, visible, layout, cardMm, captureScale]);
 
   /* ---------- scanning ---------- */
 
   const runScan = useCallback(
-    async (src: PageStill, box: Box, extraFrames: PageSource[] = []) => {
+    async (src: PageStill, box: Box, extraFrames: PageSource[] = [], stillFit: FitState | null = null) => {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -335,11 +430,16 @@ export function PageScan({
         const ms = performance.now() - started;
         const current = getScanSession().page;
         if (current?.frame && current.frame !== src) disposeStill(current.frame);
+        // A still that was measured on screen (a photo, or a capture checked with the guide) records that measurement.
+        const capture: CaptureInfo | undefined =
+          src.capture && stillFit && !src.capture.guidance
+            ? { ...src.capture, frames: 1 + extraFrames.length, guidance: stillFit.metrics, advice: stillFit.advice?.kind ?? null }
+            : src.capture;
         patchPageSession({
           phase: 'review',
           pockets: next,
           pageMs: ms,
-          frame: src,
+          frame: capture ? { ...src, capture } : src,
           frameFrac: boxToFrac(box, { x: 0, y: 0, w: src.w, h: src.h }),
           still: null,
         });
@@ -349,6 +449,7 @@ export function PageScan({
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         if (!ac.signal.aborted) setScanning(false);
+        for (const f of extraFrames) (f as { close?: () => void }).close?.();
       }
     },
     [layout, recognizer, matcher, index.game, cardMm],
@@ -361,11 +462,14 @@ export function PageScan({
    */
   async function saveCapture() {
     if (!frame) return;
-    const canvas = document.createElement('canvas');
-    canvas.width = frame.w;
-    canvas.height = frame.h;
-    canvas.getContext('2d')!.drawImage(frame.source, 0, 0);
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
+    let blob: Blob | null = frame.blob ?? null;
+    if (!blob) {
+      const canvas = document.createElement('canvas');
+      canvas.width = frame.w;
+      canvas.height = frame.h;
+      canvas.getContext('2d')!.drawImage(frame.source, 0, 0);
+      blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
+    }
     if (!blob) return;
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const image = new File([blob], `cardcodex-page-${stamp}.jpg`, { type: 'image/jpeg' });
@@ -373,10 +477,14 @@ export function PageScan({
       [
         JSON.stringify(
           {
+            app: __APP_VERSION__,
             game: index.game,
             layout: layout.id,
+            engine: engineName,
             frame: { w: frame.w, h: frame.h },
+            capture: frame.capture ?? null,
             page: frameFrac,
+            pageMs: Math.round(pageMs),
             pockets: pockets.map((p) => ({
               index: p.scan.pocket.index,
               read: p.scan.candidate?.card.id ?? null,
@@ -425,39 +533,106 @@ export function PageScan({
     return canvas;
   }
 
+  /**
+   * Capture the page: a full-resolution photo through the camera's still
+   * pipeline (src/scanner/photo.ts) when the camera gives one, else a copy of
+   * the preview frame. With the grid locked the page is read at once, from
+   * this frame and (on Android) a second one; otherwise the frame is shown
+   * with the guide for a check first.
+   */
   async function capture() {
     const video = videoRef.current;
-    if (!video || !video.videoWidth || !visible || !pageBox) return;
-    const canvas = snapFrame(video);
-    const k = canvas.width / video.videoWidth;
-    const box: Box = { x: pageBox.x * k, y: pageBox.y * k, w: pageBox.w * k, h: pageBox.h * k };
+    if (!video || !video.videoWidth || !visible || !pageBox || capturing) return;
+    setCapturing(true);
+    const t0 = performance.now();
+    const preview: Size = { w: video.videoWidth, h: video.videoHeight };
+    const wasLocked = !!fit?.locked;
+    const wantExtra = wasLocked && frames > 1;
     // Remember where the page was, for the next scan from the same spot.
     update({ pageFrames: { ...settings.pageFrames, [layout.id]: boxToFrac(pageBox, visible) } });
-    const captured: PageStill = { source: canvas, url: await canvasUrl(canvas), w: canvas.width, h: canvas.height };
-    if (fit?.locked) {
-      // A second frame a moment later: pockets are read from both and the
-      // candidates merged, so one blurred frame cannot decide a pocket.
-      const extra: PageSource[] = [];
-      if (frames > 1) {
-        await new Promise((r) => window.setTimeout(r, EXTRA_FRAME_DELAY_MS));
-        if (video.videoWidth) extra.push(snapFrame(video));
+    const photoMs: number[] = [];
+    const extra: PageSource[] = [];
+    let extraFrom: CaptureInfo['extraFrom'] = null;
+    let captured: PageStill;
+    let box: Box;
+    try {
+      // A photo is only worth the shutter (~2 s on the emulator) when the camera offers more pixels than the preview.
+      const photoWorthIt = !photoSize || Math.max(photoSize.w, photoSize.h) > Math.max(preview.w, preview.h);
+      const shot = photoWorthIt ? await takePhoto(streamRef.current, { timeoutMs: PHOTO_TIMEOUT_MS, maxLongSide: PHOTO_MAX_LONG_SIDE, size: photoSize }) : null;
+      const photo = shot ? { w: shot.bitmap.width, h: shot.bitmap.height } : null;
+      // A photo is worth using when it is bigger than the preview and the same way up (the mapping assumes both show the same field of view).
+      const usable = !!shot && !!photo && Math.max(photo.w, photo.h) > Math.max(preview.w, preview.h) && sameOrientation(photo, preview);
+      if (shot && photo && usable) {
+        photoMs.push(shot.ms);
+        const t = previewToPhoto(preview, photo);
+        box = mapBox(pageBox, t);
+        if (wantExtra) {
+          // Second frame: another photo when the first was quick enough to keep the capture within budget, else the preview frame placed in photo space.
+          if (performance.now() - t0 + shot.ms < CAPTURE_BUDGET_MS) {
+            const second = await takePhoto(streamRef.current, { timeoutMs: PHOTO_TIMEOUT_MS, maxLongSide: PHOTO_MAX_LONG_SIDE, size: shot.requested });
+            if (second && second.bitmap.width === photo.w && second.bitmap.height === photo.h) {
+              extra.push(second.bitmap);
+              photoMs.push(second.ms);
+              extraFrom = 'photo';
+            } else second?.bitmap.close();
+          }
+          if (!extra.length && video.videoWidth) {
+            extra.push(previewInPhotoSpace(video, photo.w, photo.h, t));
+            extraFrom = 'preview';
+          }
+        }
+        captured = { source: shot.bitmap, blob: shot.blob, url: URL.createObjectURL(shot.blob), w: photo.w, h: photo.h };
+      } else {
+        shot?.bitmap.close();
+        const canvas = snapFrame(video);
+        const k = canvas.width / video.videoWidth;
+        box = { x: pageBox.x * k, y: pageBox.y * k, w: pageBox.w * k, h: pageBox.h * k };
+        if (wantExtra) {
+          // A second frame a moment later: pockets are read from both and the
+          // candidates merged, so one blurred frame cannot decide a pocket.
+          await new Promise((r) => window.setTimeout(r, EXTRA_FRAME_DELAY_MS));
+          if (video.videoWidth) {
+            extra.push(snapFrame(video));
+            extraFrom = 'preview';
+          }
+        }
+        captured = { source: canvas, url: await canvasUrl(canvas), w: canvas.width, h: canvas.height };
       }
+    } finally {
+      setCapturing(false);
+    }
+    captured.capture = {
+      source: captured.blob ? 'photo' : 'preview',
+      preview,
+      ms: performance.now() - t0,
+      photoMs,
+      frames: 1 + extra.length,
+      extraFrom,
+      guidance: fit?.metrics ?? null,
+      advice: fit?.advice?.kind ?? null,
+    };
+    const c = captured.capture;
+    console.info(
+      `[page] capture ${c.source} ${captured.w}×${captured.h} from preview ${preview.w}×${preview.h} in ${Math.round(c.ms)} ms` +
+        ` (photos ${photoMs.map((m) => Math.round(m)).join('/') || '-'} ms, extra frame: ${extraFrom ?? 'none'})`,
+    );
+    if (wasLocked) {
       void runScan(captured, box, extra);
     } else {
       // Not sure where the page is: show the frame with the guide for a check.
-      fitRef.current = { last: null, stable: 0, misses: 0 };
-      patchPageSession({ still: captured, frac: boxToFrac(box, { x: 0, y: 0, w: canvas.width, h: canvas.height }), auto: true });
+      resetFit();
+      patchPageSession({ still: captured, frac: boxToFrac(box, { x: 0, y: 0, w: captured.w, h: captured.h }), auto: true });
       setFit(null);
     }
   }
 
   function scanStill() {
     if (!still || !pageBox) return;
-    void runScan(still, pageBox);
+    void runScan(still, pageBox, [], fit);
   }
 
   function retake() {
-    fitRef.current = { last: null, stable: 0, misses: 0 };
+    resetFit();
     setFit(null);
     if (still && still === frame) {
       // Adjusting the grid of a scanned frame: back to its review.
@@ -469,7 +644,7 @@ export function PageScan({
   }
 
   function snapToPage() {
-    fitRef.current = { last: null, stable: 0, misses: 0 };
+    resetFit();
     setFit(null);
     patchPageSession({ auto: true });
   }
@@ -486,7 +661,7 @@ export function PageScan({
     if (frame) disposeStill(frame);
     if (discard) void clearReview();
     patchPageSession({ phase: 'capture', pockets: [], frame: null, frameFrac: null, still: null, frac: null, auto: true });
-    fitRef.current = { last: null, stable: 0, misses: 0 };
+    resetFit();
     setFit(null);
   }
 
@@ -557,8 +732,16 @@ export function PageScan({
       <div className="scan-page page-review">
         <div className="scan-hud static">
           <span className="scan-status">
-            {layout.label} · {entries.length} of {pockets.length} pockets identified
-            {pageMs ? ` · ${(pageMs / 1000).toFixed(1)}s` : ''}
+            {entries.length} of {pockets.length} pockets
+            {frame && (
+              <>
+                {' · '}
+                <span className="capture-size" title={captureTitle(frame)}>
+                  {frame.w}×{frame.h}
+                </span>
+              </>
+            )}
+            {pageMs ? ` · ${(pageMs / 1000).toFixed(1)} s` : ''}
           </span>
           <button type="button" className="icon-btn" aria-label="Discard this page" onClick={() => backToCapture(true)}>
             <CloseIcon />
@@ -650,24 +833,29 @@ export function PageScan({
   }
 
   const guideState: GuideState = still ? (auto ? 'still' : 'manual') : !auto ? 'manual' : fit?.locked ? 'locked' : 'searching';
-  const guideLabel = still
-    ? auto
-      ? fit
-        ? 'Page found · check the grid'
-        : 'Drag the frame onto the cards'
-      : 'Adjusted'
-    : !auto
-      ? 'Adjusted'
-      : fit?.locked
-        ? 'Page found'
-        : 'Finding page…';
+  const advice = auto ? (fit?.advice ?? null) : null;
+  const guideLabel = advice
+    ? advice.label
+    : still
+      ? auto
+        ? fit
+          ? 'Page found · check the grid'
+          : 'Drag the frame onto the cards'
+        : 'Adjusted'
+      : !auto
+        ? 'Adjusted'
+        : fit?.locked
+          ? 'Page found'
+          : 'Finding page…';
   const hint = error
     ? null
-    : still
-      ? 'Check that every card sits in its cell. Drag the frame to move it or its corners to resize it, then scan.'
-      : fit?.locked
-        ? 'Page found. Hold still and capture.'
-        : 'Point the camera at the whole page. The grid snaps to the cards; drag it if it does not.';
+    : advice
+      ? advice.detail
+      : still
+        ? 'Check that every card sits in its cell. Drag the frame to move it or its corners to resize it, then scan.'
+        : fit?.locked
+          ? 'Page found. Hold still and capture.'
+          : 'Point the camera at the whole page. The grid snaps to the cards; drag it if it does not.';
 
   return (
     <div className="scan-page">
@@ -685,6 +873,7 @@ export function PageScan({
             layout={layout}
             state={guideState}
             label={guideLabel}
+            warn={!!advice}
             onChange={onGuideChange}
           />
         )}
@@ -757,8 +946,15 @@ export function PageScan({
               </button>
             </>
           ) : (
-            <button type="button" className="btn primary" disabled={scanning || !!error || !live || !pageBox} onClick={() => void capture()}>
-              <CameraIcon size={18} /> Capture page
+            // Amber with the reason while the live guidance says the shot will not read well; never disabled for that.
+            <button
+              type="button"
+              className={`btn ${advice ? 'warn' : 'primary'}`}
+              disabled={scanning || capturing || !!error || !live || !pageBox}
+              onClick={() => void capture()}
+            >
+              <CameraIcon size={18} /> {capturing ? 'Capturing…' : 'Capture page'}
+              {advice && !capturing && <span className="btn-reason">· {advice.label}</span>}
             </button>
           )}
           {!auto && (

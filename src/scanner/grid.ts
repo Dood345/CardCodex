@@ -61,6 +61,8 @@ export interface GridFit {
   rows: Fit1D;
   /** 0..1; the weaker of the two dimensions. */
   confidence: number;
+  /** The profiles the fit was made on (image px), for checks that refine it (perspectiveCheck). */
+  profiles?: EdgeProfiles;
 }
 
 /** Edge evidence along one axis. All arrays are in units of the mean absolute energy (1 = average). */
@@ -304,16 +306,18 @@ const SURE_EDGE = 2.6;
 
 /**
  * Best placement of `n` items of pitch ≈ `pitch` (±`slack` px) along a
- * profile. Returns null when nothing fits.
+ * profile. `sizeShare` narrows the item size to that share of the pitch
+ * (default MIN_SIZE_SHARE..1). Returns null when nothing fits.
  */
-export function fit1D(profile: Profile, n: number, pitch: number, slack = 2): Fit1D | null {
+export function fit1D(profile: Profile, n: number, pitch: number, slack = 2, sizeShare?: { min: number; max: number }): Fit1D | null {
   const L = profile.abs.length;
   const ctx = scoreContext(profile, n);
   let best: Placement | null = null;
   for (let p = pitch - slack; p <= pitch + slack; p++) {
     if (p < 4) continue;
-    const sMin = Math.max(3, Math.round(p * MIN_SIZE_SHARE));
-    for (let s = sMin; s <= p; s++) {
+    const sMin = Math.max(3, Math.round(p * (sizeShare?.min ?? MIN_SIZE_SHARE)));
+    const sMax = Math.min(p, Math.round(p * (sizeShare?.max ?? 1)));
+    for (let s = sMin; s <= sMax; s++) {
       const span = (n - 1) * p + s;
       if (span > L) break;
       for (let x0 = 0; x0 + span <= L; x0++) {
@@ -366,11 +370,126 @@ export function fitGrid(img: RgbaImage, layout: GridLayoutLike, opts: FitGridOpt
           rows: r,
           confidence,
           box: { x: c.start, y: r.start, w: (n - 1) * (c.size + c.gap) + c.size, h: (m - 1) * (r.size + r.gap) + r.size },
+          profiles: p,
         };
       }
     }
   }
   return best && best.confidence >= minConf ? best : null;
+}
+
+/* ---------- perspective: is the page flat under the camera? ---------- */
+
+/** `box` of `img` (clamped to whole pixels inside it) as a new image. */
+export function cropRgba(img: RgbaImage, box: Box): RgbaImage {
+  const x0 = Math.max(0, Math.min(img.width, Math.round(box.x)));
+  const y0 = Math.max(0, Math.min(img.height, Math.round(box.y)));
+  const x1 = Math.max(x0, Math.min(img.width, Math.round(box.x + box.w)));
+  const y1 = Math.max(y0, Math.min(img.height, Math.round(box.y + box.h)));
+  const w = x1 - x0;
+  const h = y1 - y0;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const src = ((y0 + y) * img.width + x0) * 4;
+    data.set(img.data.subarray(src, src + w * 4), y * w * 4);
+  }
+  return { width: w, height: h, data };
+}
+
+export interface PerspectiveCheck {
+  /** Width of the last column's cards ÷ the first column's (on a line through all columns); > 1: the right side of the page is nearer the camera. Null with one column. */
+  colWidthRatio: number | null;
+  /** Height of the last row's cards ÷ the first row's; > 1: the bottom of the page is nearer. Null with one row. */
+  rowHeightRatio: number | null;
+}
+
+/**
+ * Window around a predicted card edge in which its true position is looked
+ * for, as a share of the pitch: inside the pocket seam (3–5% of the card
+ * outside the edge) and the art frame (~10% inside), wide enough for the
+ * ±2–3% the outer edges move under a 5–8% keystone.
+ */
+const EDGE_WINDOW_SHARE = 0.045;
+/** An edge peak must carry at least the profile's average energy (1) to count. */
+const EDGE_MIN_LEVEL = 1;
+
+/**
+ * Sub-pixel position of the edge peak of `abs` nearest to `pos` within
+ * ±`win` (a local maximum at or above EDGE_MIN_LEVEL, refined with a
+ * parabola through it and its neighbours), or `pos` when there is none.
+ * Nearest, not strongest: the pocket seam a few px outside a card edge is
+ * often the stronger edge in a photo, and taking it on one card but not the
+ * next threw the width trend off by up to 12% (measured).
+ */
+export function refineEdge(abs: Float32Array, pos: number, win: number): number {
+  const L = abs.length;
+  if (L < 3) return pos;
+  const lo = Math.max(1, Math.round(pos - win));
+  const hi = Math.min(L - 2, Math.round(pos + win));
+  let best = -1;
+  let bestDist = Infinity;
+  for (let x = lo; x <= hi; x++) {
+    if (abs[x] < EDGE_MIN_LEVEL || abs[x] < abs[x - 1] || abs[x] < abs[x + 1]) continue;
+    const dist = Math.abs(x - pos);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = x;
+    }
+  }
+  if (best < 0) return pos;
+  const d = abs[best - 1] - 2 * abs[best] + abs[best + 1];
+  const delta = d < 0 ? (0.5 * (abs[best - 1] - abs[best + 1])) / d : 0;
+  return best + Math.max(-0.5, Math.min(0.5, delta));
+}
+
+/**
+ * Item sizes along a profile from the refined positions of the fitted
+ * edges, then the last item's size over the first's on a least-squares line
+ * through the n sizes (one bad edge does not decide it). Null with one item.
+ */
+export function sizeTrend(abs: Float32Array, f: Fit1D, n: number): number | null {
+  if (n < 2) return null;
+  const pitch = f.size + f.gap;
+  const win = Math.max(2, pitch * EDGE_WINDOW_SHARE);
+  let sx = 0;
+  let sy = 0;
+  let sxx = 0;
+  let sxy = 0;
+  for (let i = 0; i < n; i++) {
+    const l = refineEdge(abs, f.start + i * pitch, win);
+    const r = refineEdge(abs, f.start + i * pitch + f.size - 1, win);
+    const w = r - l + 1;
+    sx += i;
+    sy += w;
+    sxx += i * i;
+    sxy += i * w;
+  }
+  const slope = (n * sxy - sx * sy) / (n * sxx - sx * sx);
+  const first = (sy - slope * sx) / n;
+  const last = first + slope * (n - 1);
+  return first > 0 && last > 0 ? last / first : null;
+}
+
+/**
+ * Keystone check for a fitted grid: a page tilted about its vertical axis
+ * shows cards that get wider towards the nearer side, one tilted about its
+ * horizontal axis cards that get taller towards the nearer edge. The
+ * whole-grid fit assumes one pitch, so each fitted edge is refined within a
+ * small window on the page's own column and row profiles (summed over every
+ * row or column, hence clean), and the trend of the card widths across the
+ * columns and of the heights across the rows is reported. Measured on the
+ * three fixture photos (shot straight on): 0.987–1.008 at the 320 px live
+ * sample. It is a conservative detector: the whole-grid fit's prior absorbs
+ * part of a keystone, so a synthetic 10% keystone reads only 1.02–1.03 here
+ * while the fit's own column/row pitch ratio (the aspect check in
+ * guidance.ts) drifts to 1.11–1.14 on the same images. Refitting the first
+ * and last row on their own (fit1D per band) was tried first and swung ±10%
+ * on the straight-on photos: one row of evidence cannot tell card edges from
+ * pocket seams. ~1 ms.
+ */
+export function perspectiveCheck(img: RgbaImage, fit: GridFit, layout: GridLayoutLike): PerspectiveCheck {
+  const p = fit.profiles ?? edgeProfiles(img);
+  return { colWidthRatio: sizeTrend(p.cols.abs, fit.cols, layout.cols), rowHeightRatio: sizeTrend(p.rows.abs, fit.rows, layout.rows) };
 }
 
 /* ---------- single card inside a pocket crop ---------- */
@@ -436,23 +555,35 @@ export function fitSingleCard(img: RgbaImage, cardAspect = 63 / 88): (Box & { co
 
 /* ---------- DOM helpers ---------- */
 
-let sampleCanvas: HTMLCanvasElement | null = null;
+const sampleCanvases: HTMLCanvasElement[] = [];
 
 /** Anything drawImage accepts (video, canvas, ImageBitmap, img). */
 export type GridSource = CanvasImageSource;
 
-/** RGBA sample of `region` of `source`, `width` px wide. */
-export function sampleRgba(source: GridSource, region: Box, width: number): RgbaImage {
+/**
+ * RGBA sample of `region` of `source`, `width` px wide. Canvases are reused
+ * per `slot` (resizing a canvas reallocates it): callers that sample at two
+ * sizes every frame, like the capture view's grid fit and sharpness check,
+ * use a slot each.
+ */
+export function sampleRgba(source: GridSource, region: Box, width: number, slot = 0): RgbaImage {
   const w = Math.max(8, Math.round(width));
   const h = Math.max(8, Math.round((width * region.h) / region.w));
-  sampleCanvas ??= document.createElement('canvas');
-  if (sampleCanvas.width !== w) sampleCanvas.width = w;
-  if (sampleCanvas.height !== h) sampleCanvas.height = h;
-  const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true })!;
+  const canvas = (sampleCanvases[slot] ??= document.createElement('canvas'));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'medium';
   ctx.drawImage(source, region.x, region.y, region.w, region.h, 0, 0, w, h);
   return { width: w, height: h, data: ctx.getImageData(0, 0, w, h).data };
+}
+
+/** A box in the pixels of a sample of `region` mapped back to the region's frame px. */
+export function sampleBoxToRegion(box: Box, sample: { width: number; height: number }, region: Box): Box {
+  const sx = region.w / sample.width;
+  const sy = region.h / sample.height;
+  return { x: region.x + box.x * sx, y: region.y + box.y * sy, w: box.w * sx, h: box.h * sy };
 }
 
 /** Sample width: a 3-wide page gives ~100 px cards, enough to tell the border from the art frame. */
@@ -488,10 +619,5 @@ export function fitGridOnSource(
   const img = sampleRgba(source, region, opts.sampleWidth ?? GRID_SAMPLE_WIDTH);
   const fit = fitGrid(img, layout, opts);
   if (!fit) return null;
-  const sx = region.w / img.width;
-  const sy = region.h / img.height;
-  return {
-    ...fit,
-    box: { x: region.x + fit.box.x * sx, y: region.y + fit.box.y * sy, w: fit.box.w * sx, h: fit.box.h * sy },
-  };
+  return { ...fit, box: sampleBoxToRegion(fit.box, img, region) };
 }

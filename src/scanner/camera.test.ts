@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coverTransform, mapBox } from './camera';
+import { coverTransform, mapBox, orientLike, previewToPhoto } from './camera';
 import { updateTracks, type Track } from './tracker';
 import type { ScanCandidate } from './types';
 import { fixtureCatalog } from './fixtures.test-util';
@@ -32,6 +32,55 @@ describe('coverTransform', () => {
 
   it('survives an unknown frame size', () => {
     expect(coverTransform(0, 0, 100, 100)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
+  });
+});
+
+describe('previewToPhoto', () => {
+  it('is a pure scale when the preview and the photo have the same aspect', () => {
+    // A 4:3 preview of a 4:3 sensor, both portrait: 1440×1920 → 3024×4032.
+    const t = previewToPhoto({ w: 1440, h: 1920 }, { w: 3024, h: 4032 });
+    expect(t.scale).toBeCloseTo(2.1);
+    expect(t.offsetX).toBeCloseTo(0);
+    expect(t.offsetY).toBeCloseTo(0);
+    const b = mapBox({ x: 100, y: 200, w: 300, h: 400 }, t);
+    expect(b.x).toBeCloseTo(210);
+    expect(b.y).toBeCloseTo(420);
+    expect(b.w).toBeCloseTo(630);
+    expect(b.h).toBeCloseTo(840);
+  });
+
+  it('places a 16:9 preview as a centred band of the 4:3 photo (the long sides match)', () => {
+    // Portrait 1080×1920 preview: the sensor's long side is fully used, the short side is cropped.
+    const t = previewToPhoto({ w: 1080, h: 1920 }, { w: 3024, h: 4032 });
+    expect(t.scale).toBeCloseTo(4032 / 1920);
+    expect(t.offsetY).toBeCloseTo(0);
+    expect(t.offsetX).toBeCloseTo((3024 - 1080 * (4032 / 1920)) / 2); // 378
+    // The preview's centre is the photo's centre.
+    const c = mapBox({ x: 540, y: 960, w: 0, h: 0 }, t);
+    expect(c.x).toBeCloseTo(1512);
+    expect(c.y).toBeCloseTo(2016);
+  });
+
+  it('places a preview wider than the photo as a centred horizontal band', () => {
+    // Landscape 640×360 preview of a 1280×960 photo (the emulator's shapes).
+    const t = previewToPhoto({ w: 640, h: 360 }, { w: 1280, h: 960 });
+    expect(t.scale).toBeCloseTo(2);
+    expect(t.offsetX).toBeCloseTo(0);
+    expect(t.offsetY).toBeCloseTo((960 - 720) / 2);
+  });
+
+  it('is the identity for unknown sizes', () => {
+    expect(previewToPhoto({ w: 0, h: 0 }, { w: 100, h: 100 })).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
+  });
+});
+
+describe('orientLike', () => {
+  it('swaps the sides of a landscape size to match a portrait one, and leaves matching or square sizes alone', () => {
+    expect(orientLike({ w: 4032, h: 3024 }, { w: 1440, h: 1920 })).toEqual({ w: 3024, h: 4032 });
+    expect(orientLike({ w: 3024, h: 4032 }, { w: 1440, h: 1920 })).toEqual({ w: 3024, h: 4032 });
+    expect(orientLike({ w: 4032, h: 3024 }, { w: 1920, h: 1440 })).toEqual({ w: 4032, h: 3024 });
+    expect(orientLike({ w: 1000, h: 1000 }, { w: 1440, h: 1920 })).toEqual({ w: 1000, h: 1000 });
+    expect(orientLike({ w: 4032, h: 3024 }, { w: 500, h: 500 })).toEqual({ w: 4032, h: 3024 });
   });
 });
 

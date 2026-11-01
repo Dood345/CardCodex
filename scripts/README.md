@@ -76,6 +76,18 @@ With a dev server already running (`npm run dev`) the page can be opened directl
 `http://localhost:5173/scripts/grid-bench.html?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg`
 (files outside the repo as `/@fs/D:/path/photo.jpg`).
 
+## guidance-bench.html
+
+Calibration page for the binder-page capture guidance (`src/scanner/guidance.ts`): with the dev
+server running, `http://localhost:5173/scripts/guidance-bench.html` fits the grid on each fixture
+photo (normalised to a 4032 px long side, like a 12 MP capture), runs `measureGuidance` on it and
+prints the card width, the aspect and keystone ratios, the sharpness score, the brightness and the
+advice. Query parameters make variants: `blur=0,1,1.5,2` (Gaussian radii in px of the normalised
+photo), `scale=0.3`, `warp=0.1` (keystone, bottom edge nearer), `dark=0.2`; `ocr=1` also reads the
+nine pockets with Tesseract at every level and counts number-line reads and exact ids (~20–30 s per
+level). The threshold numbers quoted in `src/scanner/README.md` ("Capture guidance") come from
+this page. Results are in `window.__guidanceBench`; `report=<path>` POSTs them.
+
 ## emu.py
 
 Headless Android emulator helper (Python 3, built-ins only; run with `python -I`). Finds adb and
