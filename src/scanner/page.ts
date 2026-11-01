@@ -54,17 +54,32 @@ export interface PageGeometryOptions {
   inset?: number;
   /** Physical card size in mm (sets the cell aspect). Default 63×88 (Pokémon); Yu-Gi-Oh! is 59×86. */
   cardMm?: { w: number; h: number };
+  /**
+   * Part of the frame the default page rectangle is centred in (frame px).
+   * The capture view shows the camera frame with `object-fit: cover`, so on a
+   * wide screen the top and bottom of the frame are off-screen; passing the
+   * visible region keeps the whole guide on-screen. Default: the whole frame.
+   */
+  within?: Box;
+  /**
+   * An explicit page rectangle (frame px) from the grid fitter or the user's
+   * drag; when set, `margin`, `cardMm` and `within` are ignored.
+   */
+  page?: Box;
 }
 
 /**
- * The largest rectangle with the page's aspect (cols × 63 : rows × 88) that
- * fits inside the frame minus the margin, centred. The on-screen guide draws
+ * The page rectangle: `opts.page` when given, otherwise the largest rectangle
+ * with the page's aspect (cols × 63 : rows × 88) that fits inside `within`
+ * (default: the frame) minus the margin, centred. The on-screen guide draws
  * this rectangle; the user lines the binder page up with it.
  */
 export function pageRect(frameW: number, frameH: number, layout: PageLayout, opts: PageGeometryOptions = {}): Box {
-  const margin = (opts.margin ?? 0.03) * Math.min(frameW, frameH);
-  const availW = Math.max(1, frameW - 2 * margin);
-  const availH = Math.max(1, frameH - 2 * margin);
+  if (opts.page) return opts.page;
+  const area = opts.within ?? { x: 0, y: 0, w: frameW, h: frameH };
+  const margin = (opts.margin ?? 0.03) * Math.min(area.w, area.h);
+  const availW = Math.max(1, area.w - 2 * margin);
+  const availH = Math.max(1, area.h - 2 * margin);
   const card = opts.cardMm ?? DEFAULT_CARD_MM;
   const aspect = (layout.cols * card.w) / (layout.rows * card.h);
   let w = availW;
@@ -73,13 +88,42 @@ export function pageRect(frameW: number, frameH: number, layout: PageLayout, opt
     h = availH;
     w = h * aspect;
   }
-  return { x: (frameW - w) / 2, y: (frameH - h) / 2, w, h };
+  return { x: area.x + (area.w - w) / 2, y: area.y + (area.h - h) / 2, w, h };
+}
+
+/** A box as fractions (0..1) of some region: how the page guide is remembered across frames and sessions. */
+export interface FracBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function boxToFrac(box: Box, region: Box): FracBox {
+  return {
+    x: (box.x - region.x) / region.w,
+    y: (box.y - region.y) / region.h,
+    w: box.w / region.w,
+    h: box.h / region.h,
+  };
+}
+
+export function fracToBox(frac: FracBox, region: Box): Box {
+  return {
+    x: region.x + frac.x * region.w,
+    y: region.y + frac.y * region.h,
+    w: frac.w * region.w,
+    h: frac.h * region.h,
+  };
 }
 
 /** Equal pocket cells over `pageRect`, each shrunk by `inset` on every side. Row-major. */
 export function pocketBoxes(frameW: number, frameH: number, layout: PageLayout, opts: PageGeometryOptions = {}): Pocket[] {
-  const page = pageRect(frameW, frameH, layout, opts);
-  const inset = opts.inset ?? 0;
+  return pocketBoxesIn(pageRect(frameW, frameH, layout, opts), layout, opts.inset ?? 0);
+}
+
+/** Equal pocket cells over an explicit page rectangle. Row-major. */
+export function pocketBoxesIn(page: Box, layout: PageLayout, inset = 0): Pocket[] {
   const cellW = page.w / layout.cols;
   const cellH = page.h / layout.rows;
   const pockets: Pocket[] = [];
@@ -125,6 +169,12 @@ export interface ScanPageOptions {
    * Tesseract's LSTM reads reliably; ~1.7× upscaling brings it to ~15 px.
    */
   minCropWidth?: number;
+  /**
+   * Crops wider than this are downscaled to it. Default 1400: a 50 MP photo
+   * gives 1,800 px pockets that take Tesseract 8 s each for no gain (the
+   * number line is ~25 px tall at 1400).
+   */
+  maxCropWidth?: number;
   /** Thumbnail width in the review grid. Default 240. */
   thumbWidth?: number;
   onProgress?: (done: number, total: number) => void;
@@ -133,6 +183,7 @@ export interface ScanPageOptions {
 }
 
 const MIN_CROP_WIDTH = 1000;
+const MAX_CROP_WIDTH = 1400;
 const THUMB_WIDTH = 240;
 
 /**
@@ -140,8 +191,8 @@ const THUMB_WIDTH = 240;
  * `minWidth`. Crop straight from the full-resolution source (an ImageBitmap of
  * the photo): every intermediate resample blurs the tiny number line.
  */
-export function cropPocket(source: PageSource, box: Box, minWidth: number): HTMLCanvasElement {
-  const scale = Math.max(1, minWidth / box.w);
+export function cropPocket(source: PageSource, box: Box, minWidth: number, maxWidth = Infinity): HTMLCanvasElement {
+  const scale = box.w > maxWidth ? maxWidth / box.w : Math.max(1, minWidth / box.w);
   const out = document.createElement('canvas');
   out.width = Math.max(1, Math.round(box.w * scale));
   out.height = Math.max(1, Math.round(box.h * scale));
@@ -175,9 +226,10 @@ export async function scanPage(
   const pockets = pocketBoxes(frame.width, frame.height, layout, opts.geometry);
   const results: PocketScan[] = [];
   const minWidth = opts.minCropWidth ?? MIN_CROP_WIDTH;
+  const maxWidth = opts.maxCropWidth ?? MAX_CROP_WIDTH;
   for (const pocket of pockets) {
     if (opts.signal?.aborted) break;
-    const crop = cropPocket(frame, pocket.box, minWidth);
+    const crop = cropPocket(frame, pocket.box, minWidth, maxWidth);
     const started = performance.now();
     let lines: Awaited<ReturnType<TextRecognizer['recognize']>> = [];
     try {

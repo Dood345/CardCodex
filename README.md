@@ -41,11 +41,18 @@ with Capacitor. Your collection lives only on your device.
   should fill most of the frame: the printed number (bottom-left) is what pins down the exact printing;
   a name alone lists every printing in the alternatives.
 - **Binder page mode** – switch the scanner to *Binder page*, pick the page layout (9-, 4-, 12- or
-  16-pocket), line the page up with the on-screen grid and capture it (or scan a photo of the page).
-  Every pocket is cropped at full resolution and read on its own; the review grid then shows each
-  pocket's card with a copy counter, so pockets holding several copies in one sleeve get the right
-  count, wrong guesses can be swapped from the alternatives, and empty pockets are skipped. One tap
-  adds the whole page.
+  16-pocket) and point the camera at the page: the grid finds the cards by itself (it turns green
+  once it has locked on) and can be dragged or resized if it hasn't. Capture, or scan a photo of the
+  page, which is shown with the fitted grid for a check first. Every pocket is cropped at full
+  resolution and read on its own; the review grid then shows each pocket's crop beside its card with
+  a copy counter, so pockets holding several copies in one sleeve get the right count, wrong guesses
+  can be swapped from the alternatives (or any card searched for), and empty pockets are skipped.
+  One tap adds the whole page; the grid can be adjusted and the same frame rescanned.
+- **Picks up where you left off** – leaving the Scan tab (to look something up) and coming back
+  keeps the camera, the photo or the page review you had open; an interrupted page review even
+  survives the app being killed. Live scanning shows a confidence bar that fills while successive
+  frames agree on a card, lists the runners-up it is torn between so the right one is one tap away,
+  and does not flip the chip on a single contrary frame.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 

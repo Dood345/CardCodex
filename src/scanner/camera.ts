@@ -134,3 +134,24 @@ export function coverTransform(videoW: number, videoH: number, elemW: number, el
 export function mapBox(b: Box, t: CoverTransform): Box {
   return { x: b.x * t.scale + t.offsetX, y: b.y * t.scale + t.offsetY, w: b.w * t.scale, h: b.h * t.scale };
 }
+
+/** Inverse of mapBox: element CSS pixels → frame pixels. */
+export function unmapBox(b: Box, t: CoverTransform): Box {
+  return { x: (b.x - t.offsetX) / t.scale, y: (b.y - t.offsetY) / t.scale, w: b.w / t.scale, h: b.h / t.scale };
+}
+
+/**
+ * The part of a `frameW × frameH` frame that is actually on screen in an
+ * `elemW × elemH` element under transform `t` (frame px). With cover this is
+ * the frame minus the cropped bands; with contain it is the whole frame.
+ */
+export function visibleRegion(frameW: number, frameH: number, t: CoverTransform, elemW: number, elemH: number): Box {
+  const x = Math.max(0, -t.offsetX / t.scale);
+  const y = Math.max(0, -t.offsetY / t.scale);
+  return {
+    x,
+    y,
+    w: Math.max(0, Math.min(frameW - x, elemW / t.scale)),
+    h: Math.max(0, Math.min(frameH - y, elemH / t.scale)),
+  };
+}

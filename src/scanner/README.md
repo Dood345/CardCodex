@@ -14,8 +14,9 @@ device except the one-time Tesseract language-model download (see Engines).
 | `parse.ts` / `ocr-normalize.ts` | OCR-noise-tolerant parsing of number / set code / HP / name / Pokédex line (pure) |
 | `ygo/parse.ts` / `ygo/match.ts` | Yu-Gi-Oh!: passcode / set code / ATK-DEF / type line parsing and `createYgoMatcher` (pure) |
 | `page.ts` | binder-page geometry and per-pocket scanning (any game's matcher) |
-| `tracker.ts` | cross-frame merge, 2 s hold, vote-based identity (pure) |
-| `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox` |
+| `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search) (pure) |
+| `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
+| `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
 | `tesseract.ts` / `mlkit.ts` / `recognizer.ts` | engines + `TextRecognizer` interface |
 
@@ -176,16 +177,43 @@ vote decay / IoU in `tracker.ts`.
 
 Run `node scripts/scan-check.mjs [--verbose] [--psm N] [--high-only]` after changing heuristics.
 
-## Binder pages (`page.ts`)
+## Binder pages (`page.ts`, `grid.ts`)
 
-`pageRect` / `pocketBoxes` give the page guide (largest cols×63 : rows×88 rectangle centred in the
-frame; `cardMm` changes the card size) and its pocket cells; `scanPage(source, layout, recognizer, matcher)` crops every pocket from the
-full-resolution source (an `ImageBitmap` of the photo or a full-size capture canvas), upscales crops
-narrower than 1000 px, runs the recognizer on each crop in turn and returns one `PocketScan` per
-pocket (best candidate + alternatives + crop thumbnail). Pockets are not trimmed (`inset` 0): the
-collector number sits ~3% from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page
-of 600 px TCGdex scans in the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected,
-5.2 s for the page.
+`pageRect` / `pocketBoxes` give the default page guide (largest cols×63 : rows×88 rectangle centred
+in `within`, the part of the frame that is on screen; `cardMm` changes the card size) and its pocket
+cells; `pocketBoxesIn(page, layout)` subdivides an explicit rectangle. `scanPage(source, layout,
+recognizer, matcher, { geometry: { page } })` crops every pocket from the full-resolution source (an
+`ImageBitmap` of the photo or a full-size capture canvas), keeps crops between 1000 and 1400 px wide,
+runs the recognizer on each crop in turn and returns one `PocketScan` per pocket (best candidate +
+alternatives + crop thumbnail). Pockets are not trimmed (`inset` 0): the collector number sits ~3%
+from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page of 600 px TCGdex scans in
+the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected, 5.2 s for the page.
+
+**Where the page is** (`grid.ts`): the capture view shows the camera with `object-fit: cover`, so
+the guide must live in the visible part of the frame (`visibleRegion`), and a fixed rectangle still
+asks the user to line the binder up with it. `fitGridOnSource(source, region, layout)` finds the
+cards instead: the region is sampled 320 px wide in colour (a yellow border on a white page is weak
+in luminance but strong in the blue channel), the gradient is summed per column and per row (signed
+per channel and absolute), the card pitch comes from the autocorrelation of the absolute profile
+(everything printed on a card repeats once per card), and only the phase and card width are then
+searched. Items are scored by the directed edge evidence at their 2n edges with the weakest item
+weighted most (a cell offset inside the cards finds n−1 good items and one bad one), less the edge
+energy found in the gaps between cards, with a mild preference for cards that fill their pitch.
+Columns and rows must agree with the card aspect within 20%. Confidence is the mean absolute edge
+energy at the fitted edges (1 = average): below 0.4 the fit is dropped. Measured on two real
+9-pocket photos (Pixel 11 Pro XL, Z Fold 8): both boxes within a pocket gap of the cards,
+confidence 0.59–0.62, 10–15 ms per fit; two single-card photos: 0.27 and no fit. The capture UI
+runs it 3×/s, eases the guide towards each fit, and calls the page "found" after three fits within
+1.5% of each other; a capture before that is shown as a still with the guide for a check.
+
+**Live tracking** (`tracker.ts`): each track keeps a pool of cards with decaying weights (×0.7 per
+frame); the frame's read adds its score (×1.5 when the matcher called it confident), each
+alternative adds half of its score. The chip shows the pool leader and only switches when a
+challenger leads by 1.5×, so two cards the OCR flips between do not flip the chip; a confident read
+of a card sharing nothing with the pool retires the track at once (the user swapped cards).
+`ScanCandidate.stability` is the leader's share of the pool ramped in over three frames, drawn as
+the chip's confidence bar; the pool (as shares) is exposed through `alternatives` and listed as
+runners-up under the row.
 
 ## Pokédex line as a species cue (`parseDex`)
 

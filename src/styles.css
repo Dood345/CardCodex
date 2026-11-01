@@ -1148,6 +1148,89 @@ textarea:focus {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: opacity 0.25s;
+}
+/* No frame yet (starting, denied): the placeholder shows instead of a black box. */
+.scan-video.hidden {
+  opacity: 0;
+}
+.scan-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  color: #aab1be;
+  font-size: 14px;
+  background: radial-gradient(ellipse at 50% 40%, #1c2029 0%, #0b0d11 70%);
+}
+
+/* Scanner illustration (intro screen and camera placeholder). */
+.scan-art {
+  color: var(--fg-faint);
+  overflow: visible;
+}
+.scan-art .art-card {
+  fill: var(--bg-card);
+  stroke: var(--border);
+  stroke-width: 2;
+}
+.scan-art .art-art {
+  fill: var(--bg-elev);
+}
+.scan-art .art-line {
+  fill: var(--fg-faint);
+  opacity: 0.7;
+}
+.scan-art .art-line.num {
+  fill: var(--accent-strong);
+  opacity: 1;
+}
+.scan-art .art-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+.scan-art .art-beam {
+  fill: var(--accent-strong);
+  opacity: 0.9;
+  filter: drop-shadow(0 0 4px var(--accent-strong));
+  animation: beam 1.8s ease-in-out infinite;
+}
+.scan-art.live .art-corners {
+  color: var(--accent-strong);
+}
+@keyframes beam {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(123px);
+  }
+}
+.scan-placeholder .scan-art {
+  color: #6f7787;
+}
+.scan-placeholder .scan-art .art-card {
+  fill: #171a21;
+  stroke: #363b47;
+}
+.scan-placeholder .scan-art .art-art {
+  fill: #232833;
+}
+.scan-placeholder .scan-art .art-line {
+  fill: #4b5261;
+}
+.scan-placeholder .scan-art .art-icon {
+  color: #8d95a5;
 }
 .scan-still {
   position: absolute;
@@ -1176,9 +1259,7 @@ textarea:focus {
   pointer-events: auto;
   transform: translate(-50%, -100%);
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  align-items: stretch;
   border-radius: 999px;
   background: rgba(15, 17, 21, 0.9);
   color: #fff;
@@ -1188,11 +1269,57 @@ textarea:focus {
   font-weight: 600;
   white-space: nowrap;
   max-width: 80vw;
-  cursor: pointer;
+  overflow: hidden;
   animation: rise 0.15s ease-out;
+}
+.scan-chip.sure {
+  border-color: var(--ok);
 }
 .scan-chip.added {
   border-color: var(--ok);
+  background: rgba(20, 60, 40, 0.92);
+}
+.scan-chip .chip-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px 9px 12px;
+  background: none;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-width: 0;
+}
+.scan-chip .chip-more {
+  border: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  background: none;
+  color: #c9d0dc;
+  padding: 0 12px;
+  font-size: 15px;
+  cursor: pointer;
+}
+/* Confidence bar: fills while the live reads agree on this card. */
+.scan-chip .chip-conf {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.15);
+  pointer-events: none;
+}
+.scan-chip .chip-conf > span {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+  transition: width 0.3s ease-out;
+}
+.scan-chip.sure .chip-conf > span {
+  background: var(--ok);
 }
 .scan-chip .chip-thumb {
   width: 28px;
@@ -1214,7 +1341,7 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.scan-chip .chip-add {
+.chip-add {
   width: 28px;
   height: 28px;
   border-radius: 50%;
@@ -1224,6 +1351,63 @@ textarea:focus {
   align-items: center;
   justify-content: center;
   flex: none;
+}
+.chip-add.small {
+  width: 24px;
+  height: 24px;
+}
+/* One live track: the leader row plus the runners-up from its candidate pool. */
+.scan-track {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cand-runners {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 50px;
+}
+.cand-runner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  font-size: 12px;
+}
+.cand-runner img {
+  width: 28px;
+  height: 39px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex: none;
+}
+.cand-runner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.cand-runner .cand-name,
+.cand-runner .cand-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cand-runner .cand-name {
+  font-weight: 600;
+}
+.cand-runner .cand-sub,
+.cand-runner .cand-score {
+  color: var(--fg-muted);
+  font-size: 11px;
 }
 .scan-box {
   position: absolute;
@@ -1273,6 +1457,7 @@ textarea:focus {
   }
 }
 .scan-bottom {
+  flex: none; /* a flex child with overflow would otherwise shrink to nothing when the page overflows */
   background: var(--bg-elev);
   border-top: 1px solid var(--border);
   padding: 10px 12px;
@@ -1397,11 +1582,85 @@ textarea:focus {
   background: var(--accent);
   color: #fff;
 }
+.page-guide-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 .page-guide {
   position: absolute;
   border: 2px solid rgba(255, 255, 255, 0.85);
   border-radius: 10px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+}
+.page-guide-layer.searching .page-guide {
+  border-style: dashed;
+  transition:
+    left 0.2s ease-out,
+    top 0.2s ease-out,
+    width 0.2s ease-out,
+    height 0.2s ease-out;
+}
+.page-guide-layer.locked .page-guide {
+  border-color: var(--ok);
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.35),
+    0 0 0 3px rgba(74, 222, 128, 0.35);
+}
+.page-guide-layer.manual .page-guide,
+.page-guide-layer.still .page-guide {
+  border-color: var(--accent-strong);
+}
+.guide-handle {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  margin: -15px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  touch-action: none;
+}
+.guide-handle.nw {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+.guide-handle.ne {
+  right: 0;
+  top: 0;
+  cursor: nesw-resize;
+}
+.guide-handle.sw {
+  left: 0;
+  bottom: 0;
+  cursor: nesw-resize;
+}
+.guide-handle.se {
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
+.guide-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.page-guide-layer.locked .guide-badge {
+  background: rgba(22, 101, 52, 0.85);
 }
 .page-cell {
   position: absolute;
@@ -1457,6 +1716,52 @@ textarea:focus {
   display: grid;
   gap: 8px;
   padding: 10px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+/* The confirm bar stays reachable however tall the pocket grid gets (large screens). */
+.page-review .review-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  max-height: none;
+  overflow: visible;
+  box-shadow: 0 -8px 20px rgba(0, 0, 0, 0.25);
+}
+.pocket-unsure {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #f0b429;
+  color: #1a1a1a;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.correction-body.with-thumb {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.correction-thumb {
+  width: 96px;
+  border-radius: 6px;
+  flex: none;
+  border: 1px solid var(--border);
+}
+.correction-body .scan-candidates {
+  flex: 1;
+  min-width: 0;
+}
+.scan-candidate.current {
+  border-color: var(--accent);
 }
 .pocket {
   display: flex;

@@ -46,10 +46,18 @@ export interface CachedImage {
   at: number;
 }
 
+/** Small app state that must survive the app being killed (an unfinished binder-page review). */
+export interface KvEntry {
+  key: string;
+  value: unknown;
+  at: number;
+}
+
 export const db = new Dexie('cardcodex') as Dexie & {
   collection: EntityTable<CollectionEntry, 'cardId'>;
   scanLog: EntityTable<ScanLogEntry, 'id'>;
   images: EntityTable<CachedImage, 'url'>;
+  kv: EntityTable<KvEntry, 'key'>;
 };
 
 db.version(1).stores({
@@ -60,4 +68,10 @@ db.version(2).stores({
   collection: 'cardId, qty, wanted, updatedAt',
   scanLog: '++id, cardId, at',
   images: 'url, at',
+});
+db.version(3).stores({
+  collection: 'cardId, qty, wanted, updatedAt',
+  scanLog: '++id, cardId, at',
+  images: 'url, at',
+  kv: 'key',
 });

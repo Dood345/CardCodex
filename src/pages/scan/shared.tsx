@@ -1,7 +1,7 @@
 /**
  * Pieces shared by the single-card scanner and the binder-page scanner.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import type { CatalogIndex } from '@/data/catalog';
 import { formatCardNumber } from '@/data/catalog';
 import { adjustQty } from '@/data/collection';
@@ -10,9 +10,13 @@ import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import { getRecognizer, type CoverTransform, type ScanAlternative, type TextRecognizer } from '@/scanner';
 import type { Settings } from '@/app/settings';
+import type { IconProps } from '@/games/types';
 import { Sheet } from '@/ui/components';
 import { PlusIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
+import type { Recent } from './session';
+
+export type { Recent } from './session';
 
 /**
  * The English OCR model ships with the app (public/tessdata/eng.traineddata.gz,
@@ -88,12 +92,53 @@ export async function recordScan(card: CatalogCard, qty: number, engine: string)
   await db.scanLog.add({ cardId: card.id, at: Date.now(), engine });
 }
 
-export interface Recent {
-  card: CatalogCard;
-  set: CatalogSet;
-  qty: number;
-  at: number;
+/**
+ * Illustration for the scanner when no camera image is showing: a card
+ * outline inside viewfinder corners, with the game's icon where the art would
+ * be. `live` adds a sweeping scan line (camera starting).
+ */
+export function ScanArt({ Icon, live, size = 150 }: { Icon?: ComponentType<IconProps>; live?: boolean; size?: number }) {
+  const w = size;
+  const h = Math.round(size * 1.1);
+  return (
+    <svg className={`scan-art${live ? ' live' : ''}`} width={w} height={h} viewBox="0 0 150 165" aria-hidden="true">
+      <g className="art-corners" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round">
+        <path d="M6 30 V12 a6 6 0 0 1 6 -6 H30" />
+        <path d="M144 30 V12 a6 6 0 0 0 -6 -6 H120" />
+        <path d="M6 135 V153 a6 6 0 0 0 6 6 H30" />
+        <path d="M144 135 V153 a6 6 0 0 1 -6 6 H120" />
+      </g>
+      <rect className="art-card" x="36" y="22" width="78" height="109" rx="6" />
+      <rect className="art-art" x="43" y="37" width="64" height="44" rx="2" />
+      <rect className="art-line" x="43" y="30" width="38" height="3" rx="1.5" />
+      <rect className="art-line" x="43" y="90" width="52" height="3" rx="1.5" />
+      <rect className="art-line" x="43" y="99" width="44" height="3" rx="1.5" />
+      <rect className="art-line" x="43" y="108" width="56" height="3" rx="1.5" />
+      <rect className="art-line num" x="43" y="121" width="20" height="3" rx="1.5" />
+      {Icon && (
+        <foreignObject x="59" y="43" width="32" height="32">
+          <div className="art-icon">
+            <Icon size={32} />
+          </div>
+        </foreignObject>
+      )}
+      {live && <rect className="art-beam" x="12" y="20" width="126" height="2" rx="1" />}
+    </svg>
+  );
 }
+
+/** Covers the camera view while there is no live image (starting, error, stopped). */
+export function CameraPlaceholder({ Icon, text, live }: { Icon?: ComponentType<IconProps>; text: string; live?: boolean }) {
+  return (
+    <div className="scan-placeholder">
+      <ScanArt Icon={Icon} live={live} size={120} />
+      <div>{text}</div>
+    </div>
+  );
+}
+
+/** Transparent poster: Android's WebView otherwise paints a play button on a <video> that has no frame yet. */
+export const BLANK_POSTER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
 export function RecentStrip({ recent }: { recent: Recent[] }) {
   return (
@@ -115,6 +160,7 @@ export function CandidateRow({
   card,
   set,
   score,
+  scoreLabel,
   evidence,
   owned,
   onAdd,
@@ -123,6 +169,8 @@ export function CandidateRow({
   card: CatalogCard;
   set: CatalogSet;
   score: number;
+  /** Word after the percentage ("steady" for the live pool share). */
+  scoreLabel?: string;
   evidence: string[];
   owned: number;
   onAdd: () => void;
@@ -138,7 +186,7 @@ export function CandidateRow({
           {owned ? ` · own ${owned}` : ''}
         </div>
         <div className="cand-sub">
-          {Math.round(score * 100)}% · {evidence.join(', ') || 'tap to choose'}
+          {Math.round(score * 100)}%{scoreLabel ? ` ${scoreLabel}` : ''} · {evidence.join(', ') || 'tap to choose'}
         </div>
       </div>
       <button type="button" className="btn ghost" onClick={onCorrect} aria-label="Choose a different card">
@@ -160,6 +208,10 @@ export function CorrectionSheet({
   options,
   index,
   title,
+  thumb,
+  current,
+  clearLabel,
+  onClear,
   onClose,
   onPick,
 }: {
@@ -167,6 +219,13 @@ export function CorrectionSheet({
   options: ScanAlternative[];
   index: CatalogIndex;
   title?: string;
+  /** The scanned crop, shown beside the guesses so they can be compared. */
+  thumb?: string;
+  /** Id of the card currently chosen (highlighted). */
+  current?: string;
+  /** Adds a "clear" action (e.g. mark a pocket empty). */
+  clearLabel?: string;
+  onClear?: () => void;
   onClose: () => void;
   onPick: (card: CatalogCard, set: CatalogSet) => void;
 }) {
@@ -174,22 +233,30 @@ export function CorrectionSheet({
   useEffect(() => setQuery(''), [open]);
   const manual = useMemo(() => (query.trim() ? searchCards(index, query, {}, undefined, 20).cards : []), [index, query]);
   if (!open) return null;
+  const option = (o: ScanAlternative, i: number) => (
+    <button
+      key={o.card.id}
+      type="button"
+      className={`scan-candidate${o.card.id === current ? ' current' : ''}`}
+      onClick={() => onPick(o.card, o.set)}
+    >
+      <img src={cardImageUrl(o.card, o.set.series, 'low')} alt="" />
+      <div className="cand-body">
+        <div className="cand-name">{o.card.name}</div>
+        <div className="cand-sub">
+          {o.set.name} · {formatCardNumber(o.card, o.set)}
+        </div>
+        {o.evidence.length > 0 && <div className="cand-sub">{o.evidence.join(', ')}</div>}
+      </div>
+      <span className="cand-score">{i === 0 && o.card.id === current ? 'current' : `${Math.round(o.score * 100)}%`}</span>
+    </button>
+  );
   return (
     <Sheet open onClose={onClose} title={title ?? (options.length ? 'Which card is it?' : 'Pick a card')}>
-      {options.length > 0 && (
-        <div className="scan-candidates">
-          {options.map((o) => (
-            <button key={o.card.id} type="button" className="scan-candidate" onClick={() => onPick(o.card, o.set)}>
-              <img src={cardImageUrl(o.card, o.set.series, 'low')} alt="" />
-              <div className="cand-body">
-                <div className="cand-name">{o.card.name}</div>
-                <div className="cand-sub">
-                  {o.set.name} · {formatCardNumber(o.card, o.set)}
-                </div>
-              </div>
-              <span className="cand-score">{Math.round(o.score * 100)}%</span>
-            </button>
-          ))}
+      {(thumb || options.length > 0) && (
+        <div className={`correction-body${thumb ? ' with-thumb' : ''}`}>
+          {thumb && <img className="correction-thumb" src={thumb} alt="Scanned pocket" />}
+          {options.length > 0 && <div className="scan-candidates">{options.map(option)}</div>}
         </div>
       )}
       <input
@@ -221,6 +288,11 @@ export function CorrectionSheet({
         </div>
       )}
       <div className="sheet-actions">
+        {onClear && clearLabel && (
+          <button type="button" className="btn ghost" onClick={onClear}>
+            {clearLabel}
+          </button>
+        )}
         <button type="button" className="btn ghost" onClick={onClose}>
           Cancel
         </button>

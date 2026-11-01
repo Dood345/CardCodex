@@ -155,4 +155,12 @@ export interface ScanCandidate {
   cardBox: Box;
   /** Other plausible cards, best first (excludes `card`). Up to ~12. */
   alternatives: ScanAlternative[];
+  /**
+   * Live scanning only (set by the tracker): 0..1, how firmly this card leads
+   * the candidate pool built up over the last frames. Grows while frames
+   * agree, drops when the reads flip between cards.
+   */
+  stability?: number;
+  /** Live scanning only: frames in which this physical card was read. */
+  frames?: number;
 }

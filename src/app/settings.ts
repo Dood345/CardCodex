@@ -22,6 +22,12 @@ export interface Settings {
   scanMode: 'cards' | 'page';
   /** Binder page layout id (see PAGE_LAYOUTS in src/scanner/page.ts). */
   pageLayout: string;
+  /**
+   * Where the page guide sat the last time a page was scanned, per layout id,
+   * as fractions of the visible camera view. The next scan starts from it, so
+   * a binder photographed from the same spot needs no lining up.
+   */
+  pageFrames: Record<string, { x: number; y: number; w: number; h: number }>;
   /** The guided tour was completed or skipped. */
   tourDone: boolean;
   /** Self-hosted mirror of the YGOPRODeck image folders ("" = YGOPRODeck itself). */
@@ -37,6 +43,7 @@ const DEFAULTS: Settings = {
   scanEngine: 'auto',
   scanMode: 'cards',
   pageLayout: '3x3',
+  pageFrames: {},
   tourDone: false,
   ygoImageBase: '',
 };

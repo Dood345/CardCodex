@@ -80,4 +80,61 @@ describe('updateTracks', () => {
     const tracks = updateTracks([], [cand('sv01-057', 0, 0.9), cand('base1-4', 400, 0.9)], 0);
     expect(tracks.map((t) => t.shown.card.id)).toEqual(['sv01-057', 'base1-4']);
   });
+
+  it('builds stability while frames agree and does not flip when reads alternate', () => {
+    let tracks = updateTracks([], [cand('sv01-057', 0, 0.6)], 0);
+    expect(tracks[0].shown.stability).toBeLessThan(0.5); // ramps in
+    tracks = updateTracks(tracks, [cand('sv01-057', 1, 0.6)], 500);
+    tracks = updateTracks(tracks, [cand('sv01-057', 2, 0.6)], 1000);
+    expect(tracks[0].shown.stability).toBeCloseTo(1, 5);
+    expect(tracks[0].shown.confident).toBe(true); // pool agreement alone
+    // The OCR now alternates between two cards of similar score.
+    const shown: string[] = [];
+    let t = 1500;
+    for (let i = 0; i < 6; i++, t += 500) {
+      tracks = updateTracks(tracks, [cand(i % 2 ? 'sv01-057' : 'base1-4', 3, 0.55)], t);
+      shown.push(tracks[0].shown.card.id);
+    }
+    // At most one switch over six alternating frames, and both stay listed.
+    const switches = shown.filter((id, i) => i > 0 && id !== shown[i - 1]).length;
+    expect(switches).toBeLessThanOrEqual(1);
+    expect(tracks[0].shown.stability!).toBeLessThan(0.75);
+    expect(tracks[0].shown.alternatives.map((a) => a.card.id)).toContain(shown.at(-1) === 'sv01-057' ? 'base1-4' : 'sv01-057');
+    expect(tracks[0].shown.confident).toBe(false);
+  });
+
+  it('switches once a challenger clearly leads the pool', () => {
+    let tracks = updateTracks([], [cand('sv01-057', 0, 0.6)], 0);
+    tracks = updateTracks(tracks, [cand('base1-4', 0, 0.6)], 500);
+    expect(tracks[0].shown.card.id).toBe('sv01-057'); // hysteresis
+    tracks = updateTracks(tracks, [cand('base1-4', 0, 0.6)], 1000);
+    tracks = updateTracks(tracks, [cand('base1-4', 0, 0.6)], 1500);
+    expect(tracks[0].shown.card.id).toBe('base1-4');
+    expect(tracks[0].shown.key).toBe(tracks[0].id);
+  });
+
+  it('starts over at once when a confident read of an unrelated card takes the spot (card swapped)', () => {
+    let tracks = updateTracks([], [cand('sv01-057', 0, 0.9)], 0);
+    tracks = updateTracks(tracks, [cand('sv01-057', 0, 0.9)], 500);
+    tracks = updateTracks(tracks, [cand('sv01-057', 0, 0.9)], 1000);
+    const id = tracks[0].id;
+    tracks = updateTracks(tracks, [{ ...cand('base1-4', 0, 0.85), confident: true }], 1500);
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0].id).not.toBe(id);
+    expect(tracks[0].shown.card.id).toBe('base1-4');
+  });
+
+  it('lets a card that is always listed second accumulate pool weight', () => {
+    const withAlt = (id: string, altId: string): ScanCandidate => {
+      const c = cand(id, 0, 0.5);
+      const alt = cand(altId, 0, 0.45);
+      return { ...c, alternatives: [{ card: alt.card, set: alt.set, score: 0.45, evidence: ['name'] }] };
+    };
+    let tracks = updateTracks([], [withAlt('sv01-057', 'base1-4')], 0);
+    tracks = updateTracks(tracks, [withAlt('sv01-057', 'base1-4')], 500);
+    const alt = tracks[0].shown.alternatives.find((a) => a.card.id === 'base1-4');
+    expect(alt).toBeDefined();
+    expect(alt!.score).toBeGreaterThan(0.2); // its share of the pool
+    expect(alt!.score).toBeLessThan(0.5);
+  });
 });
