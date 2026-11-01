@@ -92,6 +92,10 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   [YGOPRODeck API](https://ygoprodeck.com/api-guide/) (two-level: cards by passcode with type,
   attribute, monster type, level, ATK/DEF, archetype; printings by set code with rarity). Expanded
   into the shared catalog shape at load time (`src/games/ygo/catalog.ts`).
+- `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (19.7k cards,
+  32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
+  (`src/scanner/hash.ts`). Built from the TCGdex images by `npm run hashes` (each image is downloaded
+  once into `scripts/.cache/`).
 
 Pokémon card images are served by TCGdex (`assets.tcgdex.net`), species sprites and artwork by the
 PokéAPI sprites repository; Yu-Gi-Oh! images by YGOPRODeck, stored on the device after the first
@@ -103,6 +107,10 @@ npm run catalog
 
 ```bash
 npm run catalog:ygo
+```
+
+```bash
+npm run hashes
 ```
 
 See [`scripts/README.md`](scripts/README.md) for details.

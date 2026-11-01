@@ -15,6 +15,7 @@ device except the one-time Tesseract language-model download (see Engines).
 | `ygo/parse.ts` / `ygo/match.ts` | Yu-Gi-Oh!: passcode / set code / ATK-DEF / type line parsing and `createYgoMatcher` (pure) |
 | `page.ts` | binder-page geometry and per-pocket scanning (any game's matcher) |
 | `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search) (pure) |
+| `hash.ts` | artwork matching: perceptual card hash (`hashCard`), the hash table (`public/data/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
 | `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
 | `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
@@ -229,6 +230,68 @@ of a card sharing nothing with the pool retires the track at once (the user swap
 `ScanCandidate.stability` is the leader's share of the pool ramped in over three frames, drawn as
 the chip's confidence bar; the pool (as shares) is exposed through `alternatives` and listed as
 runners-up under the row.
+
+## Artwork matching (`hash.ts`, `scripts/build-hashes.mjs`)
+
+Commercial scanners identify a card by its picture, not its text. `hash.ts` adds that as a second,
+OCR-independent signal: every Pokémon card's TCGdex reference image is reduced offline to a 128-bit
+perceptual hash (`npm run hashes` → `public/data/hashes.json`, 32 bytes per card, ~355 KB gzip for
+19.7k cards; 1.6k cards have no image on TCGdex), and a pocket crop is hashed the same way and
+compared with every entry by Hamming distance (a linear scan of 20k × 128 bits is ~1 ms).
+
+**The hash** (`HASH_SPEC`): two difference hashes of the luma, each on a 9×8 grid of cell means
+(8 rows × 8 "is the cell darker than its right neighbour" bits = 64 bits): one of the whole card,
+one of the artwork window (x 10–90 %, y 12–47 % of the card, inside the picture box of both modern
+and Base Set layouts). A dHash ignores brightness, contrast and smooth lighting gradients, which is
+what a photo through a binder sleeve adds. Transparent pixels (the reference scans' rounded corners)
+are composited over white. The build script decodes with `sharp` and calls the very same `hashCard`
+through Vite, and a reference image hashed in the browser (canvas → `getImageData`) matches its
+table entry bit for bit (18/18 in the bench), so the table and the scanner never disagree on the spec.
+
+**Alignment is everything.** Measured on reference images: a 1 % shift of the card costs ~13 bits,
+3 % costs 28–41, while unrelated cards differ by ~64 and reprints of the same picture by 0–8; a card
+drawn 6 % too small costs ~18. The fitted grid is within a pocket gap of the cards, never exact, so
+`matchPocket` searches: the padded pocket crop is sampled once (272 px wide, the card ≈ 245 px like
+a reference image) into a luma summed-area table, from which the hash of *any* window costs 144
+lookups. A coarse pass hashes 75 alignments (±4 % in 2 % steps × card 92/96/100 % of the cell) against
+the whole table, then the 96 nearest cards get a fine pass over 1,183 alignments (±6 % in 1 % steps ×
+90–102 %).
+
+**Measured on the three fixture photos** (`node scripts/hash-bench.mjs`, 27 pockets, expected ids in
+`scripts/fixtures/binder-pages/README.md`; OCR alone gets 8 of these 27 printings right):
+
+| placement of the card in the pocket | exact | same artwork | median distance to the expected card | median margin to the next artwork / next card |
+|---|---|---|---|---|
+| the grid cell as is | 4/27 | 4/27 | 44 | 1 / 1 |
+| the card box the fitter measured | 6/27 | 6/27 | 43 | 1 / 1 |
+| padded crop tightened to the card's edges (`refineCardBox`) | 12/27 | 12/27 | 37 | 3 / 3 |
+| coarse search alone (75 alignments) | 22/27 | 23/27 | 15 | 9 / 7 |
+| **coarse-to-fine search (`matchPocket`)** | **24/27** | **25/27** | **11** | **14 / 12** |
+
+Per photo (exact): Fold 8/9, Pixel 8/9, Pixel page B 8/9 (9/9 by artwork). The matched pockets sit at
+5–14 bits from their card with the runner-up 8–23 bits further away; the two exceptions are Butterfree
+`sv09-003` (26–27 bits, margin 1–2, a textured holo) and the misses below. The miss on both pages is
+Wartortle `swsh10.5-016`: a glare band across the top of the picture, so the nearest entry is Relicanth
+`swsh3-40`, a Sword & Shield Water card with the same layout (Fold: 27 vs 41 bits for Wartortle; Pixel:
+26 vs 26, a tie). Alignment tolerance, from the reference images shifted and scaled in the bench: a 1 %
+shift (≈ 13 bits) keeps every card at rank 1, 2 % (≈ 25) keeps 14 of 18, 3 % (≈ 35) 8 of 18; a card 6 %
+too small (≈ 18 bits) keeps all 18, 10 % (≈ 27) 16 of 18. Cost: ~110 ms per pocket in headless Chrome
+with software rendering against the full table (the coarse pass, 19.7k cards × 75 probes, is most of
+it; 20–34 ms with a 4k-card table), so ~1 s per 9-pocket page beside 2.7 s of OCR; not yet timed on a
+phone. Browser hash versus the Node-built table entry: 0 bits apart for all 18 reference images (the
+runtime's resampled path 0–4).
+
+The third miss is `base1-55` (Nidoran♂, Base Set), whose nearest entry is `lc-83`, the Legendary
+Collection reprint of the same picture (12 vs 18 bits): an artwork hash names the picture,
+and the printing has to come from the OCR'd set code or number, exactly the evidence OCR does read.
+That is the planned merge (not integrated yet): a hash hit ranks that picture's printings first; a
+read collector number or set code among them makes the pocket confident; a hit alone offers the
+printings as alternatives, newest first.
+
+**Yu-Gi-Oh!** is not hashed yet. The same build-script shape works: YGOPRODeck allows each image to
+be downloaded once (`cards_small/<passcode>.jpg`, 168×245, 14.6k cards, ~25 min at 10 requests/s),
+the hash is per passcode (printings share the picture) with the 59×86 card aspect and an artwork
+window of x 10–90 %, y 18–55 %; `matchPocket` is already aspect-agnostic.
 
 ## Pokédex line as a species cue (`parseDex`)
 

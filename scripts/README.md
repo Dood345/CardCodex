@@ -46,6 +46,30 @@ Both builders reuse the raw downloads in `scripts/.cache/` (gitignored); pass `-
 `npm run catalog -- --no-cache`) to pick up new sets. `builtAt` changes on every run: when it is the
 only diff, `git checkout -- public/data` instead of committing.
 
+## build-hashes.mjs
+
+Builds `public/data/hashes.json` (`HashFile` in `src/scanner/hash.ts`): one 128-bit perceptual hash per
+Pokémon card image, the artwork-matching table the binder-page scanner uses beside OCR. Every card with
+an image has its low-resolution TCGdex image (~245×337 WebP, ~16 KB) downloaded **once** into
+`scripts/.cache/images/pokemon/<id>.webp` (`$CARDCODEX_CACHE_DIR/images/pokemon/` when set) and hashed
+with the app's own `hashCard` (loaded through Vite, so Node and the browser run one implementation; a
+reference image hashed in the browser matches its table entry bit for bit). Downloads are limited to
+10 requests/s (`--rate`), 4 in flight (`--concurrency`), retried with backoff; 404s are remembered as
+`<id>.404`. Reruns skip everything cached and re-hash in a minute or two, so a changed hash spec never
+re-downloads, and an interrupted build resumes (the output is also rewritten every 2,000 cards).
+
+    npm run hashes                                   # ≈ 35 min for a cold cache (19.7k images, 10/s)
+    node scripts/build-hashes.mjs --first sv03.5,xy12  # these sets first (for early checks)
+    node scripts/build-hashes.mjs --limit 50           # smoke test
+
+The summary reports coverage (hashed / with image / catalog), download counts, image sizes and the file
+size. Expected: ~19.7k hashes (92.5 % of the catalog; the rest have no image on TCGdex), ~630 KB raw
+(32 bytes per card), ~355 KB gzip. `builtAt` changes on every run: when it is the only diff,
+`git checkout -- public/data/hashes.json`. `scripts/fixtures/cards/` keeps two of the reference images for
+`src/scanner/hash.test.ts`, which checks that hashing them reproduces their table entries. Yu-Gi-Oh! is not hashed yet: YGOPRODeck allows one download
+per image, so the same script shape works (`cards_small/<passcode>.jpg`, 14.6k cards, ~25 min at 10/s)
+with the card's own 59×86 aspect; see `src/scanner/README.md`, "Artwork matching".
+
 ## scan-check.mjs
 
 Scanner reality check: the real Tesseract recognizer + parser + matcher from `src/scanner` (loaded
@@ -75,6 +99,24 @@ the photo and the median fit time; `--json` for the raw records.
 With a dev server already running (`npm run dev`) the page can be opened directly:
 `http://localhost:5173/scripts/grid-bench.html?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg`
 (files outside the repo as `/@fs/D:/path/photo.jpg`).
+
+## hash-bench.mjs + hash-bench.html
+
+Artwork-hash benchmark: for every pocket of the binder-page fixtures, how close the pocket's hash
+(`src/scanner/hash.ts`) comes to the expected card's entry in `public/data/hashes.json` and whether that
+entry is the nearest, run the way the app runs it (headless Chrome through the Vite dev server, like
+grid-bench). Per pocket the card is placed five ways — the grid cell as is, the card box the fitter
+measured, the padded crop tightened to the card's edges (`refineCardBox`), the coarse alignment search
+alone and the coarse-to-fine search the scanner uses (`matchPocket`) — and the summary counts, per
+placement, exact hits, same-artwork hits (another printing of the same picture, which no artwork hash
+can separate) and the median Hamming margin to the next different artwork / to the next card. The
+reference images of the expected cards are also hashed in the browser (TCGdex allows CORS) to check
+that the browser's hash equals the Node-built entry and to measure how fast the distance grows when the
+reference is shifted or scaled. Baselines: `src/scanner/README.md`, "Artwork matching".
+
+    node scripts/hash-bench.mjs                  # the three fixtures
+    node scripts/hash-bench.mjs --no-refs        # offline: skip the reference-image checks
+    node scripts/hash-bench.mjs --json           # raw records
 
 ## emu.py
 
