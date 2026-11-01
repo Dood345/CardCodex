@@ -1356,16 +1356,22 @@ textarea:focus {
   width: 24px;
   height: 24px;
 }
-/* "Last added" bar in single-card mode: fix the count right after adding. */
+/* "Last added" bar in single-card mode: floats over the bottom of the camera view so the count can be fixed right after adding. */
 .scan-last {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--ok) 14%, var(--bg-card));
-  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
-  animation: rise 0.15s ease-out;
+  background: color-mix(in srgb, var(--ok) 18%, var(--bg-elev));
+  border: 1px solid color-mix(in srgb, var(--ok) 55%, var(--border));
+  color: var(--fg);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
 }
 .scan-last img {
   width: 32px;

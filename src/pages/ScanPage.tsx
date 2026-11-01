@@ -502,10 +502,10 @@ export default function ScanPage() {
             </button>
           </span>
         </div>
+        {lastAddedBar}
       </div>
 
       <div className="scan-bottom">
-        {lastAddedBar}
         {!still && scanner.status === 'error' && (
           <div className="hint">
             {scanner.error}. Try{' '}
