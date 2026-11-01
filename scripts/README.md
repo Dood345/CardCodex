@@ -41,3 +41,64 @@ and stored, which the app does per device (`src/data/imageCache.ts`).
     node scripts/build-ygo-catalog.mjs --no-cache  # re-download
 
 Expected size: ~3.6 MB (~0.8 MB gzip) for ~14.6k cards and ~38.7k printings.
+
+Both builders reuse the raw downloads in `scripts/.cache/` (gitignored); pass `--no-cache` (as
+`npm run catalog -- --no-cache`) to pick up new sets. `builtAt` changes on every run: when it is the
+only diff, `git checkout -- public/data` instead of committing.
+
+## scan-check.mjs
+
+Scanner reality check: the real Tesseract recognizer + parser + matcher from `src/scanner` (loaded
+through Vite's SSR module loader, no build) on 11 real card scans from TCGdex at two sizes, with a
+per-image result (`TOP-1`, `in alternatives`, `wrong`, `no match`) and a summary per group
+(`tuning` images the heuristics were fitted on, `held-out` ones that were not). Images are cached in
+`scripts/.cache/scan/`, the English model in `scripts/.cache/tess/`. Baselines: `src/scanner/README.md`,
+"Accuracy".
+
+    node scripts/scan-check.mjs [--high-only] [--verbose] [--psm N]
+
+## grid-bench.mjs + grid-bench.html
+
+Binder-page grid-fit benchmark: `fitGridOnSource` from `src/scanner/grid.ts` on the real 9-pocket
+photos in `scripts/fixtures/binder-pages/` (see its README for the expected cards and numbers),
+run the way the app runs it — in a browser. The script starts this repo's Vite dev server on a free
+port, opens `scripts/grid-bench.html` in a headless Chrome (Edge works too; `--chrome <exe>` or
+`CHROME_PATH`; `--disable-gpu`, own profile in `scripts/.cache/chrome-profile/`), the page decodes
+each photo with `createImageBitmap` (EXIF orientation applied), fits the grid and POSTs the results
+back. Output: one line per photo with pixels, fit yes/no, confidence, the page box as fractions of
+the photo and the median fit time; `--json` for the raw records.
+
+    node scripts/grid-bench.mjs                  # the two fixtures
+    node scripts/grid-bench.mjs --negatives      # + the local-only photos in scripts/.cache/scan-real/ (single cards must not fit)
+    node scripts/grid-bench.mjs --layout 3x3 --sample 320 --repeats 5 [photo …]
+
+With a dev server already running (`npm run dev`) the page can be opened directly:
+`http://localhost:5173/scripts/grid-bench.html?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg`
+(files outside the repo as `/@fs/D:/path/photo.jpg`).
+
+## emu.py
+
+Headless Android emulator helper (Python 3, built-ins only; run with `python -I`). Finds adb and
+the emulator in `ANDROID_HOME` / `%LOCALAPPDATA%\Android\Sdk`, targets `ANDROID_SERIAL` or the first
+`emulator-*` device, and calls adb directly, so Git Bash's path mangling of `/sdcard/...` never bites.
+
+    python -I scripts/emu.py start          # AVD "phidget" (CARDCODEX_AVD) headless: -no-window -no-audio -gpu swiftshader_indirect -camera-back emulated -camera-front emulated
+    python -I scripts/emu.py wait-boot      # until sys.boot_completed, then wake + dismiss keyguard
+    python -I scripts/emu.py devices
+    python -I scripts/emu.py install release/CardCodex-<ver>-x86_64-release.apk   # adb install -r; uninstalls first on a signature mismatch
+    python -I scripts/emu.py launch         # am start -W com.independent.cardcodex/.MainActivity
+    python -I scripts/emu.py list           # visible texts / content-descs with bounds (uiautomator dump, sees the WebView's DOM text)
+    python -I scripts/emu.py tap "Skip tour"
+    python -I scripts/emu.py shot [out.png] # default scripts/.cache/emu/shot-<time>.png
+    python -I scripts/emu.py logcat [--lines N] [--clear]   # the app's logcat by pid
+    python -I scripts/emu.py dbsize         # WebView IndexedDB size via run-as — debug APKs only (the Play Store image has no adb root)
+    python -I scripts/emu.py stop           # adb emu kill (falls back to taskkill after 40 s)
+
+The emulator's own output goes to `scripts/.cache/emu/emulator.log`.
+
+## Claude Code skills and agents
+
+The workflows above are wrapped as project skills in `.claude/skills/` (`emulator-qa`,
+`release-build`, `catalog-refresh`, `scanner-bench`) and two Sonnet-class subagents in
+`.claude/agents/` (`emulator-qa`, `scanner-bench`); see the "Working with Claude Code" section of
+the top-level README.

@@ -126,8 +126,9 @@ src/
 ├── ui/          hash router, shared components, SVG icons (nav + energy types)
 └── app/         catalog context, local settings
 public/data/     generated catalog (see scripts/)
-scripts/         catalog builder, scanner check script
+scripts/         catalog builders, scanner benchmarks, emulator helper (see scripts/README.md)
 android/         Capacitor Android project (generated, committed)
+.claude/         Claude Code skills and agents for the recurring workflows (see below)
 ```
 
 ## Android
@@ -179,6 +180,26 @@ npm run android:release
 ```
 
 `npm run android:debug` builds the debug-signed equivalents with the same names.
+
+## Working with Claude Code
+
+The repository ships project-level [Claude Code](https://claude.com/claude-code) skills and
+subagents for the routine work, so a short brief is enough and the heavy lifting can run on a
+cheaper model:
+
+| skill (`.claude/skills/`) | what it does |
+|---|---|
+| `emulator-qa` | boots the headless emulator (AVD `phidget`), installs an APK, launches the app, taps through it by visible text, screenshots, reads logcat, measures IndexedDB, shuts down — all via `scripts/emu.py` |
+| `release-build` | tests + typecheck with `pipefail`, `npm run android:release`, verifies a marker string in the APK's bundled JS, reports the APKs in `release/`; never touches signing files |
+| `catalog-refresh` | `npm run catalog` / `npm run catalog:ygo`, the `scripts/.cache` rules, what the summaries must show, how to tell a real change from a `builtAt`-only diff |
+| `scanner-bench` | `node scripts/scan-check.mjs` and `node scripts/grid-bench.mjs` with the recorded baselines |
+
+Agents (`.claude/agents/`): `emulator-qa` and `scanner-bench` run on a Sonnet-class model with
+Bash + read-only tools, preload their skill and report numbers, screenshots and log lines without
+changing code. Ask for them by name ("use the emulator-qa agent to smoke-test
+`release/CardCodex-1.1.1-x86_64-release.apk`") or invoke a skill with `/emulator-qa`, `/release-build`,
+`/catalog-refresh`, `/scanner-bench`. The skills assume this Windows machine's toolchain (Android
+SDK under `%LOCALAPPDATA%`, Chrome for the grid bench) and say what to do when something is missing.
 
 ## Credits and legal
 

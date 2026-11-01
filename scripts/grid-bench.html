@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>CardCodex grid bench</title>
+<!--
+  Runs the binder-page grid fitter (src/scanner/grid.ts, fitGridOnSource) on photos and
+  prints one JSON record per photo. Served by the Vite dev server, which compiles the TS:
+
+    npm run dev
+    http://localhost:5173/scripts/grid-bench.html
+      ?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg,/@fs/D:/elsewhere/page.jpg
+      &layout=3x3  &sample=320  &repeats=5  &report=/__grid-bench   (all optional)
+
+  `report` makes the page POST the JSON to that path when done (scripts/grid-bench.mjs
+  uses it to drive this page in a headless Chrome). Results are also in window.__gridBench.
+-->
+<style>
+  body { font: 13px/1.4 ui-monospace, Consolas, monospace; margin: 16px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>grid bench</h1>
+<pre id="out">running…</pre>
+<script type="module">
+  import { fitGridOnSource, GRID_SAMPLE_WIDTH } from '/src/scanner/grid.ts';
+  import { boxToFrac, DEFAULT_CARD_MM } from '/src/scanner/page.ts';
+
+  const q = new URLSearchParams(location.search);
+  const DEFAULT_IMAGES = ['scripts/fixtures/binder-pages/fold8-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket.jpg'];
+  const images = (q.get('imgs') || DEFAULT_IMAGES.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+  const [cols, rows] = (q.get('layout') || '3x3').split('x').map(Number);
+  const sampleWidth = Number(q.get('sample') || GRID_SAMPLE_WIDTH);
+  const repeats = Math.max(1, Number(q.get('repeats') || 5));
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+  const out = document.getElementById('out');
+  const results = [];
+
+  for (const image of images) {
+    const url = image.startsWith('/') || image.startsWith('http') ? image : '/' + image;
+    const rec = { image, layout: `${cols}x${rows}`, sampleWidth };
+    try {
+      const t0 = performance.now();
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      // createImageBitmap honours the EXIF orientation (like the app's photo path).
+      const bmp = await createImageBitmap(await res.blob());
+      rec.width = bmp.width;
+      rec.height = bmp.height;
+      rec.decodeMs = Math.round(performance.now() - t0);
+      const region = { x: 0, y: 0, w: bmp.width, h: bmp.height };
+      const times = [];
+      let fit = null;
+      for (let i = 0; i < repeats; i++) {
+        const t = performance.now();
+        fit = fitGridOnSource(bmp, region, { cols, rows }, { cardAspect: DEFAULT_CARD_MM.w / DEFAULT_CARD_MM.h, sampleWidth });
+        times.push(performance.now() - t);
+      }
+      times.sort((a, b) => a - b);
+      rec.fitMs = { min: r3(times[0]), median: r3(times[times.length >> 1]) };
+      if (fit) {
+        rec.fit = true;
+        rec.confidence = r3(fit.confidence);
+        rec.box = { x: Math.round(fit.box.x), y: Math.round(fit.box.y), w: Math.round(fit.box.w), h: Math.round(fit.box.h) };
+        const f = boxToFrac(fit.box, region);
+        rec.frac = { x: r3(f.x), y: r3(f.y), w: r3(f.w), h: r3(f.h) };
+        rec.cols = { confidence: r3(fit.cols.confidence), gap: r3(fit.cols.gap), size: r3(fit.cols.size) };
+        rec.rows = { confidence: r3(fit.rows.confidence), gap: r3(fit.rows.gap), size: r3(fit.rows.size) };
+      } else {
+        rec.fit = false;
+        rec.confidence = null;
+      }
+      bmp.close();
+    } catch (e) {
+      rec.error = String(e && e.message ? e.message : e);
+    }
+    results.push(rec);
+    out.textContent = JSON.stringify(results, null, 2);
+  }
+  window.__gridBench = results;
+  document.title = 'grid bench: done';
+  const report = q.get('report');
+  if (report) {
+    await fetch(report, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(results) });
+  }
+</script>
