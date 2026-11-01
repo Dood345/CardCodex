@@ -9,7 +9,9 @@
  * pixels-per-glyph as a single-card scan.
  */
 import type { CatalogCard, CatalogSet } from '../data/types';
+import { loadHashTable, mergeArtworkEvidence } from './artwork';
 import { refineCardBox } from './grid';
+import { matchPocket, samplePocketLuma, windowOf, type HashHit, type HashTable } from './hash';
 import type { TextRecognizer } from './recognizer';
 import type { Box, RecognizedLine, ScanAlternative, ScanCandidate, ScanMatcher } from './types';
 
@@ -162,6 +164,14 @@ export interface PocketScan {
   cardBox: Box;
   /** Frames the pocket was read from. */
   frames: number;
+  /**
+   * Nearest catalog hashes to the pocket's picture, best first (Hamming
+   * distance of 128 bits; ≤ 24 is a match), best over the frames. Absent when
+   * the game has no hash table or `artwork` was false.
+   */
+  artwork?: HashHit[];
+  /** Time spent sampling and matching the picture, ms (included in `ms`). */
+  hashMs?: number;
 }
 
 /** Anything drawImage accepts that also reports its pixel size (ImageBitmap, canvas, video). */
@@ -210,6 +220,13 @@ export interface ScanPageOptions {
   maxCropWidth?: number;
   /** Thumbnail width in the review grid. Default 240. */
   thumbWidth?: number;
+  /**
+   * Artwork matching (hash.ts, artwork.ts): the pocket's picture is hashed
+   * and the nearest catalog hashes are merged into the OCR candidates. Default
+   * (undefined): the game's table is loaded lazily on the first page
+   * (`loadHashTable`); `false` turns it off; a table uses that table.
+   */
+  artwork?: HashTable | false;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
   geometry?: PageGeometryOptions;
@@ -386,23 +403,40 @@ export async function scanPage(
   const frames: PageSource[] = [frame, ...(opts.extraFrames ?? [])];
   const card = opts.geometry?.cardMm ?? DEFAULT_CARD_MM;
   const aspect = card.w / card.h;
+  // Artwork evidence needs the table and a matcher that can name cards by id.
+  const lookup = matcher.lookup?.bind(matcher);
+  const table = opts.artwork === false || !lookup ? null : (opts.artwork ?? (await loadHashTable(matcher.game)));
   for (const pocket of pockets) {
     if (opts.signal?.aborted) break;
     const started = performance.now();
     const padded = padBox(pocket.box, pad, frame.width, frame.height);
     const cardBox = (refine && refineCardBox(frame, padded, aspect)) || padded;
     const perFrame: ScanCandidate[][] = [];
+    const artwork = new Map<string, HashHit>();
+    let hashMs = 0;
     let thumb = '';
     let lineCount = 0;
     for (const src of frames) {
       if (opts.signal?.aborted) break;
       const crop = cropPocket(src, cardBox, minWidth, maxWidth);
       if (!thumb) thumb = thumbnail(crop, opts.thumbWidth ?? THUMB_WIDTH);
+      // The picture: hashed from the padded cell (the card is searched around
+      // the cell, which the grid places within a pocket gap of it) and matched
+      // before the OCR, so a hit can spare the magnified strip read.
+      let hits: HashHit[] = [];
+      if (table && lookup) {
+        const t = performance.now();
+        hits = matchPocket(table, samplePocketLuma(src, padded), windowOf(pocket.box, padded), { k: 12 }).hits;
+        hashMs += performance.now() - t;
+        for (const h of hits) if (h.distance < (artwork.get(h.id)?.distance ?? Infinity)) artwork.set(h.id, h);
+      }
+      const region = { x: 0, y: 0, w: crop.width, h: crop.height };
+      const withArtwork = (cands: ScanCandidate[]) => (hits.length && lookup ? mergeArtworkEvidence(cands, hits, lookup, region) : cands);
       let lines: RecognizedLine[] = [];
       let cands: ScanCandidate[] = [];
       try {
         lines = await recognizer.recognize(crop);
-        cands = matcher.scanLines(lines);
+        cands = withArtwork(matcher.scanLines(lines));
         // The number line is what pins the printing: when the full read did
         // not settle it, read the bottom of the card again, magnified.
         if (strip && !cands[0]?.confident) {
@@ -410,11 +444,12 @@ export async function scanPage(
           const extra = stripLines(await recognizer.recognize(s.canvas), s.top, lines);
           if (extra.length) {
             lines = [...lines, ...extra];
-            cands = matcher.scanLines(lines);
+            cands = withArtwork(matcher.scanLines(lines));
           }
         }
       } catch (e) {
         console.warn('[scanner] pocket', pocket.index, 'recognition failed:', e);
+        if (!cands.length) cands = withArtwork([]);
       }
       lineCount = Math.max(lineCount, lines.length);
       perFrame.push(cands);
@@ -431,6 +466,7 @@ export async function scanPage(
       ms: performance.now() - started,
       cardBox,
       frames: perFrame.length,
+      ...(table ? { artwork: [...artwork.values()].sort((a, b) => a.distance - b.distance), hashMs } : {}),
     });
     opts.onProgress?.(results.length, pockets.length);
   }

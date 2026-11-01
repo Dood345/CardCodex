@@ -7,6 +7,8 @@ export type { RecognizerSource, TextRecognizer } from './recognizer';
 export type { TesseractOptions } from './tesseract';
 export { buildScanIndex, matchObservations, scanLines, findNames, printingsOf, createPokemonMatcher, type ScanIndex } from './match';
 export { createYgoMatcher } from './ygo/match';
+export { hashCard, matchPocket, nearestByHash, decodeHashFile, HASH_SPEC, type HashTable, type HashHit } from './hash';
+export { loadHashTable, mergeArtworkEvidence, ARTWORK_MATCH_BITS } from './artwork';
 export { parseLines, type ParseContext } from './parse';
 export { normalizeName, canonicalNum } from './ocr-normalize';
 export { startCamera, stopCamera, grabFrame, coverTransform, mapBox, unmapBox, visibleRegion, CameraError, type CoverTransform } from './camera';

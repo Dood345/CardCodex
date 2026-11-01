@@ -50,7 +50,10 @@ with Capacitor. Your collection lives only on your device.
   One tap adds the whole page; the grid can be adjusted and the same frame rescanned, and "Save
   capture" shares the frame with a report of what was read, for pages that scan badly. Each pocket
   is read with a margin, tightened to the card, and its number line read again magnified; on
-  Android two frames are captured and their reads merged.
+  Android two frames are captured and their reads merged. Each pocket's picture is also matched
+  against a table of perceptual hashes of every card's artwork (OCR-independent), so a card whose
+  small number line did not read is still identified by its picture, with the printings of that
+  picture offered as alternatives when the number did not settle it.
 - **Picks up where you left off** – leaving the Scan tab (to look something up) and coming back
   keeps the camera, the photo or the page review you had open; an interrupted page review even
   survives the app being killed. Live scanning shows a confidence bar that fills while successive

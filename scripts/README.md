@@ -118,6 +118,22 @@ reference is shifted or scaled. Baselines: `src/scanner/README.md`, "Artwork mat
     node scripts/hash-bench.mjs --no-refs        # offline: skip the reference-image checks
     node scripts/hash-bench.mjs --json           # raw records
 
+## page-bench.mjs + page-bench.html
+
+End-to-end binder-page benchmark: `scanPage` itself (Tesseract OCR + the magnified number strip +
+artwork hashes + the Pokémon matcher) on the fixture photos, headless Chrome through the Vite dev
+server like the other two. Per pocket it prints the candidate, whether it is the expected card (`✓`,
+`≈` = expected among the alternatives, `✗`) and whether it was called confident (`YES` right,
+`yes!` wrong); per photo and overall: exact, confident (right / wrong), expected among alternatives,
+page time and the share spent hashing; also how long the hash table took to load and roughly how much
+heap it holds. `--no-hash` is the OCR-only baseline. Tesseract runs in the page (WASM), so a run takes
+a few minutes. Baselines: `src/scanner/README.md`, "Artwork matching".
+
+    node scripts/page-bench.mjs                  # OCR + artwork (the shipped pipeline)
+    node scripts/page-bench.mjs --no-hash        # OCR only
+    node scripts/page-bench.mjs --no-strip       # without the number-strip re-read
+    node scripts/page-bench.mjs --json
+
 ## emu.py
 
 Headless Android emulator helper (Python 3, built-ins only; run with `python -I`). Finds adb and

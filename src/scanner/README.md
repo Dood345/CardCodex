@@ -16,6 +16,7 @@ device except the one-time Tesseract language-model download (see Engines).
 | `page.ts` | binder-page geometry and per-pocket scanning (any game's matcher) |
 | `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search) (pure) |
 | `hash.ts` | artwork matching: perceptual card hash (`hashCard`), the hash table (`public/data/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
+| `artwork.ts` | loads the hash table (`loadHashTable`) and merges a pocket's nearest hashes into the OCR candidates (`mergeArtworkEvidence`, pure) |
 | `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
 | `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
@@ -191,7 +192,13 @@ from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page of 6
 the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected, 5.2 s for the page.
 
 **Reading a pocket**: each cell is padded by 6% (`pad`) so a grid that is a little off cannot cut
-the collector number, cropped between 1000 and 1400 px wide and read. When that read does not
+the collector number, cropped between 1000 and 1400 px wide and read. Before the OCR the pocket's
+picture is hashed and matched against the catalog's artwork hashes (`matchPocket`, see "Artwork
+matching" below); the nearest hashes are merged into every OCR result of the pocket
+(`mergeArtworkEvidence`), so a picture match plus a read number is confident at once and skips the
+magnified strip, and a picture match alone shows up as an unsure candidate with that picture's
+printings as alternatives. `PocketScan.artwork` lists the nearest hashes, `hashMs` the time they
+took; `artwork: false` in the options turns the step off. When that read does not
 settle the printing, the bottom 15% of the card is read again at 2.5× (`numberStrip`): the number
 line is the smallest text on the card and the one that pins it down; its lines are added unless
 they repeat a line already read. Measured on the three fixture photos (27 pockets, Tesseract in
@@ -258,7 +265,8 @@ the whole table, then the 96 nearest cards get a fine pass over 1,183 alignments
 90–102 %).
 
 **Measured on the three fixture photos** (`node scripts/hash-bench.mjs`, 27 pockets, expected ids in
-`scripts/fixtures/binder-pages/README.md`; OCR alone gets 8 of these 27 printings right):
+`scripts/fixtures/binder-pages/README.md`; OCR alone got 8 of these 27 printings right in the earlier
+manual bench and 6 in `scripts/page-bench.mjs`):
 
 | placement of the card in the pocket | exact | same artwork | median distance to the expected card | median margin to the next artwork / next card |
 |---|---|---|---|---|
@@ -284,9 +292,38 @@ runtime's resampled path 0–4).
 The third miss is `base1-55` (Nidoran♂, Base Set), whose nearest entry is `lc-83`, the Legendary
 Collection reprint of the same picture (12 vs 18 bits): an artwork hash names the picture,
 and the printing has to come from the OCR'd set code or number, exactly the evidence OCR does read.
-That is the planned merge (not integrated yet): a hash hit ranks that picture's printings first; a
-read collector number or set code among them makes the pocket confident; a hit alone offers the
-printings as alternatives, newest first.
+
+**Merging with the OCR** (`artwork.ts`, `mergeArtworkEvidence`): every card named by either side is
+scored `min(1, OCR score + artworkBonus)`, where the bonus is 0.9 for an identical picture, 0.55 at
+the match limit of 24 bits and fades to 0 at 32, so a strong match outranks a name-only read (~0.45)
+on its own but not a clean number + total + name read (0.95–1). Hits within 6 bits of the best one are
+the same picture (reprints). The best card is confident when the picture matched (≤ 24) and the OCR
+read a number or set code for it — or its name, when the picture exists in one printing only — or
+when the OCR was already confident and the picture does not point at a different card. A match
+alone is an unsure candidate with the picture's printings as alternatives, newest first; a weak hit
+(25–32 bits) only adds alternatives. The hash evidence appears as `artwork N` (N = bits) in
+`evidence`. The table is loaded once per game by `loadHashTable` (Pokémon only; Yu-Gi-Oh! has none
+yet and runs on OCR alone) and the matcher resolves ids through `ScanMatcher.lookup`.
+
+**End to end** (`node scripts/page-bench.mjs`, scanPage with Tesseract on the same 27 pockets, the
+printing must be exact):
+
+| pipeline (Tesseract, number strip on) | exact | confident (right / wrong) | expected among alternatives | 3 pages |
+|---|---|---|---|---|
+| OCR only (`--no-hash`) | 6/27 | 2 (2 / 0) | 11 | 53.4 s |
+| **OCR + artwork** | **26/27** | **12 (12 / 0)** | 1 | 47.3 s, of which hashing 1.1 s |
+
+Per page with artwork: Fold 9/9 (4 confident), Pixel 9/9 (5), Pixel page B 8/9 (3). The one miss is
+the Nidoran♂ reprint again: the OCR read the name and HP but no number, so Base Set and Legendary
+Collection tie and the newer printing is shown with the other as the first alternative. Every pocket
+whose OCR read nothing usable (10 of 27) is now identified by its picture alone (`artwork 7`–`14`,
+unsure, printings as alternatives), the Butterfree holo by a weak hit (`artwork 27`); the glare-struck
+Wartortle on the Pixel page is right through name + a weak hit (26). Pages got faster because a
+confident hash + number read skips the magnified strip. Hashing cost 0.33–0.39 s per page
+(≈ 40 ms per pocket, full-resolution crops, headless Chrome with software rendering); the table
+loads in 40 ms and holds 307 KB of hash words plus the 19.7k id strings and their index, roughly
+1.7 MB of heap in all (the browser's `performance.memory` could not resolve the delta). Not yet
+timed on a phone.
 
 **Yu-Gi-Oh!** is not hashed yet. The same build-script shape works: YGOPRODeck allows each image to
 be downloaded once (`cards_small/<passcode>.jpg`, 168×245, 14.6k cards, ~25 min at 10 requests/s),
