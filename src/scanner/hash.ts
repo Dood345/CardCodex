@@ -7,10 +7,11 @@
  * function hashes a pocket crop and the nearest catalog hashes are the cards
  * whose artwork looks like the pocket's.
  *
- * The hash (`HASH_SPEC`): two 64-bit difference hashes of the greyscale image,
+ * The hash (one `HashSpec` per game): two 64-bit difference hashes of the
+ * greyscale image,
  *  - the whole card on a 9×8 grid (8 rows × 8 left<right comparisons), and
- *  - the artwork window (`ART_WINDOW`, the picture box printed on a regular
- *    card) on the same grid,
+ *  - the artwork window (the game's `HashSpec.art`, the picture box printed on
+ *    a regular card of that game) on the same grid,
  * 128 bits = 16 bytes per card. A dHash compares neighbouring cell means, so
  * global brightness, contrast and a smooth lighting gradient leave it alone,
  * and a few per cent of misalignment changes only a few bits (page.ts probes
@@ -24,8 +25,6 @@
 import { sampleRgba } from './grid';
 import type { Box } from './types';
 
-/** Identifies the hash layout; a table whose `spec` differs is not loaded. */
-export const HASH_SPEC = 'dhash-9x8-luma-card+art-v1';
 /** 32-bit words per hash. */
 export const HASH_WORDS = 4;
 export const HASH_BYTES = HASH_WORDS * 4;
@@ -49,6 +48,48 @@ export const CARD_WINDOW: HashWindow = { x: 0, y: 0, w: 1, h: 1 };
  * cards have no box; their whole-card hash still carries the picture.
  */
 export const ART_WINDOW: HashWindow = { x: 0.1, y: 0.12, w: 0.8, h: 0.35 };
+/**
+ * The picture box of a Yu-Gi-Oh! card, measured on YGOPRODeck renders
+ * (268×391): standard frames (monster, spell, trap, link, xyz) print a square
+ * picture at x 12–88 %, y 18–71 % of the card; the `*_pendulum` frames a
+ * wider one at x 6–94 %, y 17–76 %, with the pendulum scale box drawn over
+ * its bottom from ≈ 63 %. This window sits ≈ 1 % inside the standard box and
+ * inside the pendulum picture too (its bottom rows cover the scale box on
+ * those 391 cards, the same on the render and the card), so one window hashes
+ * every frame and a pocket needs no second set of probes.
+ */
+export const YGO_ART_WINDOW: HashWindow = { x: 0.13, y: 0.2, w: 0.74, h: 0.49 };
+
+/**
+ * The hash layout of one game's table: the artwork window and the card
+ * aspect the pocket crops are resampled with. `id` is written into the table
+ * file as `spec`; a file whose spec this code does not know is not loaded,
+ * and a change to a window is a new id (and a rebuilt table).
+ */
+export interface HashSpec {
+  id: string;
+  game: string;
+  /** Card width ÷ height (63×88 mm Pokémon, 59×86 mm Yu-Gi-Oh!). */
+  cardAspect: number;
+  /** The artwork window hashed into words 2–3, as fractions of the card. */
+  art: HashWindow;
+}
+
+export const POKEMON_HASH_SPEC: HashSpec = { id: 'dhash-9x8-luma-card+art-v1', game: 'pokemon', cardAspect: 63 / 88, art: ART_WINDOW };
+export const YGO_HASH_SPEC: HashSpec = { id: 'dhash-9x8-luma-card+art-ygo-v1', game: 'ygo', cardAspect: 59 / 86, art: YGO_ART_WINDOW };
+export const HASH_SPECS: readonly HashSpec[] = [POKEMON_HASH_SPEC, YGO_HASH_SPEC];
+/** The Pokémon spec id (the original, single-game table format). */
+export const HASH_SPEC = POKEMON_HASH_SPEC.id;
+
+/** The spec of a game's table, or undefined when the game has none. */
+export function hashSpecFor(game: string): HashSpec | undefined {
+  return HASH_SPECS.find((s) => s.game === game);
+}
+
+/** The spec a table file's `spec` field names, or undefined when this code does not know it. */
+export function hashSpecById(id: string): HashSpec | undefined {
+  return HASH_SPECS.find((s) => s.id === id);
+}
 
 /**
  * Summed-area table of the image's luma (Rec. 601), `(width+1) × (height+1)`,
@@ -147,28 +188,30 @@ export function subWindow(outer: HashWindow, inner: HashWindow): HashWindow {
 
 /**
  * The 128-bit hash of the card that fills `card` (fractions of the image):
- * words 0–1 the whole-card dHash, words 2–3 the dHash of `ART_WINDOW` inside
- * it. Hashing from the integral costs 144 lookups, so a pocket can be tried
- * at hundreds of alignments (`matchPocket`).
+ * words 0–1 the whole-card dHash, words 2–3 the dHash of the artwork window
+ * `art` (the game's `HashSpec.art`; default the Pokémon one) inside it.
+ * Hashing from the integral costs 144 lookups, so a pocket can be tried at
+ * hundreds of alignments (`matchPocket`).
  */
-export function hashCardIn(img: LumaImage, card: HashWindow = CARD_WINDOW): Uint32Array {
+export function hashCardIn(img: LumaImage, card: HashWindow = CARD_WINDOW, art: HashWindow = ART_WINDOW): Uint32Array {
   const { cols, rows } = HASH_GRID;
   const out = new Uint32Array(HASH_WORDS);
   const whole = dhashWords(cellMeans(img.integral, img.width, img.height, card, cols, rows), cols, rows);
-  const art = dhashWords(cellMeans(img.integral, img.width, img.height, subWindow(card, ART_WINDOW), cols, rows), cols, rows);
+  const artWords = dhashWords(cellMeans(img.integral, img.width, img.height, subWindow(card, art), cols, rows), cols, rows);
   out[0] = whole[0];
   out[1] = whole[1];
-  out[2] = art[0];
-  out[3] = art[1];
+  out[2] = artWords[0];
+  out[3] = artWords[1];
   return out;
 }
 
 /**
  * The hash of an RGBA image of a whole card (any size; the reference images
- * are ~245×337, pocket crops are resampled to about that).
+ * are ~245×337 or 268×391, pocket crops are resampled to about that), with
+ * the game's artwork window (default the Pokémon one).
  */
-export function hashCard(data: ArrayLike<number>, width: number, height: number): Uint32Array {
-  return hashCardIn(lumaImage(data, width, height));
+export function hashCard(data: ArrayLike<number>, width: number, height: number, art: HashWindow = ART_WINDOW): Uint32Array {
+  return hashCardIn(lumaImage(data, width, height), CARD_WINDOW, art);
 }
 
 export function popcount32(v: number): number {
@@ -200,19 +243,26 @@ export function hexToHash(hex: string): Uint32Array {
 
 /* ---------- the table ---------- */
 
-/** public/data/hashes.json. */
+/** public/data/hashes.json (Pokémon) and public/data/ygo/hashes.json. */
 export interface HashFile {
   version: number;
   builtAt: string;
   game: string;
+  /** `HashSpec.id` of the layout the hashes were built with. */
   spec: string;
-  /** Card ids in table order (catalog order; cards without an image are absent). */
+  /**
+   * Entry ids in table order (catalog order; cards without an image are
+   * absent): catalog card ids for Pokémon, passcodes (decimal strings) for
+   * Yu-Gi-Oh!, where every printing of a card shares the picture.
+   */
   ids: string[];
   /** base64 of `ids.length × HASH_BYTES` bytes: each hash's words big-endian, in order. */
   hashes: string;
 }
 
 export interface HashTable {
+  /** The layout the entries were hashed with: `matchPocket` probes a pocket with its artwork window. */
+  spec: HashSpec;
   ids: string[];
   /** `ids.length × HASH_WORDS` words. */
   words: Uint32Array;
@@ -245,18 +295,20 @@ export function decodeHashes(b64: string): Uint32Array {
   return words;
 }
 
-/** Builds the in-memory table; throws when the file's spec is not this code's. */
+/** Builds the in-memory table; throws when the file's spec is not one this code knows or is another game's. */
 export function decodeHashFile(file: HashFile): HashTable {
-  if (file.spec !== HASH_SPEC) throw new Error(`hash table spec ${file.spec} ≠ ${HASH_SPEC}`);
+  const spec = hashSpecById(file.spec);
+  if (!spec) throw new Error(`hash table spec ${file.spec} is not one of ${HASH_SPECS.map((s) => s.id).join(', ')}`);
+  if (file.game !== spec.game) throw new Error(`hash table for ${file.game} uses the ${spec.game} spec ${spec.id}`);
   const words = decodeHashes(file.hashes);
   if (words.length !== file.ids.length * HASH_WORDS) throw new Error(`hash table has ${words.length} words for ${file.ids.length} ids`);
-  return { ids: file.ids, words, indexOf: new Map(file.ids.map((id, i) => [id, i])) };
+  return { spec, ids: file.ids, words, indexOf: new Map(file.ids.map((id, i) => [id, i])) };
 }
 
-export function hashTableFrom(ids: string[], hashes: readonly Uint32Array[]): HashTable {
+export function hashTableFrom(ids: string[], hashes: readonly Uint32Array[], spec: HashSpec = POKEMON_HASH_SPEC): HashTable {
   const words = new Uint32Array(ids.length * HASH_WORDS);
   hashes.forEach((h, i) => words.set(h, i * HASH_WORDS));
-  return { ids, words, indexOf: new Map(ids.map((id, i) => [id, i])) };
+  return { spec, ids, words, indexOf: new Map(ids.map((id, i) => [id, i])) };
 }
 
 /**
@@ -375,17 +427,19 @@ export interface PocketMatch {
 
 /**
  * Where in `img` (a pocket crop, luma integral) the card nominally sits is
- * `nominal` (fractions of the image); the grid is a few per cent off, so the
- * card is searched around it coarse-to-fine: every table entry against the
- * coarse alignments, then the shortlist against the fine ones.
+ * `nominal` (fractions of the image, with the game's card aspect); the grid
+ * is a few per cent off, so the card is searched around it coarse-to-fine:
+ * every table entry against the coarse alignments, then the shortlist against
+ * the fine ones. Probes are hashed with the table's artwork window.
  */
 export function matchPocket(table: HashTable, img: LumaImage, nominal: HashWindow, opts: MatchPocketOptions = {}): PocketMatch {
   const k = opts.k ?? 8;
-  const coarse = alignmentProbes(nominal, opts.coarse ?? COARSE_PROBES).map((w) => hashCardIn(img, w));
+  const art = table.spec.art;
+  const coarse = alignmentProbes(nominal, opts.coarse ?? COARSE_PROBES).map((w) => hashCardIn(img, w, art));
   const distances = hashDistances(table, coarse);
   const shortlist = nearestByHash(table, coarse, opts.shortlist ?? SHORTLIST);
   if (shortlist.length) {
-    const fine = alignmentProbes(nominal, opts.fine ?? FINE_PROBES).map((w) => hashCardIn(img, w));
+    const fine = alignmentProbes(nominal, opts.fine ?? FINE_PROBES).map((w) => hashCardIn(img, w, art));
     for (const hit of shortlist) {
       let best = hit.distance;
       const o = hit.index * HASH_WORDS;
@@ -405,7 +459,7 @@ export function matchPocket(table: HashTable, img: LumaImage, nominal: HashWindo
 
 /* ---------- DOM helpers ---------- */
 
-/** Pocket regions are resampled to about the reference images' size (~245×337) before hashing. */
+/** Pocket regions are resampled to about the reference images' size (~245×337, 268×391) before hashing. */
 export const HASH_SAMPLE_WIDTH = 240;
 /** A padded pocket crop (cell + 6 % margin) is sampled this wide, so the card in it is ≈ 245 px like a reference image. */
 export const POCKET_SAMPLE_WIDTH = 272;
@@ -414,10 +468,11 @@ let hashCanvas: HTMLCanvasElement | null = null;
 
 /**
  * Hash of `box` (source px) of `source`, resampled to `sampleWidth` wide with
- * the card's aspect. `source` is anything drawImage accepts (ImageBitmap,
- * canvas, video, img).
+ * the card's aspect and hashed with the artwork window `art` (default the
+ * Pokémon one; pass the game's `HashSpec` values). `source` is anything
+ * drawImage accepts (ImageBitmap, canvas, video, img).
  */
-export function hashRegion(source: CanvasImageSource, box: Box, cardAspect = 63 / 88, sampleWidth = HASH_SAMPLE_WIDTH): Uint32Array {
+export function hashRegion(source: CanvasImageSource, box: Box, cardAspect = 63 / 88, sampleWidth = HASH_SAMPLE_WIDTH, art: HashWindow = ART_WINDOW): Uint32Array {
   const w = Math.max(HASH_GRID.cols, Math.round(sampleWidth));
   const h = Math.max(HASH_GRID.rows, Math.round(sampleWidth / cardAspect));
   hashCanvas ??= document.createElement('canvas');
@@ -429,7 +484,7 @@ export function hashRegion(source: CanvasImageSource, box: Box, cardAspect = 63 
   ctx.fillStyle = '#fff';
   ctx.fillRect(0, 0, w, h);
   ctx.drawImage(source, box.x, box.y, box.w, box.h, 0, 0, w, h);
-  return hashCard(ctx.getImageData(0, 0, w, h).data, w, h);
+  return hashCard(ctx.getImageData(0, 0, w, h).data, w, h, art);
 }
 
 /** `region` of `source` (source px) sampled `width` px wide as a luma integral, ready for `matchPocket`. */

@@ -123,6 +123,13 @@ export interface ScanMatcher {
    * binder-page scanner runs on OCR alone.
    */
   lookup?(cardId: string): { card: CatalogCard; set: CatalogSet } | undefined;
+  /**
+   * The card ids whose picture a hash-table entry names. The Pokémon table is
+   * keyed by card id (one card per entry, so this is absent); the Yu-Gi-Oh!
+   * table by passcode, which every printing of the card shares, so a hit
+   * stands for all of them (`expandArtworkHits`, page.ts). Unknown id: [].
+   */
+  artworkCards?(hashId: string): string[];
 }
 
 /** One ranked alternative for a detected card (for tap-to-correct). */

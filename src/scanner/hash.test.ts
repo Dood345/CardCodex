@@ -7,8 +7,14 @@ import {
   HASH_BITS,
   HASH_GRID,
   HASH_SPEC,
+  HASH_SPECS,
   HASH_WORDS,
+  POKEMON_HASH_SPEC,
+  YGO_ART_WINDOW,
+  YGO_HASH_SPEC,
   alignmentProbes,
+  hashSpecById,
+  hashSpecFor,
   cellMeans,
   decodeHashFile,
   decodeHashes,
@@ -157,6 +163,98 @@ describe('hashCard', () => {
   });
 });
 
+describe('per-game hash specs', () => {
+  const W = 268;
+  const H = 391;
+
+  it('names one spec per game, the Pokémon one being the original table format', () => {
+    expect(hashSpecFor('pokemon')).toBe(POKEMON_HASH_SPEC);
+    expect(hashSpecFor('ygo')).toBe(YGO_HASH_SPEC);
+    expect(hashSpecFor('other')).toBeUndefined();
+    expect(POKEMON_HASH_SPEC.id).toBe(HASH_SPEC);
+    expect(POKEMON_HASH_SPEC.art).toEqual(ART_WINDOW);
+    expect(YGO_HASH_SPEC.art).toEqual(YGO_ART_WINDOW);
+    expect(YGO_HASH_SPEC.cardAspect).toBeCloseTo(59 / 86, 9);
+    expect(new Set(HASH_SPECS.map((s) => s.id)).size).toBe(HASH_SPECS.length);
+    for (const s of HASH_SPECS) expect(hashSpecById(s.id)).toBe(s);
+    expect(hashSpecById('dhash-9x8-luma-card+art-v0')).toBeUndefined();
+  });
+
+  it('keeps the artwork windows inside the card and the Yu-Gi-Oh! one inside the measured picture boxes', () => {
+    for (const s of HASH_SPECS) {
+      expect(s.art.x).toBeGreaterThanOrEqual(0);
+      expect(s.art.y).toBeGreaterThanOrEqual(0);
+      expect(s.art.x + s.art.w).toBeLessThanOrEqual(1);
+      expect(s.art.y + s.art.h).toBeLessThanOrEqual(1);
+    }
+    // Measured on YGOPRODeck renders: standard frames x 0.119–0.881, y 0.182–0.706; pendulum frames x 0.063–0.937, y 0.17–0.76.
+    const a = YGO_ART_WINDOW;
+    expect(a.x).toBeGreaterThanOrEqual(0.119);
+    expect(a.x + a.w).toBeLessThanOrEqual(0.881);
+    expect(a.y).toBeGreaterThanOrEqual(0.182);
+    expect(a.y + a.h).toBeLessThanOrEqual(0.706);
+  });
+
+  it('hashes the whole card the same for every spec and the artwork with the spec’s own window', () => {
+    const img = synthetic(W, H, 21);
+    const luma = lumaImage(img, W, H);
+    const pokemon = hashCard(img, W, H);
+    const ygo = hashCard(img, W, H, YGO_ART_WINDOW);
+    expect(hashToHex(hashCard(img, W, H, ART_WINDOW))).toBe(hashToHex(pokemon));
+    expect(hashToHex(hashCardIn(luma, CARD_WINDOW, YGO_ART_WINDOW))).toBe(hashToHex(ygo));
+    expect([ygo[0], ygo[1]]).toEqual([pokemon[0], pokemon[1]]);
+    expect(hammingDistance(ygo, pokemon)).toBeGreaterThan(8);
+    // The art words are the dHash of the window on its own.
+    const { cols, rows } = HASH_GRID;
+    const art = dhashWords(cellMeans(luma.integral, W, H, YGO_ART_WINDOW, cols, rows), cols, rows);
+    expect([ygo[2], ygo[3]]).toEqual(art);
+  });
+
+  it('decodes a table with the spec its file names and refuses a file whose game does not match', () => {
+    const b64 = encodeHashes(new Uint32Array(4).fill(1));
+    const ygo = decodeHashFile({ version: 1, builtAt: '', game: 'ygo', spec: YGO_HASH_SPEC.id, ids: ['46986414'], hashes: b64 });
+    expect(ygo.spec).toBe(YGO_HASH_SPEC);
+    const pokemon = decodeHashFile({ version: 1, builtAt: '', game: 'pokemon', spec: HASH_SPEC, ids: ['sv01-001'], hashes: b64 });
+    expect(pokemon.spec).toBe(POKEMON_HASH_SPEC);
+    expect(() => decodeHashFile({ version: 1, builtAt: '', game: 'ygo', spec: HASH_SPEC, ids: ['x'], hashes: b64 })).toThrow(/ygo/);
+    expect(() => decodeHashFile({ version: 1, builtAt: '', game: 'ygo', spec: 'dhash-9x8-luma-card+art-ygo-v0', ids: ['x'], hashes: b64 })).toThrow(/spec/);
+    expect(hashTableFrom(['a'], [new Uint32Array(4)]).spec).toBe(POKEMON_HASH_SPEC);
+    expect(hashTableFrom(['a'], [new Uint32Array(4)], YGO_HASH_SPEC).spec).toBe(YGO_HASH_SPEC);
+  });
+
+  it('matchPocket probes a pocket with the table’s own window', () => {
+    // Reference "cards" with the Yu-Gi-Oh! aspect, hashed with the Yu-Gi-Oh! window; the page below holds card 2.
+    const ids = Array.from({ length: 8 }, (_, i) => `${1000 + i}`);
+    const table = hashTableFrom(
+      ids,
+      ids.map((_, i) => hashCard(synthetic(W, H, 30 + i), W, H, YGO_ART_WINDOW)),
+      YGO_HASH_SPEC,
+    );
+    const pokemonTable = hashTableFrom(
+      ids,
+      ids.map((_, i) => hashCard(synthetic(W, H, 30 + i), W, H)),
+    );
+    const pad = 0.06;
+    const PW = Math.round(W * (1 + 2 * pad));
+    const PH = Math.round(H * (1 + 2 * pad));
+    const page = new Uint8ClampedArray(PW * PH * 4).fill(235);
+    const card = synthetic(W, H, 32);
+    const ox = Math.round(W * pad + 0.02 * W);
+    const oy = Math.round(H * pad - 0.01 * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let k = 0; k < 4; k++) page[((y + oy) * PW + x + ox) * 4 + k] = card[(y * W + x) * 4 + k];
+    const luma = lumaImage(page, PW, PH);
+    const nominal = { x: pad / (1 + 2 * pad), y: pad / (1 + 2 * pad), w: 1 / (1 + 2 * pad), h: 1 / (1 + 2 * pad) };
+    const m = matchPocket(table, luma, nominal, { k: 2 });
+    expect(m.hits[0].id).toBe('1002');
+    expect(m.hits[0].distance).toBeLessThanOrEqual(10);
+    expect(m.hits[1].distance - m.hits[0].distance).toBeGreaterThanOrEqual(10);
+    // The same pocket against a table built with the Pokémon window still finds the card (the probes follow the table).
+    const p = matchPocket(pokemonTable, luma, nominal, { k: 1 });
+    expect(p.hits[0].id).toBe('1002');
+    expect(p.hits[0].distance).toBeLessThanOrEqual(10);
+  });
+});
+
 describe('popcount32 / hammingDistance', () => {
   it('counts bits', () => {
     expect(popcount32(0)).toBe(0);
@@ -295,6 +393,58 @@ describe('alignmentProbes', () => {
       expect(Math.abs(p.y + p.h / 2 - 410)).toBeLessThanOrEqual(12.6 + 1e-9);
     }
     expect(alignmentProbes(cell, { shifts: [0], scales: [1] })).toEqual([cell]);
+  });
+});
+
+describe('public/data/ygo/hashes.json', () => {
+  // The committed Yu-Gi-Oh! table: its own spec, one entry per passcode of the committed catalog
+  // (cards and their alternate artworks), in catalog order.
+  const root = new URL('../../', import.meta.url);
+  const tablePath = new URL('public/data/ygo/hashes.json', root);
+  const catalogPath = new URL('public/data/ygo/catalog.json', root);
+
+  it('is keyed by every passcode of the catalog, in order, with the Yu-Gi-Oh! spec', async () => {
+    const fs = await import('node:fs');
+    if (!fs.existsSync(tablePath)) return;
+    const file = JSON.parse(fs.readFileSync(tablePath, 'utf8')) as { version: number; builtAt: string; game: string; spec: string; ids: string[]; hashes: string };
+    expect(file.game).toBe('ygo');
+    expect(file.spec).toBe(YGO_HASH_SPEC.id);
+    const table = decodeHashFile(file);
+    expect(table.spec).toBe(YGO_HASH_SPEC);
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8')) as { cards: { pc: number; alt?: number[] }[] };
+    const passcodes = catalog.cards.flatMap((c) => [c.pc, ...(c.alt ?? [])]).map(String);
+    expect(table.ids).toEqual(passcodes.filter((pc) => table.indexOf.has(pc)));
+    // Every card has a render on YGOPRODeck: the table covers the whole catalog.
+    expect(table.ids.length).toBe(passcodes.length);
+    expect(table.indexOf.size).toBe(table.ids.length);
+  });
+
+  // No YGOPRODeck render is committed (their guide asks for a single stored download); when the
+  // build's cache holds these two (Dark Magician, an effect pendulum), hashing them with the
+  // Yu-Gi-Oh! window must reproduce what scripts/build-hashes.mjs wrote, and the table must agree.
+  const RENDERS: [string, string][] = [
+    ['46986414', 'cc334d975b4bb6c0a89406331b19d1d9'],
+    ['41546', '5e71d858c8ec9ae0d0d89894c8c88ec4'],
+  ];
+  it.each(RENDERS)('cached render %s hashes to its recorded value and matches the table', async (pc, hex) => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const cacheDir = process.env.CARDCODEX_CACHE_DIR ?? fileURLToPath(new URL('scripts/.cache', root));
+    const file = path.join(cacheDir, 'images', 'ygo', `${pc}.jpg`);
+    if (!fs.existsSync(file)) return;
+    const sharp = (await import('sharp')).default;
+    const { data, info } = await sharp(fs.readFileSync(file)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect([info.width, info.height]).toEqual([268, 391]);
+    const hash = hashCard(new Uint8ClampedArray(data.buffer, data.byteOffset, data.length), info.width, info.height, YGO_ART_WINDOW);
+    expect(hashToHex(hash)).toBe(hex);
+    // The Pokémon window gives another artwork hash of the same render: the spec is what the file names.
+    expect(hashToHex(hashCard(new Uint8ClampedArray(data.buffer, data.byteOffset, data.length), info.width, info.height))).not.toBe(hex);
+    if (fs.existsSync(tablePath)) {
+      const table = decodeHashFile(JSON.parse(fs.readFileSync(tablePath, 'utf8')));
+      const i = table.indexOf.get(pc);
+      if (i !== undefined) expect(hashToHex(table.words, i * HASH_WORDS)).toBe(hex);
+    }
   });
 });
 

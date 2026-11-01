@@ -1,28 +1,35 @@
 #!/usr/bin/env node
 /**
- * Artwork-hash benchmark on the binder-page fixtures: for every pocket of every photo in
- * scripts/fixtures/binder-pages/, how close the pocket's hash (src/scanner/hash.ts) comes to the
- * expected card's entry in public/data/hashes.json, and whether that entry is the nearest.
+ * Artwork-hash benchmark on binder pages: for every pocket of every photo, how close the pocket's
+ * hash (src/scanner/hash.ts) comes to the expected card's entry in the game's hash table, and
+ * whether that entry is the nearest. Pokémon runs on the real photos in scripts/fixtures/binder-pages/;
+ * Yu-Gi-Oh! (no real photos yet) on the synthetic page scripts/synth-page.mjs composes from the
+ * cached YGOPRODeck renders (generated on first use into scripts/.cache/synth-pages/).
  *
- *   node scripts/hash-bench.mjs                   # the three fixtures
+ *   node scripts/hash-bench.mjs                   # Pokémon, the three fixtures
+ *   node scripts/hash-bench.mjs --game ygo        # Yu-Gi-Oh!, the synthetic 3×3 page (expected ids from its .json sidecar)
+ *   node scripts/hash-bench.mjs --game ygo photo.jpg   # a photo of your own; expected ids from photo.json beside it, if any
  *   node scripts/hash-bench.mjs --json            # raw records
- *   node scripts/hash-bench.mjs --no-refs         # skip the reference-image checks (needs the network)
+ *   node scripts/hash-bench.mjs --no-refs         # skip the reference-image checks (Pokémon: needs the network)
  *   node scripts/hash-bench.mjs --chrome <exe>    # or CHROME_PATH
  *
  * Runs scripts/hash-bench.html in a headless Chrome through this repo's Vite dev server, like
  * scripts/grid-bench.mjs. Per pocket the card is placed five ways (cell · fit · refine · coarse ·
  * fine, see the HTML; `fine` is what the scanner does); the table at the end counts, per placement, pockets whose nearest hash is the
  * expected card (`exact`), the expected artwork in another printing (`name`), and the median
- * margin to the next different artwork. Expected cards: scripts/fixtures/binder-pages/README.md.
+ * margin to the next different artwork. Expected cards: scripts/fixtures/binder-pages/README.md;
+ * for Yu-Gi-Oh! the ids are passcodes (the table's keys).
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { synthPage } from './synth-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = path.join(root, 'scripts', 'fixtures', 'binder-pages');
+const CACHE = path.resolve(process.env.CARDCODEX_CACHE_DIR || path.join(root, 'scripts', '.cache'));
 
 /** Row-major catalog ids per fixture photo (mirrors the fixtures README). */
 const EXPECTED = {
@@ -46,6 +53,7 @@ const flag = (name) => {
   return true;
 };
 const chromeOpt = opt('--chrome', process.env.CHROME_PATH);
+const game = opt('--game', 'pokemon');
 const layout = opt('--layout', '3x3');
 const jsonOnly = flag('--json');
 const noRefs = flag('--no-refs');
@@ -53,15 +61,46 @@ if (flag('--help') || flag('-h')) {
   console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^\/\*\*\n|^ \* ?/gm, ''));
   process.exit(0);
 }
+if (game !== 'pokemon' && game !== 'ygo') {
+  console.error(`unknown game ${game}: --game pokemon | ygo`);
+  process.exit(2);
+}
+const hashesFile = path.join(root, 'public', 'data', game === 'ygo' ? path.join('ygo', 'hashes.json') : 'hashes.json');
+if (!fs.existsSync(hashesFile)) {
+  console.error(`${path.relative(root, hashesFile)} missing: run \`npm run hashes${game === 'ygo' ? ':ygo' : ''}\` first`);
+  process.exit(2);
+}
 let photos = args.map((p) => path.resolve(root, p));
-if (!photos.length) photos = Object.keys(EXPECTED).map((f) => path.join(FIXTURES, f));
+if (!photos.length) {
+  if (game === 'ygo') {
+    // The synthetic page from the cached renders (scripts/synth-page.mjs), made on first use.
+    const page = path.join(CACHE, 'synth-pages', `ygo-${layout}.jpg`);
+    if (!fs.existsSync(page)) {
+      const [cols, rows] = layout.split('x').map(Number);
+      const { buffer, meta } = await synthPage({ game, cols, rows, cacheDir: CACHE });
+      fs.mkdirSync(path.dirname(page), { recursive: true });
+      fs.writeFileSync(page, buffer);
+      fs.writeFileSync(page.replace(/\.jpg$/, '.json'), JSON.stringify(meta, null, 2) + '\n');
+      if (!jsonOnly) console.log(`made ${path.relative(root, page)} (${meta.width}×${meta.height})`);
+    }
+    photos = [page];
+  } else {
+    photos = Object.keys(EXPECTED).map((f) => path.join(FIXTURES, f));
+  }
+}
 for (const p of photos) if (!fs.existsSync(p)) {
   console.error(`not found: ${p}`);
   process.exit(2);
 }
-if (!fs.existsSync(path.join(root, 'public', 'data', 'hashes.json'))) {
-  console.error('public/data/hashes.json missing: run `npm run hashes` first');
-  process.exit(2);
+// Expected ids per photo: the fixtures' list, or a `<photo>.json` sidecar with `ids` (row-major), as synth-page.mjs writes.
+for (const p of photos) {
+  const name = path.basename(p);
+  if (EXPECTED[name]) continue;
+  const sidecar = p.replace(/\.[^.]+$/, '') + '.json';
+  if (fs.existsSync(sidecar)) {
+    const meta = JSON.parse(fs.readFileSync(sidecar, 'utf8'));
+    if (Array.isArray(meta.ids)) EXPECTED[name] = meta.ids.map(String);
+  }
 }
 
 function findChrome() {
@@ -112,7 +151,9 @@ const reportPlugin = {
   },
 };
 
-const allow = [root, ...new Set(photos.map((p) => path.dirname(p)))];
+// Yu-Gi-Oh! reference images cannot be fetched cross-origin (no CORS on images.ygoprodeck.com): the cached renders are served by Vite.
+const renders = path.join(CACHE, 'images', 'ygo');
+const allow = [root, ...new Set(photos.map((p) => path.dirname(p))), ...(game === 'ygo' ? [renders] : [])];
 const server = await createServer({
   configFile: path.join(root, 'vite.config.ts'),
   root,
@@ -125,8 +166,10 @@ const base = server.resolvedUrls.local[0];
 const query = new URLSearchParams({
   imgs: photos.map(servedPath).join(','),
   expected: JSON.stringify(EXPECTED),
+  game,
   layout,
   refs: noRefs ? '0' : '1',
+  refsBase: game === 'ygo' ? servedPath(renders) : '',
   report: '/__hash-bench',
 });
 const url = `${base}scripts/hash-bench.html?${query}`;
@@ -134,7 +177,7 @@ const url = `${base}scripts/hash-bench.html?${query}`;
 const chrome = findChrome();
 const profile = path.join(root, 'scripts', '.cache', 'chrome-profile');
 fs.mkdirSync(profile, { recursive: true });
-if (!jsonOnly) console.log(`vite ${base} · ${path.basename(chrome)} headless · ${photos.length} photo(s), layout ${layout}`);
+if (!jsonOnly) console.log(`vite ${base} · ${path.basename(chrome)} headless · ${game} · ${photos.length} photo(s), layout ${layout}`);
 const proc = spawn(
   chrome,
   ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--mute-audio', `--user-data-dir=${profile}`, '--window-size=1280,900', url],
@@ -161,7 +204,8 @@ const median = (xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length ? s[s.length >> 1] : NaN;
 };
-console.log(`table: ${results.table.ids} hashes (${results.table.spec}, built ${results.table.builtAt}); ${results.bits} bits, pockets resampled to ${results.sampleWidth} px wide\n`);
+const art = results.table.art;
+console.log(`table: ${results.table.ids} hashes (${results.table.spec}, built ${results.table.builtAt}); ${results.bits} bits, card aspect ${results.table.aspect}, artwork window x ${art.x}–${Math.round((art.x + art.w) * 1000) / 1000} y ${art.y}–${Math.round((art.y + art.h) * 1000) / 1000}, pockets resampled to ${results.sampleWidth} px wide\n`);
 const totals = Object.fromEntries(VARIANTS.map((v) => [v, { n: 0, exact: 0, name: 0, inTable: 0, margins: [], marginsNext: [], dExp: [], ms: [] }]));
 for (const img of results.images) {
   const name = path.basename(img.image);
@@ -186,7 +230,7 @@ for (const img of results.images) {
         return `${(ex?.inTable ? `${ex.d}/${ex.rank}` : '-').padStart(7)}${r.exact ? '✓' : r.sameName ? '≈' : ' '} `;
       })
       .join('  ');
-    console.log(`  ${p.index}  ${(p.expected ?? '-').padEnd(13)} ${mark} ${top} ${dExp}  ${String(s.margin ?? '-').padStart(5)} ${String(s.marginNext ?? '-').padStart(4)} ${String(p.matchMs).padStart(4)} | ${other}`);
+    console.log(`  ${p.index}  ${(p.expected ?? '-').padEnd(13)} ${mark} ${top} ${dExp}  ${String(s.margin ?? '-').padStart(5)} ${String(s.marginNext ?? '-').padStart(4)} ${String(p.matchMs).padStart(4)} | ${other}${p.expectedName ? `  ${p.expectedName}` : ''}`);
     for (const v of VARIANTS) {
       const r = p.variants[v];
       if (!r || !p.expected) continue;
@@ -224,5 +268,5 @@ if (results.refs) {
     console.log(`  ${r.id.padEnd(13)} native d=${r.native.d}  resampled d=${r.resampled.d}  shift ${sh}  scale ${sc}`);
   }
 }
-console.log('\nJSON: node scripts/hash-bench.mjs --json; expected cards: scripts/fixtures/binder-pages/README.md');
+console.log(`\nJSON: node scripts/hash-bench.mjs --game ${game} --json; expected cards: ${game === 'ygo' ? 'the .json sidecar of each page (scripts/synth-page.mjs)' : 'scripts/fixtures/binder-pages/README.md'}`);
 process.exit(results.images.some((r) => r.error) ? 1 : 0);

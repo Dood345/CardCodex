@@ -48,9 +48,9 @@ only diff, `git checkout -- public/data` instead of committing (that restores th
 
 ## data-manifest.mjs
 
-Writes `public/data/manifest.json`: for each of `catalog.json`, `species.json`, `ygo/catalog.json`
-and `hashes.json` the first 12 hex digits of its SHA-256 (`hash`), its size (`bytes`) and its
-`builtAt`. The catalog builders and `build-hashes.mjs` call it after writing their files; the deployed web app fetches it with `no-cache` on every start and
+Writes `public/data/manifest.json`: for each of `catalog.json`, `species.json`, `ygo/catalog.json`,
+`hashes.json` and `ygo/hashes.json` the first 12 hex digits of its SHA-256 (`hash`), its size (`bytes`)
+and its `builtAt`. The catalog builders and `build-hashes.mjs` call it after writing their files; the deployed web app fetches it with `no-cache` on every start and
 requests the catalogs as `catalog.json?v=<hash>` with `force-cache`, so a rebuilt catalog is a new URL
 (downloaded once) and an unchanged one never is (see `src/data/manifest.ts`). It has no timestamp of
 its own, so regenerating it without data changes produces no diff.
@@ -62,27 +62,40 @@ its own, so regenerating it without data changes produces no diff.
 
 ## build-hashes.mjs
 
-Builds `public/data/hashes.json` (`HashFile` in `src/scanner/hash.ts`): one 128-bit perceptual hash per
-Pokémon card image, the artwork-matching table the binder-page scanner uses beside OCR. Every card with
-an image has its low-resolution TCGdex image (~245×337 WebP, ~16 KB) downloaded **once** into
-`scripts/.cache/images/pokemon/<id>.webp` (`$CARDCODEX_CACHE_DIR/images/pokemon/` when set) and hashed
-with the app's own `hashCard` (loaded through Vite, so Node and the browser run one implementation; a
-reference image hashed in the browser matches its table entry bit for bit). Downloads are limited to
-10 requests/s (`--rate`), 4 in flight (`--concurrency`), retried with backoff; 404s are remembered as
-`<id>.404`. Reruns skip everything cached and re-hash in a minute or two, so a changed hash spec never
-re-downloads, and an interrupted build resumes (the output is also rewritten every 2,000 cards).
+Builds a game's artwork hash table (`HashFile` in `src/scanner/hash.ts`): one 128-bit perceptual hash
+per card image, the artwork-matching table the binder-page scanner uses beside OCR.
 
-    npm run hashes                                   # ≈ 35 min for a cold cache (19.7k images, 10/s)
-    node scripts/build-hashes.mjs --first sv03.5,xy12  # these sets first (for early checks)
+- **Pokémon** (`npm run hashes`) → `public/data/hashes.json`, keyed by card id. Every card with an image
+  has its low-resolution TCGdex image (~245×337 WebP, ~16 KB) downloaded **once** into
+  `scripts/.cache/images/pokemon/<id>.webp` (`$CARDCODEX_CACHE_DIR/images/pokemon/` when set).
+- **Yu-Gi-Oh!** (`npm run hashes:ygo`, i.e. `--game ygo`) → `public/data/ygo/hashes.json`, keyed by
+  **passcode**: every printing of a card shares the picture, and an alternate artwork is its own passcode
+  (and entry). Every card's YGOPRODeck small render (`cards_small/<passcode>.jpg`, 268×391, ~28 KB) is
+  downloaded once into `images/ygo/<passcode>.jpg`, as their guide asks (fetched once and stored, never
+  hotlinked); the renders are replicas without set code or passcode printed, which the picture does not
+  need.
+
+Both are hashed with the app's own `hashCard` (loaded through Vite, so Node and the browser run one
+implementation; a reference image hashed in the browser matches its table entry bit for bit) and the
+game's `HashSpec` (card aspect and artwork window; a Yu-Gi-Oh! table never changes a Pokémon hash).
+Downloads are limited to 10 requests/s (`--rate`), 4 in flight (`--concurrency`), retried with backoff;
+404s are remembered as `<file>.404`. Reruns skip everything cached and re-hash in a minute or two, so a
+changed hash spec never re-downloads, and an interrupted build resumes (the output is also rewritten
+every 2,000 cards).
+
+    npm run hashes                                   # Pokémon: ≈ 35 min for a cold cache (19.7k images, 10/s)
+    npm run hashes:ygo                               # Yu-Gi-Oh!: ≈ 25 min for a cold cache (14.8k renders, 10/s)
+    node scripts/build-hashes.mjs --first sv03.5,xy12  # these sets first (for early checks); --game ygo --first effect_pendulum: these frames first
     node scripts/build-hashes.mjs --limit 50           # smoke test
 
 The summary reports coverage (hashed / with image / catalog), download counts, image sizes and the file
-size. Expected: ~19.7k hashes (92.5 % of the catalog; the rest have no image on TCGdex), ~630 KB raw
-(32 bytes per card), ~355 KB gzip. `builtAt` changes on every run: when it is the only diff,
-`git checkout -- public/data/hashes.json`. `scripts/fixtures/cards/` keeps two of the reference images for
-`src/scanner/hash.test.ts`, which checks that hashing them reproduces their table entries. Yu-Gi-Oh! is not hashed yet: YGOPRODeck allows one download
-per image, so the same script shape works (`cards_small/<passcode>.jpg`, 14.6k cards, ~25 min at 10/s)
-with the card's own 59×86 aspect; see `src/scanner/README.md`, "Artwork matching".
+size. Expected: Pokémon ~19.7k hashes (92.5 % of the catalog; the rest have no image on TCGdex), ~630 KB
+raw (32 bytes per card), ~355 KB gzip; Yu-Gi-Oh! 14,825 hashes (14,653 cards + 172 alternate artworks,
+100 %), ~530 KB raw, ~310 KB gzip. `builtAt` changes on every run: when it is the only diff,
+`git checkout -- public/data`. `scripts/fixtures/cards/` keeps two of the Pokémon reference images for
+`src/scanner/hash.test.ts`, which checks that hashing them reproduces their table entries; the Yu-Gi-Oh!
+check uses the cached render of Dark Magician when it is present (no render is committed). Both tables
+feed `scripts/hash-separation.mjs` and the benches below; see `src/scanner/README.md`, "Artwork matching".
 
 ## scan-check.mjs
 
@@ -128,37 +141,74 @@ this page. Results are in `window.__guidanceBench`; `report=<path>` POSTs them.
 
 ## hash-bench.mjs + hash-bench.html
 
-Artwork-hash benchmark: for every pocket of the binder-page fixtures, how close the pocket's hash
-(`src/scanner/hash.ts`) comes to the expected card's entry in `public/data/hashes.json` and whether that
+Artwork-hash benchmark: for every pocket of a binder page, how close the pocket's hash
+(`src/scanner/hash.ts`) comes to the expected card's entry in the game's hash table and whether that
 entry is the nearest, run the way the app runs it (headless Chrome through the Vite dev server, like
-grid-bench). Per pocket the card is placed five ways — the grid cell as is, the card box the fitter
-measured, the padded crop tightened to the card's edges (`refineCardBox`), the coarse alignment search
-alone and the coarse-to-fine search the scanner uses (`matchPocket`) — and the summary counts, per
-placement, exact hits, same-artwork hits (another printing of the same picture, which no artwork hash
-can separate) and the median Hamming margin to the next different artwork / to the next card. The
-reference images of the expected cards are also hashed in the browser (TCGdex allows CORS) to check
-that the browser's hash equals the Node-built entry and to measure how fast the distance grows when the
-reference is shifted or scaled. Baselines: `src/scanner/README.md`, "Artwork matching".
+grid-bench). Pokémon runs on the three fixture photos; Yu-Gi-Oh! (`--game ygo`), which has no real
+photos yet, on the synthetic page `synth-page.mjs` composes from the cached renders (made on first use;
+pass your own photo with a `.json` sidecar of `ids` for a real one). Per pocket the card is placed
+five ways — the grid cell as is, the card box the fitter measured, the padded crop tightened to the
+card's edges (`refineCardBox`), the coarse alignment search alone and the coarse-to-fine search the
+scanner uses (`matchPocket`) — with the table's own card aspect and artwork window, and the summary
+counts, per placement, exact hits, same-name hits (Pokémon: another printing of the same picture,
+which no artwork hash can separate; Yu-Gi-Oh!: an alternate artwork of the same card) and the median
+Hamming margin to the next different name / to the next entry. The reference images of the expected
+cards are also hashed in the browser (TCGdex allows CORS; the YGOPRODeck renders are served from the
+cache by Vite, as `images.ygoprodeck.com` sends no CORS headers) to check that the browser's hash
+equals the Node-built entry and to measure how fast the distance grows when the reference is shifted
+or scaled. Baselines: `src/scanner/README.md`, "Artwork matching".
 
-    node scripts/hash-bench.mjs                  # the three fixtures
+    node scripts/hash-bench.mjs                  # Pokémon, the three fixtures
+    node scripts/hash-bench.mjs --game ygo       # Yu-Gi-Oh!, the synthetic 3×3 page
     node scripts/hash-bench.mjs --no-refs        # offline: skip the reference-image checks
     node scripts/hash-bench.mjs --json           # raw records
 
 ## page-bench.mjs + page-bench.html
 
 End-to-end binder-page benchmark: `scanPage` itself (Tesseract OCR + the magnified number strip +
-artwork hashes + the Pokémon matcher) on the fixture photos, headless Chrome through the Vite dev
-server like the other two. Per pocket it prints the candidate, whether it is the expected card (`✓`,
-`≈` = expected among the alternatives, `✗`) and whether it was called confident (`YES` right,
-`yes!` wrong); per photo and overall: exact, confident (right / wrong), expected among alternatives,
-page time and the share spent hashing; also how long the hash table took to load and roughly how much
-heap it holds. `--no-hash` is the OCR-only baseline. Tesseract runs in the page (WASM), so a run takes
-a few minutes. Baselines: `src/scanner/README.md`, "Artwork matching".
+artwork hashes + the game's matcher) on binder pages, headless Chrome through the Vite dev server
+like the other two; Pokémon on the fixture photos, Yu-Gi-Oh! (`--game ygo`) on the synthetic page,
+where the expected ids are passcodes and any printing of one counts (a render carries no set code).
+Per pocket it prints the candidate, whether it is the expected card (`✓`, `≈` = expected among the
+alternatives, `✗`) and whether it was called confident (`YES` right, `yes!` wrong); per photo and
+overall: exact, confident (right / wrong), expected among alternatives, page time and the share spent
+hashing; also how long the hash table took to load and roughly how much heap it holds. `--no-hash` is
+the OCR-only baseline. Tesseract runs in the page (WASM), so a run takes a few minutes. Baselines:
+`src/scanner/README.md`, "Artwork matching".
 
     node scripts/page-bench.mjs                  # OCR + artwork (the shipped pipeline)
+    node scripts/page-bench.mjs --game ygo       # Yu-Gi-Oh! on the synthetic page
     node scripts/page-bench.mjs --no-hash        # OCR only
     node scripts/page-bench.mjs --no-strip       # without the number-strip re-read
     node scripts/page-bench.mjs --json
+
+## synth-page.mjs
+
+Synthetic binder page for the benches above while real photos are scarce: `cols × rows` cached
+reference images (Yu-Gi-Oh! renders from `images/ygo/`, Pokémon `low.webp` files from `images/pokemon/`)
+pasted on an off-white page with faint pocket seams, each with a seeded random shift (±2 % of the cell),
+scale (94–100 % of the card), Gaussian blur (0–1.2 px) and brightness (×0.9–1.05), a lighting gradient
+across the page and JPEG 85; a `.json` sidecar lists the `ids` row-major and every card's parameters.
+Written to `scripts/.cache/synth-pages/<game>-<layout>.jpg` (gitignored, like the renders it is made of).
+The default Yu-Gi-Oh! set mixes frames: effect, normal, link, xyz, spell, trap, effect pendulum,
+synchro and an alternate artwork. Exported as `synthPage(opts)` for the benches.
+
+    node scripts/synth-page.mjs --game ygo                       # the default nine cards
+    node scripts/synth-page.mjs --game ygo --ids 46986414,…       # your own nine passcodes (row-major)
+    node scripts/synth-page.mjs --game ygo --seed 2 --shift 0.03 --scale 0.08 --blur 2 --out page.jpg
+
+## hash-separation.mjs
+
+How well a hash table separates its own entries, in Node without a browser: for every entry the
+Hamming distance to its nearest and second-nearest other entry (all pairs, brute force; ~2 s for 20k
+entries), their distribution (percentiles, a histogram, how many entries have a neighbour within 8 … 32
+bits) and the pairs that collide within the scanner's match limit (24 bits), split into pairs that share
+a name or card (reprints, alternate artworks: expected) and pairs between different cards (pictures the
+scanner cannot tell apart). The numbers quoted in `src/scanner/README.md` come from here.
+
+    node scripts/hash-separation.mjs                 # Pokémon
+    node scripts/hash-separation.mjs --game ygo      # Yu-Gi-Oh!
+    node scripts/hash-separation.mjs --game ygo --limit 16 --show 50 [--json]
 
 ## emu.py
 

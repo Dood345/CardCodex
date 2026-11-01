@@ -18,7 +18,8 @@
     "android:open": "npx cap open android",
     "android:release": "node scripts/android-release.mjs",
     "android:debug": "node scripts/android-release.mjs --debug",
-    "hashes": "node scripts/build-hashes.mjs"
+    "hashes": "node scripts/build-hashes.mjs",
+    "hashes:ygo": "node scripts/build-hashes.mjs --game ygo"
   },
   "dependencies": {
     "@capacitor-mlkit/text-recognition": "^8.2.2",

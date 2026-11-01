@@ -7,9 +7,10 @@ import { describe, expect, it } from 'vitest';
 import { expandYgoCatalog } from '@/games/ygo/catalog';
 import { ygoFile } from '@/games/ygo/fixture.test-util';
 import type { RecognizedLine } from '../types';
-import { buildYgoScanIndex, scanYgoLines } from './match';
+import { buildYgoScanIndex, createYgoMatcher, scanYgoLines } from './match';
 
-const index = buildYgoScanIndex(expandYgoCatalog(ygoFile));
+const catalog = expandYgoCatalog(ygoFile);
+const index = buildYgoScanIndex(catalog);
 const ids = (r: ReturnType<typeof scanYgoLines>) => r.map((c) => c.card.id);
 
 const line = (text: string, x: number, y: number, w: number, h: number, confidence = 0.9): RecognizedLine => ({
@@ -93,6 +94,25 @@ describe('scanYgoLines', () => {
       ...card(0, 0, { name: 'Blue-Eyes White Dragon', code: 'SDK-001', passcode: '89631139' }),
     ];
     expect(ids(scanYgoLines(lines, index))).toEqual(['ygo:SDK-001', 'ygo:LOB-005']);
+  });
+
+  it('resolves artwork-table ids (passcodes) to printings, newest first, alternate arts included', () => {
+    const m = createYgoMatcher(catalog);
+    expect(m.game).toBe('ygo');
+    // Every printing of the passcode, newest set first.
+    expect(m.artworkCards!('89631139')).toEqual(['ygo:SDK-001', 'ygo:LOB-001', 'ygo:LOB-EN001']);
+    // An alternate artwork's passcode names the same card (and so the same printings).
+    expect(m.artworkCards!('89631140')).toEqual(['ygo:SDK-001', 'ygo:LOB-001', 'ygo:LOB-EN001']);
+    expect(m.artworkCards!('46986414')).toEqual(['ygo:LOB-005', 'ygo:PRM-EN001']);
+    expect(m.artworkCards!('12345678')).toEqual([]);
+    expect(m.artworkCards!('ygo:LOB-005')).toEqual([]);
+    // lookup: a printing id, or a passcode → its newest printing.
+    expect(m.lookup!('ygo:LOB-001')?.card.id).toBe('ygo:LOB-001');
+    expect(m.lookup!('ygo:LOB-001')?.set.id).toBe('lob');
+    expect(m.lookup!('89631139')?.card.id).toBe('ygo:SDK-001');
+    expect(m.lookup!('89631140')?.card.id).toBe('ygo:SDK-001');
+    expect(m.lookup!('nope')).toBeUndefined();
+    expect(m.lookup!('12345678')).toBeUndefined();
   });
 
   it('returns nothing for noise and is deterministic', () => {
