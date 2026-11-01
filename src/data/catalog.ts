@@ -92,7 +92,19 @@ const REMEMBERED_MANIFEST_KEY = 'cardcodex.dataManifest';
  * Dev keeps `no-cache` on plain URLs so a rebuilt catalog shows on the next
  * reload; the Android build reads bundled assets (a new APK is a new catalog),
  * so it keeps `force-cache` on plain URLs. Neither fetches the manifest.
+ *
+ * The scanner's artwork hash table (public/data/hashes.json) is a data file
+ * like the catalogs and goes through the same path (`fetchDataJson`), so the
+ * manifest is resolved once per start and shared.
  */
+let manifestPromise: Promise<DataManifest | null> | undefined;
+
+/** The manifest for this start: fetched (or remembered) once, shared by every data file. */
+function dataManifest(): Promise<DataManifest | null> {
+  manifestPromise ??= loadManifest();
+  return manifestPromise;
+}
+
 async function loadManifest(): Promise<DataManifest | null> {
   if (!usesManifest({ dev: import.meta.env.DEV, native: isNative() })) return null;
   return resolveManifest({
@@ -137,9 +149,14 @@ async function fetchJson<T extends { builtAt?: string }>(file: string, manifest:
   return data;
 }
 
+/** Fetches a file under public/data at the version the manifest names (plain URL in dev / on Android). */
+export async function fetchDataJson<T extends { builtAt?: string }>(file: string): Promise<T> {
+  return fetchJson<T>(file, await dataManifest());
+}
+
 /** Fetches a game's catalog JSON and builds the index. */
 export async function loadCatalog(game: GameId = 'pokemon'): Promise<CatalogIndex> {
-  const manifest = await loadManifest();
+  const manifest = await dataManifest();
   if (game === 'ygo') {
     const file = await fetchJson<YgoCatalogFile>('ygo/catalog.json', manifest);
     return buildIndex(expandYgoCatalog(file), []);

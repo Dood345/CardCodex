@@ -21,6 +21,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import sharp from 'sharp';
+import { writeDataManifest } from './data-manifest.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -142,6 +143,9 @@ function writeOutput(final) {
   if (final) {
     const gz = zlib.gzipSync(text).length;
     console.log(`\n${path.relative(root, OUT)}: ${ids.length} hashes, ${text.length} bytes raw (${(text.length / Math.max(1, ids.length)).toFixed(1)} per card), ${gz} gzip`);
+    // Versions for the web app's cache busting (see scripts/data-manifest.mjs).
+    const manifest = writeDataManifest();
+    console.log(`Wrote public/data/manifest.json (hashes.json v=${manifest.files['hashes.json'].hash})`);
   }
 }
 

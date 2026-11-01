@@ -48,9 +48,9 @@ only diff, `git checkout -- public/data` instead of committing (that restores th
 
 ## data-manifest.mjs
 
-Writes `public/data/manifest.json`: for each of `catalog.json`, `species.json` and `ygo/catalog.json`
-the first 12 hex digits of its SHA-256 (`hash`), its size (`bytes`) and its `builtAt`. Both builders
-call it after writing their files; the deployed web app fetches it with `no-cache` on every start and
+Writes `public/data/manifest.json`: for each of `catalog.json`, `species.json`, `ygo/catalog.json`
+and `hashes.json` the first 12 hex digits of its SHA-256 (`hash`), its size (`bytes`) and its
+`builtAt`. The catalog builders and `build-hashes.mjs` call it after writing their files; the deployed web app fetches it with `no-cache` on every start and
 requests the catalogs as `catalog.json?v=<hash>` with `force-cache`, so a rebuilt catalog is a new URL
 (downloaded once) and an unchanged one never is (see `src/data/manifest.ts`). It has no timestamp of
 its own, so regenerating it without data changes produces no diff.

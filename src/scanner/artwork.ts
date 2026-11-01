@@ -14,6 +14,7 @@
  * 27), other cards at ≥ 26, unrelated cards ~64; printings of one picture
  * within ~6 bits of each other.
  */
+import { fetchDataJson } from '../data/catalog';
 import type { CatalogCard, CatalogSet } from '../data/types';
 import { decodeHashFile, type HashFile, type HashHit, type HashTable } from './hash';
 import type { Box, ScanAlternative, ScanCandidate } from './types';
@@ -149,8 +150,6 @@ export function mergeArtworkEvidence(ocr: readonly ScanCandidate[], hits: readon
 
 /* ---------- loading the table ---------- */
 
-const DATA_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/data`;
-
 /** The data file holding a game's hashes, or null when the game has none (Yu-Gi-Oh! is not hashed yet). */
 export function hashFileFor(game: string): string | null {
   return game === 'pokemon' ? 'hashes.json' : null;
@@ -163,12 +162,10 @@ const tables = new Map<string, Promise<HashTable | null>>();
  * null when the game has no table or the file is missing or stale (a spec
  * mismatch is logged, and the scanner just runs without artwork evidence).
  *
- * MERGE NOTE (branch claude/catalog-cache-freshness): the catalogs are fetched
- * there through `fetchJson(file, manifest)` in src/data/catalog.ts, whose URL
- * carries `?v=<sha256 prefix>` from public/data/manifest.json so the web build
- * can keep `force-cache`. This fetch should go through the same helper, and
- * `hashes.json` needs an entry in the manifest (scripts/data-manifest.mjs) —
- * a one-line change here once both branches are on main.
+ * The file is fetched like the catalogs (`fetchDataJson` in src/data/catalog.ts):
+ * on the web as `hashes.json?v=<hash>` from public/data/manifest.json with
+ * `force-cache`, so a 630 KB table that has not changed is never downloaded
+ * twice and a rebuilt one is a new URL. `npm run hashes` rewrites the manifest.
  */
 export function loadHashTable(game: string): Promise<HashTable | null> {
   const file = hashFileFor(game);
@@ -177,14 +174,9 @@ export function loadHashTable(game: string): Promise<HashTable | null> {
   if (!p) {
     p = (async () => {
       try {
-        const res = await fetch(`${DATA_BASE}/${file}`, { cache: import.meta.env.DEV ? 'no-cache' : 'force-cache' });
-        if (!res.ok) {
-          console.warn(`[scanner] no artwork hash table for ${game}: HTTP ${res.status}`);
-          return null;
-        }
-        return decodeHashFile((await res.json()) as HashFile);
+        return decodeHashFile(await fetchDataJson<HashFile>(file));
       } catch (e) {
-        console.warn(`[scanner] artwork hash table for ${game} unusable:`, e);
+        console.warn(`[scanner] artwork hash table for ${game} unavailable:`, e);
         return null;
       }
     })();

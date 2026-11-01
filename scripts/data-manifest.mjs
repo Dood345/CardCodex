@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Writes public/data/manifest.json: the content hash, byte size and builtAt of
-// every catalog file the app loads. Both catalog builders call writeDataManifest()
-// after writing their JSON; run this file on its own to regenerate the manifest
+// every data file the app loads (the catalogs and the artwork hash table). The
+// catalog builders and build-hashes.mjs call writeDataManifest() after writing; run this file on its own to regenerate the manifest
 // from whatever is in public/data (for example after restoring a catalog with git).
 //
 // Why: the deployed web app fetches the multi-megabyte catalogs with
@@ -23,8 +23,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const DATA_DIR = path.join(ROOT, 'public', 'data');
 export const MANIFEST = path.join(DATA_DIR, 'manifest.json');
 
-/** Catalog files relative to public/data, in the order they are listed. */
-export const DATA_FILES = ['catalog.json', 'species.json', 'ygo/catalog.json'];
+/** Data files relative to public/data, in the order they are listed. */
+export const DATA_FILES = ['catalog.json', 'species.json', 'ygo/catalog.json', 'hashes.json'];
 
 /** Manifest schema version (the app ignores manifests it does not understand). */
 export const MANIFEST_VERSION = 1;
