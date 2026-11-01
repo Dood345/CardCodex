@@ -29,6 +29,7 @@ export function PageGuide({
   layout,
   state,
   label,
+  warn,
   onChange,
 }: {
   /** Guide rectangle, element px. */
@@ -39,6 +40,8 @@ export function PageGuide({
   state: GuideState;
   /** Badge text ("Page found", "Finding page…"). */
   label?: string;
+  /** The badge shows advice ("Move closer"): drawn amber instead of the state's colour. */
+  warn?: boolean;
   /** Called while dragging with the new rectangle (element px). */
   onChange: (box: Box, final: boolean) => void;
 }) {
@@ -78,7 +81,7 @@ export function PageGuide({
         onPointerCancel={end}
         role="presentation"
       >
-        {label && <span className="guide-badge">{label}</span>}
+        {label && <span className={`guide-badge${warn ? ' warn' : ''}`}>{label}</span>}
         {(['nw', 'ne', 'sw', 'se'] as const).map((h) => (
           <span
             key={h}

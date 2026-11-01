@@ -364,6 +364,19 @@ textarea:focus {
   color: var(--danger);
   border-color: color-mix(in srgb, var(--danger) 50%, transparent);
 }
+/* A primary action that will work but not well (binder capture with advice showing). */
+.btn.warn {
+  background: var(--warn);
+  border-color: var(--warn);
+  color: #1a1a1a;
+}
+.btn.warn:hover {
+  background: color-mix(in srgb, var(--warn) 85%, #fff);
+}
+.btn .btn-reason {
+  font-weight: 500;
+  opacity: 0.85;
+}
 .btn.has-filter {
   color: var(--accent-strong);
 }
@@ -1702,6 +1715,13 @@ textarea:focus {
 }
 .page-guide-layer.locked .guide-badge {
   background: rgba(22, 101, 52, 0.85);
+}
+.page-guide-layer .guide-badge.warn {
+  background: var(--warn);
+  color: #1a1a1a;
+}
+.capture-size {
+  font-variant-numeric: tabular-nums;
 }
 .page-cell {
   position: absolute;

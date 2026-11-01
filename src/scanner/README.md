@@ -14,9 +14,11 @@ device except the one-time Tesseract language-model download (see Engines).
 | `parse.ts` / `ocr-normalize.ts` | OCR-noise-tolerant parsing of number / set code / HP / name / Pokédex line (pure) |
 | `ygo/parse.ts` / `ygo/match.ts` | Yu-Gi-Oh!: passcode / set code / ATK-DEF / type line parsing and `createYgoMatcher` (pure) |
 | `page.ts` | binder-page geometry and per-pocket scanning (any game's matcher) |
-| `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search) (pure) |
+| `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search), `perspectiveCheck` (pure) |
+| `guidance.ts` | binder-page capture guidance: `sharpness`, `measureGuidance`, `adviseCapture` ("Move closer", "Flatten the phone", "More light", "Hold still") |
+| `photo.ts` | full-resolution stills from the camera stream through ImageCapture (`takePhoto`, `probePhotoSize`), null when the API is missing |
 | `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
-| `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion` |
+| `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion`, `previewToPhoto` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
 | `tesseract.ts` / `mlkit.ts` / `recognizer.ts` | engines + `TextRecognizer` interface |
 
@@ -78,6 +80,9 @@ recognizer.recognize(canvas | ImageBitmap | Blob | url): Promise<RecognizedLine[
 scanLines(lines, index): ScanCandidate[]                 // parse + match, pure
 startCamera(video, { facingMode?, width?, height? }): Promise<MediaStream>  // throws CameraError {code}
 grabFrame(video, maxWidth = 1280): HTMLCanvasElement     // shared canvas
+takePhoto(stream, { timeoutMs?, maxLongSide?, size? }): Promise<PhotoResult | null>  // ImageCapture still; null → use grabFrame
+probePhotoSize(stream): Promise<Size | null>              // largest photo the camera offers (sensor orientation)
+previewToPhoto(preview, photo): CoverTransform            // where the preview frame sits in the photo (photo px)
 ```
 
 ## Engines
@@ -220,6 +225,69 @@ energy at the fitted edges (1 = average): below 0.4 the fit is dropped. Measured
 confidence 0.59–0.62, 10–15 ms per fit; two single-card photos: 0.27 and no fit. The capture UI
 runs it 3×/s, eases the guide towards each fit, and calls the page "found" after three fits within
 1.5% of each other; a capture before that is shown as a still with the guide for a check.
+
+**Capturing at full resolution** (`photo.ts`): the preview stream is at most ~1920 px on its long
+side, which on a 9-pocket page leaves ~600 px cards and a ~13 px collector-number line, the low end
+of what ML Kit reads (measured on a Pixel 11 Pro XL and a Z Fold 8: names read, number line
+missed; the phones' own 6128 px camera-app photos, ~1,800 px cards, read well). "Capture page"
+therefore takes a still through the camera's photo pipeline, `new ImageCapture(track).takePhoto()`
+at the largest `getPhotoCapabilities()` size, decoded with `createImageBitmap` (EXIF orientation
+applied, downscaled to ≤ 4608 px on the long side since pockets are read at ≤ 1400 px), and falls
+back to a copy of the preview frame when the API is missing (Firefox, Safari), the capture rejects,
+takes more than 4 s, or returns nothing larger than the preview or the other way up. The page box
+the user saw is in preview px; `previewToPhoto` maps it onto the photo on the model that the photo
+covers the whole sensor and every stream is a centred crop of it with its own aspect (a pure scale
+when the aspects agree, otherwise the preview sits as a centred band: `containTransform` of the
+preview inside the photo). On Android a second frame is read too: another `takePhoto` when the
+first left room inside the 1.5 s capture budget, else the preview frame drawn into the photo's
+pixel space (`previewInPhotoSpace`) so the same pocket boxes apply. The review header shows the
+captured size ("9 of 9 pockets · 3024×4032 · 3.1 s") and the Save-capture report records `capture`
+(source, preview size, photo timings, extra-frame origin, the live guidance at the shutter) so a
+bad page from a phone can be reproduced. A photo is only attempted when the probed size beats the
+preview: on the emulator the largest photo equals its 1392×1856 preview and the attempt cost 2.2 s
+for nothing. Measured on the emulator (emulated camera, release 1.1.3 and a debug build asking for
+a 640×480 preview): probe `camera 480×640, photo 1856×1392` (capabilities come in sensor
+orientation), `capture photo 1392×1856 from preview 480×640 in 1448 ms (photos 1424 ms)`, decoded
+upright (EXIF applied) and shown with the guide for the check; with the full-size preview the
+capture falls back to the preview frame and the review reads "0 of 9 pockets · 1392×1856 · 81.8 s"
+(ML Kit under SwiftShader, two frames). The emulated scene animates, so the still cannot be laid
+over the preview pixel for pixel; `previewToPhoto` is unit-tested instead. Phone timings are
+still to be measured.
+
+**Capture guidance** (`guidance.ts`): while the grid is fitted, three cheap checks say whether the
+shot will read, and the guide's badge and an amber "Capture page · reason" button (never disabled)
+show the one that matters most, with a line under the layout chips explaining it:
+
+- *Move closer*: the fitted card width scaled to the capture resolution (`cols.size` ×
+  preview/sample × photo/preview) is under `MIN_CARD_PX` = 500 (a ~11 px number line); live, the
+  wanted width is capped at 85% of what the view can hold, so a preview-only capture is not nagged
+  for the impossible. The advice shows after two fits agree (`ADVICE_FITS`); "all good" at once.
+- *Flatten the phone*: the fit's column pitch over row pitch disagrees with the card aspect by more
+  than `ASPECT_TOLERANCE` = 8% (foreshortening; the straight-on fixtures measure 1.017–1.028), or
+  `perspectiveCheck` (grid.ts) sees the card widths grow across the columns or the heights across
+  the rows by more than `PITCH_TOLERANCE` = 5% (keystone: the nearer edge's cards are bigger). The
+  keystone check refines each fitted edge to the nearest significant peak of the page's column/row
+  profile within ±4.5% of the pitch and fits a line through the n sizes. On the three straight-on
+  fixtures it reads 0.987–1.008; it is conservative: a synthetic 10% keystone reads 1.02–1.03
+  (the whole-grid fit's prior absorbs part of it; the nearest peak is sometimes the border's inner
+  edge), while the fit's own pitch ratio drifts to 1.11–1.14 on the same images and trips the aspect
+  check. Refitting the first and last row on their own with `fit1D`, the first design, swung ±10%
+  on the straight-on photos (one row of evidence cannot tell card edges from pocket seams), as did
+  band autocorrelation and refitting half pages; real tilted captures from the phones (the
+  Save-capture report carries the metrics) are what this needs next.
+- *More light* / *Hold still*: `sharpness()` on a 340 px-per-card sample of the lower half of the
+  middle row (attack text and the number line, the smallest print): mean luma under
+  `MIN_LUMA` = 60 asks for light; otherwise the score Σ laplacian² / Σ |gradient|² over edge pixels
+  (≈ 4 for a sharp edge, ≈ 1/σ² for a Gaussian blur of σ px, independent of size and contrast)
+  under `MIN_SHARPNESS` = 1.5 asks for stillness. Calibrated with `scripts/guidance-bench.html`
+  (Tesseract in the browser, photos normalised to a 4032 px long side): the fixtures score
+  2.7–3.5; blurred 1 px on ~870 px cards (score 2.2) the number line and the same ids still read,
+  at 1.5 px (score 1.46) nothing reads; on 577 px cards 1 px (score 1.32) loses everything. Cost
+  per fit on this desk: perspective ~1 ms, sharpness ~2 ms plus the sample; the fit itself 10–15 ms.
+
+The three states were checked through the photo path with fixture variants (a 907 px downscale →
+"Move closer", a 2 px blur → "Hold still", brightness 0.2 → "More light", a 12% keystone →
+"Flatten the phone", the plain photo → "Page found · check the grid").
 
 **Live tracking** (`tracker.ts`): each track keeps a pool of cards with decaying weights (×0.7 per
 frame); the frame's read adds its score (×1.5 when the matcher called it confident), each

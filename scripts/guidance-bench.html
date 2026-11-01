@@ -1,0 +1,173 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>CardCodex guidance bench</title>
+<!--
+  Calibrates the binder-page capture guidance (src/scanner/guidance.ts) on the
+  fixture photos: grid fit, the perspective (keystone) check, the sharpness
+  score, and what each does to a photo that is downscaled, keystoned, blurred
+  or darkened. Served by the Vite dev server, which compiles the TS:
+
+    npm run dev
+    http://localhost:5173/scripts/guidance-bench.html
+      ?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg,...   (default: the three fixtures)
+      &long=4032        normalise every photo to this long side first (a 12 MP capture)
+      &blur=0,2,4,6,8   Gaussian blur radii (px of the normalised photo) to score
+      &ocr=1            also read the 9 pockets with Tesseract at each blur (slow: ~30 s per level)
+      &warp=0.1         keystone: bottom row 10% wider than the top (+ perspective ratios)
+      &scale=0.3        downscale the normalised photo (card width → "Move closer")
+      &dark=0.2         brightness factor
+      &report=/path     POST the JSON there when done (results also in window.__guidanceBench)
+
+  Numbers from this page are quoted in src/scanner/README.md, "Capture guidance".
+-->
+<style>
+  body { font: 13px/1.4 ui-monospace, Consolas, monospace; margin: 16px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>guidance bench</h1>
+<pre id="out">running…</pre>
+<script type="module">
+  import { fitGrid, sampleRgba, sampleBoxToRegion } from '/src/scanner/grid.ts';
+  import { adviseCapture, measureGuidance, MIN_SHARPNESS } from '/src/scanner/guidance.ts';
+  import { boxToFrac, DEFAULT_CARD_MM, pageLayout, scanPage } from '/src/scanner/page.ts';
+  import { createPokemonMatcher } from '/src/scanner/match.ts';
+  import { getRecognizer } from '/src/scanner/engine.ts';
+
+  const q = new URLSearchParams(location.search);
+  const DEFAULT_IMAGES = [
+    'scripts/fixtures/binder-pages/fold8-9pocket.jpg',
+    'scripts/fixtures/binder-pages/pixel11-9pocket.jpg',
+    'scripts/fixtures/binder-pages/pixel11-9pocket-b.jpg',
+  ];
+  const EXPECTED = {
+    'fold8-9pocket.jpg': ['swsh10.5-016', 'sv03.5-200', 'swsh10.5-017', 'sv03.5-010', 'xy12-3', 'xy12-4', 'sv09-003', 'sv03.5-013', 'xy1-3'],
+    'pixel11-9pocket.jpg': ['swsh10.5-016', 'sv03.5-200', 'swsh10.5-017', 'sv03.5-010', 'xy12-3', 'xy12-4', 'sv09-003', 'sv03.5-013', 'xy1-3'],
+    'pixel11-9pocket-b.jpg': ['dp2-56', 'dp2-31', 'sv03.5-031', 'xy12-43', 'dp3-97', 'base1-55', 'xy12-44', 'base4-11', 'xy3-70'],
+  };
+  const images = (q.get('imgs') || DEFAULT_IMAGES.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+  const long = Number(q.get('long') || 4032);
+  const blurs = (q.get('blur') || '0').split(',').map(Number);
+  const ocr = q.get('ocr') === '1';
+  const warp = Number(q.get('warp') || 0);
+  const scale = Number(q.get('scale') || 1);
+  const dark = Number(q.get('dark') || 1);
+  const sample = Number(q.get('sample') || 320);
+  const layout = pageLayout(q.get('layout') || '3x3');
+  const aspect = DEFAULT_CARD_MM.w / DEFAULT_CARD_MM.h;
+  const r3 = (v) => (v === null || v === undefined ? null : Math.round(v * 1000) / 1000);
+  const out = document.getElementById('out');
+  const results = [];
+  const log = () => (out.textContent = JSON.stringify(results, null, 2));
+
+  /** The photo normalised to `long` on its long side, then optionally scaled, keystoned, blurred and darkened. */
+  function variant(bmp, opts) {
+    const k = (long / Math.max(bmp.width, bmp.height)) * (opts.scale ?? 1);
+    const w = Math.round(bmp.width * k);
+    const h = Math.round(bmp.height * k);
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    const filters = [];
+    if (opts.blur) filters.push(`blur(${opts.blur}px)`);
+    if (opts.dark && opts.dark !== 1) filters.push(`brightness(${opts.dark})`);
+    ctx.filter = filters.join(' ') || 'none';
+    if (opts.warp) {
+      // Page tilted about its horizontal axis, bottom edge nearer: the scale grows
+      // linearly down the output, s(t) = 1 + warp·(t − 0.5), so each output row
+      // is a source row scaled by s about the centre, and the source advances by
+      // 1/s per output row (nearer rows are taller as well as wider).
+      const a = opts.warp;
+      const norm = Math.log((1 + a / 2) / (1 - a / 2)) / a; // ∫₀¹ dt / s(t)
+      let ySrc = 0;
+      for (let y = 0; y < h; y++) {
+        const s = 1 + a * ((y + 0.5) / h - 0.5);
+        const dy = bmp.height / (h * norm * s);
+        const dw = w * s;
+        ctx.drawImage(bmp, 0, ySrc, bmp.width, Math.max(1, dy), (w - dw) / 2, y, dw, 1);
+        ySrc += dy;
+      }
+    } else {
+      ctx.drawImage(bmp, 0, 0, w, h);
+    }
+    ctx.filter = 'none';
+    return c;
+  }
+
+  function measure(src) {
+    const region = { x: 0, y: 0, w: src.width, h: src.height };
+    const t0 = performance.now();
+    const img = sampleRgba(src, region, sample);
+    const fit = fitGrid(img, layout, { cardAspect: aspect });
+    const fitMs = performance.now() - t0;
+    if (!fit) return { fit: false, fitMs: r3(fitMs) };
+    const box = sampleBoxToRegion(fit.box, img, region);
+    const t1 = performance.now();
+    const metrics = measureGuidance(src, img, fit, region, layout, { cardAspect: aspect, captureScale: 1, live: false });
+    const t2 = performance.now();
+    const advice = adviseCapture(metrics, false);
+    return {
+      fit: true,
+      confidence: r3(fit.confidence),
+      frac: Object.fromEntries(Object.entries(boxToFrac(box, region)).map(([k, v]) => [k, r3(v)])),
+      box,
+      cardPx: Math.round(metrics.cardPx),
+      aspectRatio: r3(metrics.aspectRatio),
+      colWidthRatio: r3(metrics.colWidthRatio),
+      rowHeightRatio: r3(metrics.rowHeightRatio),
+      sharpness: r3(metrics.sharpness),
+      luma: Math.round(metrics.luma),
+      advice: advice ? advice.kind : null,
+      ms: { fit: r3(fitMs), guidance: r3(t2 - t1) },
+    };
+  }
+  window.__gbTools = { variant, measure };
+
+  let matcher = null;
+  let recognizer = null;
+  async function readPockets(src, box, expected) {
+    matcher ??= createPokemonMatcher(await (await fetch('/data/catalog.json')).json());
+    recognizer ??= getRecognizer({ langPath: '/tessdata' });
+    const t0 = performance.now();
+    const res = await scanPage(src, layout, recognizer, matcher, { geometry: { page: box, cardMm: DEFAULT_CARD_MM } });
+    const pockets = res.map((p, i) => ({
+      read: p.candidate?.card.id ?? null,
+      number: p.candidate?.evidence.some((e) => e.startsWith('number')) ?? false,
+      exact: !!expected && p.candidate?.card.id === expected[i],
+      lines: p.lineCount,
+    }));
+    return { ms: Math.round(performance.now() - t0), numbers: pockets.filter((p) => p.number).length, exact: pockets.filter((p) => p.exact).length, pockets };
+  }
+
+  for (const image of images) {
+    const url = image.startsWith('/') || image.startsWith('http') ? image : '/' + image;
+    const name = image.split('/').pop();
+    const rec = { image, long, scale, warp, dark, sample, minSharpness: MIN_SHARPNESS, levels: [] };
+    results.push(rec);
+    try {
+      const bmp = await createImageBitmap(await (await fetch(url)).blob());
+      rec.width = bmp.width;
+      rec.height = bmp.height;
+      for (const blur of blurs) {
+        const src = variant(bmp, { scale, warp, blur, dark });
+        const level = { blur, width: src.width, height: src.height, ...measure(src) };
+        rec.levels.push(level);
+        log();
+        if (ocr && level.fit) {
+          level.ocr = await readPockets(src, level.box, EXPECTED[name]);
+          log();
+        }
+        delete level.box;
+      }
+      bmp.close();
+    } catch (e) {
+      rec.error = String((e && e.message) || e);
+    }
+    log();
+  }
+  window.__guidanceBench = results;
+  document.title = 'guidance bench: done';
+  const report = q.get('report');
+  if (report) await fetch(report, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(results) });
+</script>

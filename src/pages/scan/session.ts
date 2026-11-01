@@ -13,6 +13,7 @@ import type { CatalogIndex } from '@/data/catalog';
 import { db } from '@/data/db';
 import type { CatalogCard, CatalogSet } from '@/data/types';
 import type { ScanAlternative, ScanCandidate } from '@/scanner';
+import type { AdviceKind, GuidanceMetrics } from '@/scanner/guidance';
 import type { FracBox, PageSource, PocketScan } from '@/scanner/page';
 
 export interface Recent {
@@ -43,6 +44,26 @@ export interface PocketState {
   qty: number;
 }
 
+/** How a page frame was captured, for the review header and the Save-capture report. */
+export interface CaptureInfo {
+  /** 'photo': the camera's still pipeline (ImageCapture); 'preview': a copy of the preview frame; 'file': a photo opened from the gallery. */
+  source: 'photo' | 'preview' | 'file';
+  /** Preview stream size while capturing (device orientation), when there was one. */
+  preview: { w: number; h: number } | null;
+  /** Shutter to frames ready, ms (photos: takePhoto plus decoding). */
+  ms: number;
+  /** takePhoto() + decode time of each photo taken, ms. */
+  photoMs: number[];
+  /** Frames handed to the scanner (the capture plus extra frames). */
+  frames: number;
+  /** Where the extra frame came from, if any. */
+  extraFrom: 'photo' | 'preview' | null;
+  /** The live guidance at the moment of capture (src/scanner/guidance.ts), when the grid was fitted. */
+  guidance: GuidanceMetrics | null;
+  /** Advice that was showing at the shutter, if any. */
+  advice: AdviceKind | null;
+}
+
 /** A still image in page mode: a photo, or the frame just captured from the camera. */
 export interface PageStill {
   source: PageSource;
@@ -50,6 +71,9 @@ export interface PageStill {
   url: string;
   w: number;
   h: number;
+  /** The JPEG as the camera or the gallery delivered it (shared as is by "Save capture"). */
+  blob?: Blob;
+  capture?: CaptureInfo;
 }
 
 export interface PageSession {
