@@ -1,14 +1,18 @@
 # Gemini Ignore
 
-# Build artifacts
-.gradle/
-build/
+# Dependencies and build output
+node_modules/
+dist/
+android/build/
+android/app/build/
+android/.gradle/
+scripts/.cache/
 
 # IDE files
 .idea/
 
 # Local properties
-local.properties
+android/local.properties
 
 # Compiled files
 *.jar

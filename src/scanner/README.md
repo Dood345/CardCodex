@@ -1,0 +1,408 @@
+# src/scanner — camera card recognition
+
+On-device OCR → catalog matching for the live camera view. Nothing leaves the
+device except the one-time Tesseract language-model download (see Engines).
+
+## Files
+
+| file | what |
+|---|---|
+| `index.ts` | public entry; re-exports everything below |
+| `types.ts` | `Box`, `RecognizedLine`, observations, `ScanCandidate`, `ScanAlternative` |
+| `useCardScanner.ts` | React hook: camera + OCR loop + debounced results |
+| `match.ts` | Pokémon: `buildScanIndex`, `matchObservations`, `scanLines`, `printingsOf`, `findNames`, `createPokemonMatcher` (pure) |
+| `parse.ts` / `ocr-normalize.ts` | OCR-noise-tolerant parsing of number / set code / HP / name / Pokédex line (pure) |
+| `ygo/parse.ts` / `ygo/match.ts` | Yu-Gi-Oh!: passcode / set code / ATK-DEF / type line parsing and `createYgoMatcher` (pure) |
+| `page.ts` | binder-page geometry and per-pocket scanning (any game's matcher) |
+| `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search), `perspectiveCheck` (pure) |
+| `guidance.ts` | binder-page capture guidance: `sharpness`, `measureGuidance`, `adviseCapture` ("Move closer", "Flatten the phone", "More light", "Hold still") |
+| `photo.ts` | full-resolution stills from the camera stream through ImageCapture (`takePhoto`, `probePhotoSize`), null when the API is missing |
+| `hash.ts` | artwork matching: perceptual card hash (`hashCard`), the hash table (`public/data/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
+| `artwork.ts` | loads the hash table (`loadHashTable`) and merges a pocket's nearest hashes into the OCR candidates (`mergeArtworkEvidence`, pure) |
+| `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
+| `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion`, `previewToPhoto` |
+| `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
+| `tesseract.ts` / `mlkit.ts` / `recognizer.ts` | engines + `TextRecognizer` interface |
+
+## Usage
+
+```tsx
+import { useCardScanner, coverTransform, mapBox } from '@/scanner';
+
+// Once per catalog load (~100 ms for 21k cards / 38k printings). Memoize it.
+// The game profile picks the matcher: createPokemonMatcher / createYgoMatcher.
+const matcher = useMemo(() => game.createMatcher(index), [game, index]);
+
+const scanner = useCardScanner({ matcher, enabled: isScanTabActive });
+// scanner: { videoRef, status, error, results, frameSize, engine, paused, start, stop, pause, resume }
+
+<div ref={wrapRef} style={{ position: 'relative' }}>
+  <video ref={scanner.videoRef} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+  {scanner.results.map((c) => {
+    const t = coverTransform(scanner.frameSize.w, scanner.frameSize.h, wrapW, wrapH);
+    const b = mapBox(c.bbox, t);          // or c.cardBox for the whole card outline
+    return <button key={c.key} style={{ position: 'absolute', left: b.x, top: b.y }}
+                   onClick={() => openPicker(c)}>{c.card.name} · {c.set.abbr} {c.card.num}</button>;
+  })}
+</div>
+```
+
+- `<video>` must be rendered when the hook mounts (the effect calls `start()`);
+  if you mount it later, call `scanner.start()` yourself.
+- `results` are **tracks**, not raw detections: one per physical card, `key` is
+  stable while the card stays in view, a chip lingers ~2 s (`holdMs`) after
+  the card was last read, and its identity only flips after it's out-voted on
+  ~2 frames.
+- Boxes are in **frame pixels** (`frameSize`, the downscaled OCR canvas), so
+  always pass `frameSize` (not `video.videoWidth`) to `coverTransform`.
+- `status`: `idle → starting → scanning`, or `error` (camera denied/missing,
+  `error` holds a user-facing message). Recognition errors set `error` but keep
+  scanning. `pause()`/`resume()` stop OCR but keep the camera on (use it while
+  a correction sheet is open); the page being hidden pauses automatically.
+  `enabled: false` or unmount stops the camera.
+
+### Showing and correcting a guess
+
+`ScanCandidate`: `card`, `set`, `score` (0..1), `margin` (gap to the runner
+up), `confident` (score ≥ 0.75 and margin ≥ 0.1), `evidence` (strings like
+`number 57/198`, `name "Wugtrio"`, `HP 90`, `set SVI`), `bbox`, `cardBox`,
+`alternatives` (≤ 12 `{card, set, score, evidence}`, best first).
+
+Suggested UX: one tap on a confident chip adds the card; on a non-confident
+chip open a picker with `[candidate, ...alternatives]`. When the guess came
+from the name only (all printings tie; newest set wins), offer
+`printingsOf(c.card.name, index)` for the full list of printings.
+
+### Lower-level API
+
+```ts
+getRecognizer(opts?: TesseractOptions): TextRecognizer   // app-wide singleton
+disposeRecognizer(): Promise<void>
+recognizer.recognize(canvas | ImageBitmap | Blob | url): Promise<RecognizedLine[]>
+scanLines(lines, index): ScanCandidate[]                 // parse + match, pure
+startCamera(video, { facingMode?, width?, height? }): Promise<MediaStream>  // throws CameraError {code}
+grabFrame(video, maxWidth = 1280): HTMLCanvasElement     // shared canvas
+takePhoto(stream, { timeoutMs?, maxLongSide?, size? }): Promise<PhotoResult | null>  // ImageCapture still; null → use grabFrame
+probePhotoSize(stream): Promise<Size | null>              // largest photo the camera offers (sensor orientation)
+previewToPhoto(preview, photo): CoverTransform            // where the preview frame sits in the photo (photo px)
+```
+
+## Engines
+
+`getRecognizer()` uses **ML Kit** when `Capacitor.isNativePlatform()` and the
+`TextRecognition` plugin is available, else **Tesseract.js**. After 3
+consecutive ML Kit failures it switches to Tesseract for the session.
+`scanner.engine` reports which one answered.
+
+**Tesseract.js 7** (web, and fallback): one lazily created English worker,
+PSM 11 (sparse text — PSM 3/6 fused text across neighbouring cards in tests).
+`tesseract.js` itself is loaded with a dynamic `import()` on the first scan.
+Assets under `vite build` (verified with a test build + browser run):
+`worker.min.js` and `tesseract-core-simd-lstm.wasm.js` are **bundled** into
+`dist/assets` via `?url` imports (~4 MB, fetched only when scanning starts).
+Browsers without WebAssembly SIMD fall back to the jsDelivr core. The
+**language model `eng.traineddata` comes from the jsDelivr CDN** on first use
+(~2–4 MB, then cached in IndexedDB) because it isn't in node_modules. For
+offline first-run, put `eng.traineddata.gz` in `public/tesseract/` and call
+`getRecognizer({ langPath: '/tesseract' })` before the first scan.
+
+**ML Kit** (`@capacitor-mlkit/text-recognition` 8.2.2): verified from the
+plugin source that `processImage` only accepts a **file path/URI** (Android:
+`InputImage.fromFilePath(context, Uri.parse(path))`; base64/data URLs fail).
+The frame is therefore written as a JPEG to the cache directory through the
+**Capacitor Filesystem plugin**, called by name via
+`registerPlugin('Filesystem')` so no JS import is needed. **Required:**
+`npm i @capacitor/filesystem && npx cap sync android` (not installed yet;
+without it ML Kit fails and the app silently uses Tesseract). ML Kit gives no
+confidences; lines get 0.9.
+
+## Android notes
+
+- Add `<uses-permission android:name="android.permission.CAMERA" />` to
+  `android/app/src/main/AndroidManifest.xml`. `getUserMedia` in the Capacitor
+  WebView triggers `BridgeWebChromeClient.onPermissionRequest`, which asks for
+  the runtime CAMERA permission and then grants the WebView request.
+  **Assumed from Capacitor's documented behaviour; not tested on a device.**
+- ML Kit's model is bundled by the plugin's Gradle dependency (no download).
+- Not verified on a device: ML Kit timings, the Filesystem `uri` being
+  accepted by `Uri.parse` (it is a `file://` URI, which ContentResolver reads).
+
+## Accuracy (scripts/scan-check.mjs, Tesseract in Node, real TCGdex scans)
+
+Card filling the frame (600×825), the 6 images the heuristics were tuned on:
+**6/6 top-1**, 0.3–1.3 s per image. **Held-out** cards (BW, XY, SM GX, SWSH
+VMAX, SV Trainer), never tuned on: **1/5 top-1**, 2 more in `alternatives`.
+On BW/XY/SM the tiny bottom-right number line was never read, so these fell
+back to name-only matching (all printings tie → newest wins); the VMAX was
+not recognised at all.
+Card at ~245 px wide (≈ a quarter of a 1280 px frame): **0/11 top-1**. The
+collector number is never read at that size. Names still are, so the right
+card is in `alternatives` for 5/11.
+In the browser, frames with 2–4 cards gave one chip per card with the correct
+names, at 1.6–2.7 s per frame. The hook was also run end to end with a fake
+camera stream: track keys stayed stable across frames, and the camera
+stopped on unmount. **Hold cards close: the number is what makes a match exact.**
+
+Most promising next step: a second OCR pass on a 2× upscaled crop of the
+bottom ~8% of each detected `cardBox`, so the number line can be read.
+
+## Yu-Gi-Oh! (`ygo/`)
+
+Same pipeline shape, different evidence. `ScanMatcher` (`types.ts`) is the seam: the camera hook and
+`scanPage` only call `matcher.scanLines(lines)`; `createYgoMatcher(catalog)` builds a Pokémon-style
+index for names (8-word windows) plus passcode and printed-code lookups.
+
+- **Passcode** (8 digits bottom-left, ≈ H/60 tall): parsed with the usual digit confusions, optionally
+  split 4+4, validated against every passcode (alternate arts included); one wrong digit is found
+  through wildcard keys (`4698_414`) and scored lower (`passcode ≈…`). Names the card, not the printing:
+  every printing ties, so the chip is `?` with the printings as alternatives.
+- **Set code** (`LOB-EN005` under the artwork, right-aligned, ≈ H/55): prefix and body are normalized
+  against the catalog's prefixes/codes (letter↔digit confusions, lost or spaced hyphen); an unknown body
+  under a known prefix is matched to codes one character away (`code ≈…`). Names the exact printing.
+- **ATK/DEF** (`ATK/2500 DEF/2100`, also `?` and `LINK-2`) and the bracketed **type line**
+  (`[Spellcaster/Normal]`, `[Spell Card]`) are small bonuses; the **name** scores like Pokémon.
+- Weights (raw, ÷ 0.85): passcode 0.6 (near 0.35), code 0.6 (near 0.3), name 0.4 × strength, stats
+  0.1/0.05, type 0.05, recency 0.02. The confidence margin is computed on raw sums because passcode +
+  name + stats put every printing of a card at the 1.0 ceiling and only the code separates them.
+- Geometry (fractions of H, 59×86 mm card): name 0.08, set code 0.725, type line 0.77, ATK/DEF 0.925,
+  passcode 0.962. Anchors in order passcode → code → stats → strong name; binder pages use
+  `cardMm: {59, 86}`.
+
+Measured in the browser (Tesseract) on a YGOPRODeck render of Dark Magician with a code and passcode
+painted on (the renders are replicas without them): at 813 px wide the passcode was read and the card
+identified (`?`, printings as alternatives), the stylised serif name and ATK/DEF were not; at 1600 px
+ATK/DEF and the type line were also read (0.85). Stills narrower than 1200 px are therefore upscaled
+to 1600 px before OCR (`fileToCanvas`). Real cards, and ML Kit on Android, remain to be measured.
+
+## Tuning knobs
+
+`useCardScanner({ intervalMs, maxWidth, holdMs })`; `SCORE_*`,
+`CONFIDENT_*`, `MIN_SCORE` and card-geometry constants at the top of the
+sections in `match.ts` (each documents its measurement);
+`TESSERACT_PSM` / `TESSERACT_MIN_CONFIDENCE` in `tesseract.ts`;
+vote decay / IoU in `tracker.ts`.
+
+Run `node scripts/scan-check.mjs [--verbose] [--psm N] [--high-only]` after changing heuristics.
+
+## Binder pages (`page.ts`, `grid.ts`)
+
+`pageRect` / `pocketBoxes` give the default page guide (largest cols×63 : rows×88 rectangle centred
+in `within`, the part of the frame that is on screen; `cardMm` changes the card size) and its pocket
+cells; `pocketBoxesIn(page, layout)` subdivides an explicit rectangle. `scanPage(source, layout,
+recognizer, matcher, { geometry: { page } })` crops every pocket from the full-resolution source (an
+`ImageBitmap` of the photo or a full-size capture canvas), keeps crops between 1000 and 1400 px wide,
+runs the recognizer on each crop in turn and returns one `PocketScan` per pocket (best candidate +
+alternatives + crop thumbnail). Pockets are not trimmed (`inset` 0): the collector number sits ~3%
+from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page of 600 px TCGdex scans in
+the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected, 5.2 s for the page.
+
+**Reading a pocket**: each cell is padded by 6% (`pad`) so a grid that is a little off cannot cut
+the collector number, cropped between 1000 and 1400 px wide and read. Before the OCR the pocket's
+picture is hashed and matched against the catalog's artwork hashes (`matchPocket`, see "Artwork
+matching" below); the nearest hashes are merged into every OCR result of the pocket
+(`mergeArtworkEvidence`), so a picture match plus a read number is confident at once and skips the
+magnified strip, and a picture match alone shows up as an unsure candidate with that picture's
+printings as alternatives. `PocketScan.artwork` lists the nearest hashes, `hashMs` the time they
+took; `artwork: false` in the options turns the step off. When that read does not
+settle the printing, the bottom 15% of the card is read again at 2.5× (`numberStrip`): the number
+line is the smallest text on the card and the one that pins it down; its lines are added unless
+they repeat a line already read. Measured on the three fixture photos (27 pockets, Tesseract in
+the browser): cells cut exactly to the fitted grid 5 right, padded 8 right with five of them
+confident; the strip changed little for Tesseract (it is aimed at ML Kit, which reads names but
+drops the small number line). `refine` (tighten the padded crop to the card's own edges with
+`refineCardBox`) is off by default: it lost two pockets and gained none. With `extraFrames` (the phone captures a second frame 180 ms after the first) every pocket
+is read from each frame and `mergePocketCandidates` adds the scores up per card, so a card that is
+top-1 in two frames beats one that was top-1 in one, and a pocket counts as confident when every
+frame agrees with a clear margin. The review's "Save capture" shares (Android) or downloads the
+scanned frame and a JSON report of what was read, so a page that scanned badly on a phone can be
+reproduced from `scripts/fixtures/binder-pages/`.
+
+**Where the page is** (`grid.ts`): the capture view shows the camera with `object-fit: cover`, so
+the guide must live in the visible part of the frame (`visibleRegion`), and a fixed rectangle still
+asks the user to line the binder up with it. `fitGridOnSource(source, region, layout)` finds the
+cards instead: the region is sampled 320 px wide in colour (a yellow border on a white page is weak
+in luminance but strong in the blue channel), the gradient is summed per column and per row (signed
+per channel and absolute), the card pitch comes from the autocorrelation of the absolute profile
+(everything printed on a card repeats once per card), and only the phase and card width are then
+searched. Items are scored by the directed edge evidence at their 2n edges with the weakest item
+weighted most (a cell offset inside the cards finds n−1 good items and one bad one), less the edge
+energy found in the gaps between cards, with a mild preference for cards that fill their pitch.
+Columns and rows must agree with the card aspect within 20%. Confidence is the mean absolute edge
+energy at the fitted edges (1 = average): below 0.4 the fit is dropped. Measured on the two real
+9-pocket photos in `scripts/fixtures/binder-pages/` (Pixel 11 Pro XL, Z Fold 8): both boxes within a pocket gap of the cards,
+confidence 0.59–0.62, 10–15 ms per fit; two single-card photos: 0.27 and no fit. The capture UI
+runs it 3×/s, eases the guide towards each fit, and calls the page "found" after three fits within
+1.5% of each other; a capture before that is shown as a still with the guide for a check.
+
+**Capturing at full resolution** (`photo.ts`): the preview stream is at most ~1920 px on its long
+side, which on a 9-pocket page leaves ~600 px cards and a ~13 px collector-number line, the low end
+of what ML Kit reads (measured on a Pixel 11 Pro XL and a Z Fold 8: names read, number line
+missed; the phones' own 6128 px camera-app photos, ~1,800 px cards, read well). "Capture page"
+therefore takes a still through the camera's photo pipeline, `new ImageCapture(track).takePhoto()`
+at the largest `getPhotoCapabilities()` size, decoded with `createImageBitmap` (EXIF orientation
+applied, downscaled to ≤ 4608 px on the long side since pockets are read at ≤ 1400 px), and falls
+back to a copy of the preview frame when the API is missing (Firefox, Safari), the capture rejects,
+takes more than 4 s, or returns nothing larger than the preview or the other way up. The page box
+the user saw is in preview px; `previewToPhoto` maps it onto the photo on the model that the photo
+covers the whole sensor and every stream is a centred crop of it with its own aspect (a pure scale
+when the aspects agree, otherwise the preview sits as a centred band: `containTransform` of the
+preview inside the photo). On Android a second frame is read too: another `takePhoto` when the
+first left room inside the 1.5 s capture budget, else the preview frame drawn into the photo's
+pixel space (`previewInPhotoSpace`) so the same pocket boxes apply. The review header shows the
+captured size ("9 of 9 pockets · 3024×4032 · 3.1 s") and the Save-capture report records `capture`
+(source, preview size, photo timings, extra-frame origin, the live guidance at the shutter) so a
+bad page from a phone can be reproduced. A photo is only attempted when the probed size beats the
+preview: on the emulator the largest photo equals its 1392×1856 preview and the attempt cost 2.2 s
+for nothing. Measured on the emulator (emulated camera, release 1.1.3 and a debug build asking for
+a 640×480 preview): probe `camera 480×640, photo 1856×1392` (capabilities come in sensor
+orientation), `capture photo 1392×1856 from preview 480×640 in 1448 ms (photos 1424 ms)`, decoded
+upright (EXIF applied) and shown with the guide for the check; with the full-size preview the
+capture falls back to the preview frame and the review reads "0 of 9 pockets · 1392×1856 · 81.8 s"
+(ML Kit under SwiftShader, two frames). The emulated scene animates, so the still cannot be laid
+over the preview pixel for pixel; `previewToPhoto` is unit-tested instead. Phone timings are
+still to be measured.
+
+**Capture guidance** (`guidance.ts`): while the grid is fitted, three cheap checks say whether the
+shot will read, and the guide's badge and an amber "Capture page · reason" button (never disabled)
+show the one that matters most, with a line under the layout chips explaining it:
+
+- *Move closer*: the fitted card width scaled to the capture resolution (`cols.size` ×
+  preview/sample × photo/preview) is under `MIN_CARD_PX` = 500 (a ~11 px number line); live, the
+  wanted width is capped at 85% of what the view can hold, so a preview-only capture is not nagged
+  for the impossible. The advice shows after two fits agree (`ADVICE_FITS`); "all good" at once.
+- *Flatten the phone*: the fit's column pitch over row pitch disagrees with the card aspect by more
+  than `ASPECT_TOLERANCE` = 8% (foreshortening; the straight-on fixtures measure 1.017–1.028), or
+  `perspectiveCheck` (grid.ts) sees the card widths grow across the columns or the heights across
+  the rows by more than `PITCH_TOLERANCE` = 5% (keystone: the nearer edge's cards are bigger). The
+  keystone check refines each fitted edge to the nearest significant peak of the page's column/row
+  profile within ±4.5% of the pitch and fits a line through the n sizes. On the three straight-on
+  fixtures it reads 0.987–1.008; it is conservative: a synthetic 10% keystone reads 1.02–1.03
+  (the whole-grid fit's prior absorbs part of it; the nearest peak is sometimes the border's inner
+  edge), while the fit's own pitch ratio drifts to 1.11–1.14 on the same images and trips the aspect
+  check. Refitting the first and last row on their own with `fit1D`, the first design, swung ±10%
+  on the straight-on photos (one row of evidence cannot tell card edges from pocket seams), as did
+  band autocorrelation and refitting half pages; real tilted captures from the phones (the
+  Save-capture report carries the metrics) are what this needs next.
+- *More light* / *Hold still*: `sharpness()` on a 340 px-per-card sample of the lower half of the
+  middle row (attack text and the number line, the smallest print): mean luma under
+  `MIN_LUMA` = 60 asks for light; otherwise the score Σ laplacian² / Σ |gradient|² over edge pixels
+  (≈ 4 for a sharp edge, ≈ 1/σ² for a Gaussian blur of σ px, independent of size and contrast)
+  under `MIN_SHARPNESS` = 1.5 asks for stillness. Calibrated with `scripts/guidance-bench.html`
+  (Tesseract in the browser, photos normalised to a 4032 px long side): the fixtures score
+  2.7–3.5; blurred 1 px on ~870 px cards (score 2.2) the number line and the same ids still read,
+  at 1.5 px (score 1.46) nothing reads; on 577 px cards 1 px (score 1.32) loses everything. Cost
+  per fit on this desk: perspective ~1 ms, sharpness ~2 ms plus the sample; the fit itself 10–15 ms.
+
+The three states were checked through the photo path with fixture variants (a 907 px downscale →
+"Move closer", a 2 px blur → "Hold still", brightness 0.2 → "More light", a 12% keystone →
+"Flatten the phone", the plain photo → "Page found · check the grid").
+
+**Live tracking** (`tracker.ts`): each track keeps a pool of cards with decaying weights (×0.7 per
+frame); the frame's read adds its score (×1.5 when the matcher called it confident), each
+alternative adds half of its score. The chip shows the pool leader and only switches when a
+challenger leads by 1.5×, so two cards the OCR flips between do not flip the chip; a confident read
+of a card sharing nothing with the pool retires the track at once (the user swapped cards).
+`ScanCandidate.stability` is the leader's share of the pool ramped in over three frames, drawn as
+the chip's confidence bar; the pool (as shares) is exposed through `alternatives` and listed as
+runners-up under the row.
+
+## Artwork matching (`hash.ts`, `scripts/build-hashes.mjs`)
+
+Commercial scanners identify a card by its picture, not its text. `hash.ts` adds that as a second,
+OCR-independent signal: every Pokémon card's TCGdex reference image is reduced offline to a 128-bit
+perceptual hash (`npm run hashes` → `public/data/hashes.json`, 32 bytes per card, ~355 KB gzip for
+19.7k cards; 1.6k cards have no image on TCGdex), and a pocket crop is hashed the same way and
+compared with every entry by Hamming distance (a linear scan of 20k × 128 bits is ~1 ms).
+
+**The hash** (`HASH_SPEC`): two difference hashes of the luma, each on a 9×8 grid of cell means
+(8 rows × 8 "is the cell darker than its right neighbour" bits = 64 bits): one of the whole card,
+one of the artwork window (x 10–90 %, y 12–47 % of the card, inside the picture box of both modern
+and Base Set layouts). A dHash ignores brightness, contrast and smooth lighting gradients, which is
+what a photo through a binder sleeve adds. Transparent pixels (the reference scans' rounded corners)
+are composited over white. The build script decodes with `sharp` and calls the very same `hashCard`
+through Vite, and a reference image hashed in the browser (canvas → `getImageData`) matches its
+table entry bit for bit (18/18 in the bench), so the table and the scanner never disagree on the spec.
+
+**Alignment is everything.** Measured on reference images: a 1 % shift of the card costs ~13 bits,
+3 % costs 28–41, while unrelated cards differ by ~64 and reprints of the same picture by 0–8; a card
+drawn 6 % too small costs ~18. The fitted grid is within a pocket gap of the cards, never exact, so
+`matchPocket` searches: the padded pocket crop is sampled once (272 px wide, the card ≈ 245 px like
+a reference image) into a luma summed-area table, from which the hash of *any* window costs 144
+lookups. A coarse pass hashes 75 alignments (±4 % in 2 % steps × card 92/96/100 % of the cell) against
+the whole table, then the 96 nearest cards get a fine pass over 1,183 alignments (±6 % in 1 % steps ×
+90–102 %).
+
+**Measured on the three fixture photos** (`node scripts/hash-bench.mjs`, 27 pockets, expected ids in
+`scripts/fixtures/binder-pages/README.md`; OCR alone got 8 of these 27 printings right in the earlier
+manual bench and 6 in `scripts/page-bench.mjs`):
+
+| placement of the card in the pocket | exact | same artwork | median distance to the expected card | median margin to the next artwork / next card |
+|---|---|---|---|---|
+| the grid cell as is | 4/27 | 4/27 | 44 | 1 / 1 |
+| the card box the fitter measured | 6/27 | 6/27 | 43 | 1 / 1 |
+| padded crop tightened to the card's edges (`refineCardBox`) | 12/27 | 12/27 | 37 | 3 / 3 |
+| coarse search alone (75 alignments) | 22/27 | 23/27 | 15 | 9 / 7 |
+| **coarse-to-fine search (`matchPocket`)** | **24/27** | **25/27** | **11** | **14 / 12** |
+
+Per photo (exact): Fold 8/9, Pixel 8/9, Pixel page B 8/9 (9/9 by artwork). The matched pockets sit at
+5–14 bits from their card with the runner-up 8–23 bits further away; the two exceptions are Butterfree
+`sv09-003` (26–27 bits, margin 1–2, a textured holo) and the misses below. The miss on both pages is
+Wartortle `swsh10.5-016`: a glare band across the top of the picture, so the nearest entry is Relicanth
+`swsh3-40`, a Sword & Shield Water card with the same layout (Fold: 27 vs 41 bits for Wartortle; Pixel:
+26 vs 26, a tie). Alignment tolerance, from the reference images shifted and scaled in the bench: a 1 %
+shift (≈ 13 bits) keeps every card at rank 1, 2 % (≈ 25) keeps 14 of 18, 3 % (≈ 35) 8 of 18; a card 6 %
+too small (≈ 18 bits) keeps all 18, 10 % (≈ 27) 16 of 18. Cost: ~110 ms per pocket in headless Chrome
+with software rendering against the full table (the coarse pass, 19.7k cards × 75 probes, is most of
+it; 20–34 ms with a 4k-card table), so ~1 s per 9-pocket page beside 2.7 s of OCR; not yet timed on a
+phone. Browser hash versus the Node-built table entry: 0 bits apart for all 18 reference images (the
+runtime's resampled path 0–4).
+
+The third miss is `base1-55` (Nidoran♂, Base Set), whose nearest entry is `lc-83`, the Legendary
+Collection reprint of the same picture (12 vs 18 bits): an artwork hash names the picture,
+and the printing has to come from the OCR'd set code or number, exactly the evidence OCR does read.
+
+**Merging with the OCR** (`artwork.ts`, `mergeArtworkEvidence`): every card named by either side is
+scored `min(1, OCR score + artworkBonus)`, where the bonus is 0.9 for an identical picture, 0.55 at
+the match limit of 24 bits and fades to 0 at 32, so a strong match outranks a name-only read (~0.45)
+on its own but not a clean number + total + name read (0.95–1). Hits within 6 bits of the best one are
+the same picture (reprints). The best card is confident when the picture matched (≤ 24) and the OCR
+read a number or set code for it — or its name, when the picture exists in one printing only — or
+when the OCR was already confident and the picture does not point at a different card. A match
+alone is an unsure candidate with the picture's printings as alternatives, newest first; a weak hit
+(25–32 bits) only adds alternatives. The hash evidence appears as `artwork N` (N = bits) in
+`evidence`. The table is loaded once per game by `loadHashTable` (Pokémon only; Yu-Gi-Oh! has none
+yet and runs on OCR alone) and the matcher resolves ids through `ScanMatcher.lookup`.
+
+**End to end** (`node scripts/page-bench.mjs`, scanPage with Tesseract on the same 27 pockets, the
+printing must be exact):
+
+| pipeline (Tesseract, number strip on) | exact | confident (right / wrong) | expected among alternatives | 3 pages |
+|---|---|---|---|---|
+| OCR only (`--no-hash`) | 6/27 | 2 (2 / 0) | 11 | 53.4 s |
+| **OCR + artwork** | **26/27** | **12 (12 / 0)** | 1 | 47.3 s, of which hashing 1.1 s |
+
+Per page with artwork: Fold 9/9 (4 confident), Pixel 9/9 (5), Pixel page B 8/9 (3). The one miss is
+the Nidoran♂ reprint again: the OCR read the name and HP but no number, so Base Set and Legendary
+Collection tie and the newer printing is shown with the other as the first alternative. Every pocket
+whose OCR read nothing usable (10 of 27) is now identified by its picture alone (`artwork 7`–`14`,
+unsure, printings as alternatives), the Butterfree holo by a weak hit (`artwork 27`); the glare-struck
+Wartortle on the Pixel page is right through name + a weak hit (26). Pages got faster because a
+confident hash + number read skips the magnified strip. Hashing cost 0.33–0.39 s per page
+(≈ 40 ms per pocket, full-resolution crops, headless Chrome with software rendering); the table
+loads in 40 ms and holds 307 KB of hash words plus the 19.7k id strings and their index, roughly
+1.7 MB of heap in all (the browser's `performance.memory` could not resolve the delta). Not yet
+timed on a phone.
+
+**Yu-Gi-Oh!** is not hashed yet. The same build-script shape works: YGOPRODeck allows each image to
+be downloaded once (`cards_small/<passcode>.jpg`, 168×245, 14.6k cards, ~25 min at 10 requests/s),
+the hash is per passcode (printings share the picture) with the 59×86 card aspect and an artwork
+window of x 10–90 %, y 18–55 %; `matchPocket` is already aspect-agnostic.
+
+## Pokédex line as a species cue (`parseDex`)
+
+Pokémon cards since the Black & White era print the National Pokédex number on the Pokédex line
+("NO. 0204 Bagworm Pokémon"). On cards with stylised names OCR often reads nothing else cleanly
+(measured on an SV Pineco scan: no name, no number, the Pokédex line at 87%), so a `dex` observation
+anchors a card on its own, adds the species' printings to the candidate pool and scores 0.3 (name
+0.4): dex alone gives a low-confidence chip with the other printings as alternatives; dex + number
+line is confident.

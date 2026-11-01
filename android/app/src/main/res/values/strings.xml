@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">CardCodex</string>
+    <string name="title_activity_main">CardCodex</string>
+    <string name="package_name">com.independent.cardcodex</string>
+    <string name="custom_url_scheme">com.independent.cardcodex</string>
+</resources>

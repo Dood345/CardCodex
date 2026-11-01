@@ -1,0 +1,206 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>CardCodex hash bench</title>
+<!--
+  Artwork-hash benchmark on binder-page photos: fits the grid (src/scanner/grid.ts), hashes every
+  pocket (src/scanner/hash.ts) and ranks the catalog's hash table (public/data/hashes.json) for it.
+  Served by the Vite dev server, which compiles the TS:
+
+    npm run dev
+    http://localhost:5173/scripts/hash-bench.html
+      ?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg
+      &expected={"fold8-9pocket.jpg":["swsh10.5-016",…]}   (row-major catalog ids, optional)
+      &layout=3x3  &refs=1  &report=/__hash-bench             (all optional)
+
+  Per pocket five ways of placing the card are tried: the grid cell as is, the card box the
+  fitter measured (cell minus the pocket gap), the padded crop tightened to the card's edges
+  (refineCardBox), the coarse alignment search alone (75 shifts/scales of the cell hashed from one
+  luma integral of the padded crop), and the coarse-to-fine search the scanner uses (matchPocket). `refs=1`
+  also hashes the expected cards' reference images in the browser (TCGdex allows CORS) to check
+  that the browser's hash agrees with the Node-built table and how fast the distance grows when
+  the reference is shifted. `report` POSTs the JSON there when done (scripts/hash-bench.mjs);
+  results are also in window.__hashBench.
+-->
+<style>
+  body { font: 13px/1.4 ui-monospace, Consolas, monospace; margin: 16px; }
+  pre { white-space: pre-wrap; }
+</style>
+<h1>hash bench</h1>
+<pre id="out">running…</pre>
+<script type="module">
+  import { fitGridOnSource, refineCardBox } from '/src/scanner/grid.ts';
+  import { pocketBoxesIn, padBox, DEFAULT_CARD_MM, pageLayout } from '/src/scanner/page.ts';
+  import { decodeHashFile, hashRegion, alignmentProbes, hashDistances, hashCard, HASH_BITS, HASH_SAMPLE_WIDTH, hashToHex, samplePocketLuma, windowOf, matchPocket, hashCardIn, COARSE_PROBES } from '/src/scanner/hash.ts';
+
+  const q = new URLSearchParams(location.search);
+  const DEFAULT_IMAGES = ['scripts/fixtures/binder-pages/fold8-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket-b.jpg'];
+  const images = (q.get('imgs') || DEFAULT_IMAGES.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
+  const expectedByImage = JSON.parse(q.get('expected') || '{}');
+  const layout = pageLayout(q.get('layout') || '3x3');
+  const doRefs = q.get('refs') !== '0';
+  const PAD = 0.06;
+  const aspect = DEFAULT_CARD_MM.w / DEFAULT_CARD_MM.h;
+  const out = document.getElementById('out');
+  const r3 = (v) => Math.round(v * 1000) / 1000;
+
+  const [hashFile, catalog] = await Promise.all([
+    fetch('/data/hashes.json', { cache: 'no-cache' }).then((r) => r.json()),
+    fetch('/data/catalog.json', { cache: 'no-cache' }).then((r) => r.json()),
+  ]);
+  const table = decodeHashFile(hashFile);
+  const cardsById = new Map(catalog.cards.map((c) => [c.id, c]));
+  const setsById = new Map(catalog.sets.map((s) => [s.id, s]));
+  // Same artwork ≈ same name; the catalog spells a few reprints differently ('Nidoran ♂' in Legendary Collection), so compare without spaces or case.
+  const nameOf = (id) => (cardsById.get(id)?.name ?? '?').replace(/\s+/g, '').toLowerCase();
+  const results = { table: { ids: table.ids.length, builtAt: hashFile.builtAt, spec: hashFile.spec }, images: [] };
+
+  /** Rank the table for a set of probes: top hits, the expected card's place, and the margin to the next different artwork (≈ name). */
+  function rank(probes, expected) {
+    return rankDistances(hashDistances(table, probes), expected, probes.length);
+  }
+  function rankDistances(dist, expected, probes = 0) {
+    const order = Array.from(dist.keys()).sort((a, b) => dist[a] - dist[b]);
+    const top = order.slice(0, 6).map((i) => ({ id: table.ids[i], name: nameOf(table.ids[i]), d: dist[i] }));
+    const topName = top[0]?.name;
+    const nextOther = order.find((i) => nameOf(table.ids[i]) !== topName);
+    const margin = nextOther === undefined ? null : dist[nextOther] - dist[order[0]];
+    // margin: to the next card with a different artwork (≈ name); marginNext: to the runner-up of any kind (0 for an identical reprint).
+    const rec = { top, margin, marginNext: order.length > 1 ? dist[order[1]] - dist[order[0]] : null, probes };
+    if (expected) {
+      const ei = table.indexOf.get(expected);
+      rec.expected = ei === undefined ? { inTable: false } : { inTable: true, d: dist[ei], rank: order.indexOf(ei) + 1 };
+      rec.exact = top[0]?.id === expected;
+      rec.sameName = topName !== undefined && topName === nameOf(expected);
+    }
+    return rec;
+  }
+
+  for (const image of images) {
+    const url = image.startsWith('/') || image.startsWith('http') ? image : '/' + image;
+    const name = image.split('/').pop();
+    const expected = expectedByImage[name] || [];
+    const rec = { image, pockets: [] };
+    try {
+      const t0 = performance.now();
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
+      const bmp = await createImageBitmap(await res.blob());
+      rec.width = bmp.width;
+      rec.height = bmp.height;
+      rec.decodeMs = Math.round(performance.now() - t0);
+      const region = { x: 0, y: 0, w: bmp.width, h: bmp.height };
+      const fit = fitGridOnSource(bmp, region, layout, { cardAspect: aspect });
+      if (!fit) throw new Error('no grid fit');
+      rec.fit = { confidence: r3(fit.confidence), box: fit.box };
+      const cardFracX = fit.cols.size / (fit.cols.size + fit.cols.gap);
+      const cardFracY = fit.rows.size / (fit.rows.size + fit.rows.gap);
+      rec.cardFrac = { x: r3(cardFracX), y: r3(cardFracY) };
+      const pockets = pocketBoxesIn(fit.box, layout);
+      for (const p of pockets) {
+        const t1 = performance.now();
+        const cell = p.box;
+        const fitBox = { x: cell.x, y: cell.y, w: cell.w * cardFracX, h: cell.h * cardFracY };
+        const padded = padBox(cell, PAD, bmp.width, bmp.height);
+        const refined = refineCardBox(bmp, padded, aspect);
+        const exp = expected[p.index];
+        const hCell = hashRegion(bmp, cell, aspect);
+        const hFit = hashRegion(bmp, fitBox, aspect);
+        const hRefined = refined ? hashRegion(bmp, refined, aspect) : null;
+        // The scanner's path: one sample of the padded crop, probes hashed from its integral.
+        const t2 = performance.now();
+        const luma = samplePocketLuma(bmp, padded);
+        const nominal = windowOf(cell, padded);
+        const coarse = alignmentProbes(nominal, COARSE_PROBES).map((w) => hashCardIn(luma, w));
+        const coarseRank = rank(coarse, exp);
+        const t3 = performance.now();
+        const fine = matchPocket(table, luma, nominal, { k: 6 });
+        const fineMs = Math.round(performance.now() - t3);
+        rec.pockets.push({
+          index: p.index,
+          expected: exp,
+          expectedName: exp ? nameOf(exp) : undefined,
+          refined: !!refined,
+          variants: {
+            cell: rank([hCell], exp),
+            fit: rank([hFit], exp),
+            refine: hRefined ? rank([hRefined], exp) : null,
+            coarse: coarseRank,
+            fine: rankDistances(fine.distances, exp),
+          },
+          ms: Math.round(performance.now() - t1),
+          matchMs: Math.round(performance.now() - t2),
+          fineMs,
+        });
+        out.textContent = JSON.stringify(results, null, 1) + '\n' + JSON.stringify(rec.pockets.at(-1));
+      }
+      bmp.close();
+    } catch (e) {
+      rec.error = String(e && e.message ? e.message : e);
+    }
+    results.images.push(rec);
+    out.textContent = JSON.stringify(results, null, 1);
+  }
+
+  // Reference images: browser hash vs the Node-built table, and the shift tolerance curve.
+  if (doRefs) {
+    results.refs = [];
+    const ids = [...new Set(Object.values(expectedByImage).flat())].filter((id) => table.indexOf.has(id));
+    for (const id of ids) {
+      const card = cardsById.get(id);
+      const set = setsById.get(card.set);
+      const r = { id, name: card.name };
+      try {
+        const url = `https://assets.tcgdex.net/en/${set.series}/${card.set}/${card.num}/low.webp`;
+        const bmp = await createImageBitmap(await (await fetch(url, { mode: 'cors' })).blob());
+        const full = { x: 0, y: 0, w: bmp.width, h: bmp.height };
+        const ti = table.indexOf.get(id);
+        const tableHash = table.words.subarray(ti * 4, ti * 4 + 4);
+        // Native size, as the build script saw it.
+        const c = document.createElement('canvas');
+        c.width = bmp.width;
+        c.height = bmp.height;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, c.width, c.height);
+        ctx.drawImage(bmp, 0, 0);
+        const native = hashCard(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+        r.native = { d: hashDistances(table, native)[ti], hex: hashToHex(native), table: hashToHex(tableHash) };
+        // The runtime path: resampled to HASH_SAMPLE_WIDTH.
+        r.resampled = { d: hashDistances(table, hashRegion(bmp, full, aspect))[ti] };
+        // Shift tolerance: the reference moved by s % of its size (both axes), distance to its own entry and its rank.
+        r.shift = {};
+        for (const s of [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08]) {
+          const box = { x: s * bmp.width, y: s * bmp.height, w: bmp.width, h: bmp.height };
+          const dist = hashDistances(table, hashRegion(bmp, box, aspect));
+          const d = dist[ti];
+          let better = 0;
+          for (let i = 0; i < dist.length; i++) if (dist[i] < d) better++;
+          r.shift[s] = { d, rank: better + 1 };
+        }
+        // Scale tolerance: the reference drawn inside a box 3 % / 6 % larger (card smaller than the cell).
+        r.scale = {};
+        for (const s of [1.03, 1.06, 1.1]) {
+          const box = { x: -((s - 1) / 2) * bmp.width, y: -((s - 1) / 2) * bmp.height, w: s * bmp.width, h: s * bmp.height };
+          const dist = hashDistances(table, hashRegion(bmp, box, aspect));
+          const d = dist[ti];
+          let better = 0;
+          for (let i = 0; i < dist.length; i++) if (dist[i] < d) better++;
+          r.scale[s] = { d, rank: better + 1 };
+        }
+        bmp.close();
+      } catch (e) {
+        r.error = String(e && e.message ? e.message : e);
+      }
+      results.refs.push(r);
+      out.textContent = JSON.stringify(results, null, 1);
+    }
+  }
+  results.sampleWidth = HASH_SAMPLE_WIDTH;
+  results.bits = HASH_BITS;
+  window.__hashBench = results;
+  document.title = 'hash bench: done';
+  const report = q.get('report');
+  if (report) {
+    await fetch(report, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(results) });
+  }
+</script>
