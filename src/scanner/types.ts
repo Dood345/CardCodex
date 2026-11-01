@@ -78,11 +78,26 @@ export interface NameObservation {
   lineIndex: number;
 }
 
+/**
+ * National Pokédex number from the Pokédex line printed on Pokémon cards since
+ * the Black & White era: "NO. 0204 Bagworm Pokémon HT: 2' WT: 15.9 lbs." (SV),
+ * "NO. 162 Long Body Pokémon" (SWSH). Often the only line OCR reads cleanly on
+ * a card whose name is set in a stylised font, so it is a strong species cue.
+ */
+export interface DexObservation {
+  kind: 'dex';
+  dex: number;
+  raw: string;
+  bbox: Box;
+  lineIndex: number;
+}
+
 export type Observation =
   | NumberObservation
   | SetCodeObservation
   | HpObservation
-  | NameObservation;
+  | NameObservation
+  | DexObservation;
 
 /** Everything parsed from one frame's lines. */
 export interface FrameObservations {
@@ -91,6 +106,7 @@ export interface FrameObservations {
   setCodes: SetCodeObservation[];
   hps: HpObservation[];
   names: NameObservation[];
+  dexes: DexObservation[];
 }
 
 /** One ranked alternative for a detected card (for tap-to-correct). */

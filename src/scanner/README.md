@@ -144,3 +144,23 @@ sections in `match.ts` (each documents its measurement);
 vote decay / IoU in `tracker.ts`.
 
 Run `node scripts/scan-check.mjs [--verbose] [--psm N] [--high-only]` after changing heuristics.
+
+## Binder pages (`page.ts`)
+
+`pageRect` / `pocketBoxes` give the page guide (largest cols×63 : rows×88 rectangle centred in the
+frame) and its pocket cells; `scanPage(source, layout, recognizer, index)` crops every pocket from the
+full-resolution source (an `ImageBitmap` of the photo or a full-size capture canvas), upscales crops
+narrower than 1000 px, runs the recognizer on each crop in turn and returns one `PocketScan` per
+pocket (best candidate + alternatives + crop thumbnail). Pockets are not trimmed (`inset` 0): the
+collector number sits ~3% from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page
+of 600 px TCGdex scans in the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected,
+5.2 s for the page.
+
+## Pokédex line as a species cue (`parseDex`)
+
+Pokémon cards since the Black & White era print the National Pokédex number on the Pokédex line
+("NO. 0204 Bagworm Pokémon"). On cards with stylised names OCR often reads nothing else cleanly
+(measured on an SV Pineco scan: no name, no number, the Pokédex line at 87%), so a `dex` observation
+anchors a card on its own, adds the species' printings to the candidate pool and scores 0.3 (name
+0.4): dex alone gives a low-confidence chip with the other printings as alternatives; dex + number
+line is confident.

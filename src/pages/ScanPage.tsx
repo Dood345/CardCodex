@@ -1,16 +1,12 @@
 /**
- * Camera scanner: live preview, one tappable chip per detected card, tap to
- * add, "alternatives" sheet to correct a wrong guess, manual search fallback.
- * A "scan a photo" mode runs the same pipeline on a still image (camera app
- * or gallery) for devices where live video is unavailable.
+ * Scanner entry: single-card mode (live chips, tap to add, photo fallback)
+ * and binder-page mode (PageScan). Shared pieces live in ./scan/shared.tsx.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCatalog } from '@/app/context';
 import { useSettings } from '@/app/settings';
-import { adjustQty, useCollection } from '@/data/collection';
-import { db } from '@/data/db';
+import { useCollection } from '@/data/collection';
 import { formatCardNumber } from '@/data/catalog';
-import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import {
   buildScanIndex,
@@ -24,55 +20,22 @@ import {
   type ScanAlternative,
   type ScanCandidate,
   type ScanIndex,
-  type TextRecognizer,
 } from '@/scanner';
-import { Sheet, Toast, useToast } from '@/ui/components';
+import type { PocketEntry } from '@/scanner/page';
+import { Toast, useToast } from '@/ui/components';
 import { CameraIcon, CheckIcon, CloseIcon, PlusIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
-
-/**
- * The English OCR model ships with the app (public/tessdata/eng.traineddata.gz,
- * ~3 MB) so the first scan works offline instead of downloading it from a CDN.
- * getRecognizer() keeps the options from its first call, so pin them here,
- * before useCardScanner asks for the shared recognizer.
- */
-const TESSERACT_OPTIONS = { langPath: `${import.meta.env.BASE_URL.replace(/\/$/, '')}/tessdata` };
-getRecognizer(TESSERACT_OPTIONS);
-
-/** Tesseract-only recognizer honouring the "Tesseract only" setting (lazy, shared). */
-let tesseractOnly: TextRecognizer | null = null;
-function getTesseractOnly(): TextRecognizer {
-  if (!tesseractOnly) {
-    let inner: TextRecognizer | null = null;
-    tesseractOnly = {
-      async recognize(source) {
-        if (!inner) {
-          const { TesseractRecognizer } = await import('@/scanner/tesseract');
-          inner = new TesseractRecognizer(TESSERACT_OPTIONS);
-        }
-        return inner.recognize(source);
-      },
-      async dispose() {
-        await inner?.dispose();
-        inner = null;
-      },
-    };
-  }
-  return tesseractOnly;
-}
-
-/** `object-fit: contain` counterpart of coverTransform (for still photos). */
-function containTransform(w: number, h: number, ew: number, eh: number): CoverTransform {
-  if (w <= 0 || h <= 0) return { scale: 1, offsetX: 0, offsetY: 0 };
-  const scale = Math.min(ew / w, eh / h);
-  return { scale, offsetX: (ew - w * scale) / 2, offsetY: (eh - h * scale) / 2 };
-}
-
-interface Recent {
-  card: CatalogCard;
-  set: CatalogSet;
-  at: number;
-}
+import { PageScan } from './scan/PageScan';
+import {
+  CandidateRow,
+  CorrectionSheet,
+  RecentStrip,
+  containTransform,
+  fileToCanvas,
+  recognizerFor,
+  recordScan,
+  type Recent,
+} from './scan/shared';
 
 interface Still {
   url: string;
@@ -91,8 +54,10 @@ const STILL_MAX_WIDTH = 1600;
 export default function ScanPage() {
   const index = useCatalog();
   const collection = useCollection();
-  const [settings] = useSettings();
+  const [settings, update] = useSettings();
+  const mode = settings.scanMode;
   const [armed, setArmed] = useState(false);
+  const [pagePhoto, setPagePhoto] = useState<File | null>(null);
   const [still, setStill] = useState<Still | null>(null);
   const [toast, showToast] = useToast();
   const [correcting, setCorrecting] = useState<ScanCandidate | null>(null);
@@ -104,9 +69,11 @@ export default function ScanPage() {
 
   // Built once per catalog; ~21k cards → a few tens of ms.
   const scanIndex: ScanIndex = useMemo(() => buildScanIndex(index.catalog), [index]);
-  const recognizer = settings.scanEngine === 'tesseract' ? getTesseractOnly() : undefined;
+  const recognizer = recognizerFor(settings);
+  const pageMode = mode === 'page';
 
-  const scanner = useCardScanner({ index: scanIndex, enabled: armed && !still, recognizer });
+  const scanner = useCardScanner({ index: scanIndex, enabled: armed && !still && !pageMode, recognizer });
+  const engineName = scanner.engine === 'mlkit' ? 'ML Kit' : scanner.engine === 'tesseract' ? 'Tesseract' : 'on-device OCR';
 
   useEffect(() => {
     const el = viewRef.current;
@@ -115,7 +82,7 @@ export default function ScanPage() {
     ro.observe(el);
     setViewSize({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
-  }, [armed, still]);
+  }, [armed, still, pageMode]);
 
   useEffect(() => () => {
     if (still) URL.revokeObjectURL(still.url);
@@ -130,11 +97,14 @@ export default function ScanPage() {
     [still, scanner.frameSize, viewSize],
   );
 
+  const pushRecent = useCallback((card: CatalogCard, set: CatalogSet, qty: number) => {
+    setRecent((r) => [{ card, set, qty, at: Date.now() }, ...r].slice(0, 12));
+  }, []);
+
   const addCard = useCallback(
     async (card: CatalogCard, set: CatalogSet, trackKey?: string) => {
-      await adjustQty(card.id, 1);
-      await db.scanLog.add({ cardId: card.id, at: Date.now(), engine: scanner.engine ?? 'manual' });
-      setRecent((r) => [{ card, set, at: Date.now() }, ...r].slice(0, 12));
+      await recordScan(card, 1, scanner.engine ?? 'manual');
+      pushRecent(card, set, 1);
       if (trackKey) {
         setJustAdded((m) => new Map(m).set(trackKey, Date.now()));
         window.setTimeout(
@@ -150,7 +120,21 @@ export default function ScanPage() {
       showToast(`+1 ${card.name} · ${set.name} ${formatCardNumber(card, set)}`);
       if ('vibrate' in navigator) navigator.vibrate?.(30);
     },
-    [scanner.engine, showToast],
+    [scanner.engine, showToast, pushRecent],
+  );
+
+  const addPage = useCallback(
+    async (entries: PocketEntry[]) => {
+      let total = 0;
+      for (const e of entries) {
+        await recordScan(e.card, e.qty, 'page');
+        pushRecent(e.card, e.set, e.qty);
+        total += e.qty;
+      }
+      showToast(`Added ${total} ${total === 1 ? 'card' : 'cards'} from this page`);
+      if ('vibrate' in navigator) navigator.vibrate?.([30, 40, 30]);
+    },
+    [pushRecent, showToast],
   );
 
   /** Run the recognizer + matcher on a still image (camera app or gallery). */
@@ -160,14 +144,7 @@ export default function ScanPage() {
       setStill({ url, w: 0, h: 0, results: [], busy: true });
       const started = performance.now();
       try {
-        // createImageBitmap applies EXIF orientation, so phone photos come out upright.
-        const bitmap = await createImageBitmap(file);
-        const scale = Math.min(1, STILL_MAX_WIDTH / bitmap.width);
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, Math.round(bitmap.width * scale));
-        canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-        canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-        bitmap.close();
+        const canvas = await fileToCanvas(file, STILL_MAX_WIDTH);
         const lines = await (recognizer ?? getRecognizer()).recognize(canvas);
         const results = scanLines(lines, scanIndex);
         setStill({ url, w: canvas.width, h: canvas.height, results, busy: false, ms: performance.now() - started, lineCount: lines.length });
@@ -193,7 +170,7 @@ export default function ScanPage() {
         : scanner.paused
           ? 'Paused'
           : scanner.engine
-            ? `Scanning · ${scanner.engine === 'mlkit' ? 'ML Kit' : 'Tesseract'}`
+            ? `Scanning · ${engineName}`
             : 'Loading recognizer…';
 
   const fileInput = (
@@ -205,34 +182,85 @@ export default function ScanPage() {
       data-testid="photo-input"
       onChange={(e) => {
         const f = e.target.files?.[0];
-        if (f) void scanPhoto(f);
+        if (f) {
+          if (pageMode) {
+            setPagePhoto(f);
+            setArmed(true);
+          } else void scanPhoto(f);
+        }
         e.target.value = '';
       }}
     />
   );
 
+  const correctingOptions: ScanAlternative[] = correcting
+    ? [{ card: correcting.card, set: correcting.set, score: correcting.score, evidence: correcting.evidence }, ...correcting.alternatives]
+    : [];
+
+  if (pageMode && (armed || pagePhoto)) {
+    return (
+      <>
+        <PageScan
+          index={index}
+          scanIndex={scanIndex}
+          recognizer={recognizer ?? getRecognizer()}
+          collection={collection}
+          engineName={engineName}
+          initialPhoto={pagePhoto}
+          onAdded={(entries) => void addPage(entries)}
+          onExit={() => {
+            setArmed(false);
+            setPagePhoto(null);
+          }}
+        />
+        <Toast message={toast} />
+      </>
+    );
+  }
+
   if (!armed && !still) {
     return (
       <div className="scan-page">
         <div className="scan-intro">
+          <div className="segmented" role="tablist" aria-label="Scan mode">
+            <button type="button" role="tab" aria-selected={!pageMode} className={!pageMode ? 'active' : ''} onClick={() => update({ scanMode: 'cards' })}>
+              Single cards
+            </button>
+            <button type="button" role="tab" aria-selected={pageMode} className={pageMode ? 'active' : ''} onClick={() => update({ scanMode: 'page' })}>
+              Binder page
+            </button>
+          </div>
           <CameraIcon size={56} />
-          <h2>Scan your cards</h2>
-          <p>
-            Point the camera at one or more cards. CardCodex reads the name, HP and the printed number and shows a chip over
-            each card it recognises. Tap a chip to add that card, or open the alternatives to correct it.
-          </p>
+          {pageMode ? (
+            <>
+              <h2>Scan a binder page</h2>
+              <p>
+                Line a whole page up with the on-screen grid and capture it. CardCodex reads every pocket, then you confirm each card
+                and how many copies are stacked in that sleeve before adding the page to your collection.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>Scan your cards</h2>
+              <p>
+                Point the camera at one or more cards. CardCodex reads the name, HP and the printed number and shows a chip over each
+                card it recognises. Tap a chip to add that card, or open the alternatives to correct it.
+              </p>
+            </>
+          )}
           <p>Everything runs on this device; no images are uploaded.</p>
           <div className="btn-row" style={{ justifyContent: 'center' }}>
             <button type="button" className="btn primary" onClick={() => setArmed(true)}>
               <CameraIcon size={18} /> Start camera
             </button>
             <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-              Scan a photo
+              {pageMode ? 'Scan a page photo' : 'Scan a photo'}
             </button>
           </div>
           {recent.length > 0 && <RecentStrip recent={recent} />}
         </div>
         {fileInput}
+        <Toast message={toast} />
       </div>
     );
   }
@@ -316,7 +344,10 @@ export default function ScanPage() {
       <div className="scan-bottom">
         {!still && scanner.status === 'error' && (
           <div className="hint">
-            {scanner.error}. Try <button type="button" className="link-btn" onClick={() => fileRef.current?.click()}>scanning a photo</button>{' '}
+            {scanner.error}. Try{' '}
+            <button type="button" className="link-btn" onClick={() => fileRef.current?.click()}>
+              scanning a photo
+            </button>{' '}
             instead, or add cards from <a href={href('/search')}>Search</a>.
           </div>
         )}
@@ -358,140 +389,18 @@ export default function ScanPage() {
       </div>
 
       <CorrectionSheet
-        candidate={correcting}
+        open={correcting !== null}
+        options={correctingOptions}
         index={index}
         onClose={() => setCorrecting(null)}
         onPick={(card, set) => {
+          const key = correcting?.key;
           setCorrecting(null);
-          void addCard(card, set, correcting?.key);
+          void addCard(card, set, key);
         }}
       />
       <Toast message={toast} />
       {fileInput}
     </div>
-  );
-}
-
-function RecentStrip({ recent }: { recent: Recent[] }) {
-  return (
-    <div className="scan-recent" aria-label="Recently added">
-      {recent.map((r) => (
-        <a key={`${r.card.id}-${r.at}`} className="scan-recent-item" href={href(`/card/${r.card.id}`)}>
-          <img src={cardImageUrl(r.card, r.set.series, 'low')} alt={r.card.name} loading="lazy" />
-          <div>{r.card.name}</div>
-        </a>
-      ))}
-    </div>
-  );
-}
-
-function CandidateRow({
-  card,
-  set,
-  score,
-  evidence,
-  owned,
-  onAdd,
-  onCorrect,
-}: {
-  card: CatalogCard;
-  set: CatalogSet;
-  score: number;
-  evidence: string[];
-  owned: number;
-  onAdd: () => void;
-  onCorrect: () => void;
-}) {
-  return (
-    <div className="scan-candidate">
-      <img src={cardImageUrl(card, set.series, 'low')} alt="" />
-      <div className="cand-body" onClick={onCorrect} role="button" tabIndex={0}>
-        <div className="cand-name">{card.name}</div>
-        <div className="cand-sub">
-          {set.name} · {formatCardNumber(card, set)}
-          {owned ? ` · own ${owned}` : ''}
-        </div>
-        <div className="cand-sub">
-          {Math.round(score * 100)}% · {evidence.join(', ') || 'tap to choose'}
-        </div>
-      </div>
-      <button type="button" className="btn ghost" onClick={onCorrect} aria-label="Choose a different card">
-        ▾
-      </button>
-      <button type="button" className="btn primary" onClick={onAdd} aria-label={`Add ${card.name}`}>
-        <PlusIcon size={16} />
-      </button>
-    </div>
-  );
-}
-
-function CorrectionSheet({
-  candidate,
-  index,
-  onClose,
-  onPick,
-}: {
-  candidate: ScanCandidate | null;
-  index: ReturnType<typeof useCatalog>;
-  onClose: () => void;
-  onPick: (card: CatalogCard, set: CatalogSet) => void;
-}) {
-  const [query, setQuery] = useState('');
-  useEffect(() => setQuery(''), [candidate]);
-  const manual = useMemo(() => (query.trim() ? searchCards(index, query, {}, undefined, 20).cards : []), [index, query]);
-  if (!candidate) return null;
-  const options: ScanAlternative[] = [
-    { card: candidate.card, set: candidate.set, score: candidate.score, evidence: candidate.evidence },
-    ...candidate.alternatives,
-  ];
-  return (
-    <Sheet open onClose={onClose} title="Which card is it?">
-      <div className="scan-candidates">
-        {options.map((o) => (
-          <button key={o.card.id} type="button" className="scan-candidate" onClick={() => onPick(o.card, o.set)}>
-            <img src={cardImageUrl(o.card, o.set.series, 'low')} alt="" />
-            <div className="cand-body">
-              <div className="cand-name">{o.card.name}</div>
-              <div className="cand-sub">
-                {o.set.name} · {formatCardNumber(o.card, o.set)}
-              </div>
-            </div>
-            <span className="cand-score">{Math.round(o.score * 100)}%</span>
-          </button>
-        ))}
-      </div>
-      <input
-        className="search-input"
-        type="search"
-        placeholder="Not listed? Search any card…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        autoComplete="off"
-      />
-      {manual.length > 0 && (
-        <div className="scan-candidates">
-          {manual.map((c) => {
-            const set = index.setsById.get(c.set);
-            if (!set) return null;
-            return (
-              <button key={c.id} type="button" className="scan-candidate" onClick={() => onPick(c, set)}>
-                <img src={cardImageUrl(c, set.series, 'low')} alt="" />
-                <div className="cand-body">
-                  <div className="cand-name">{c.name}</div>
-                  <div className="cand-sub">
-                    {set.name} · {formatCardNumber(c, set)}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      <div className="sheet-actions">
-        <button type="button" className="btn ghost" onClick={onClose}>
-          Cancel
-        </button>
-      </div>
-    </Sheet>
   );
 }

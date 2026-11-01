@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { useCatalog } from '@/app/context';
 import { useSettings, type Theme, type TileSize } from '@/app/settings';
+import { openTour } from '@/app/tourState';
+import { PAGE_LAYOUTS } from '@/scanner/page';
 import { clearCollection, exportCollection, importCollection } from '@/data/collection';
 import { Chip, Sheet, Toast, TopBar, useToast } from '@/ui/components';
 
@@ -112,6 +114,37 @@ export default function SettingsPage() {
             </div>
           </div>
           <p className="hint">Auto uses on-device Google ML Kit on Android and Tesseract in the browser. Nothing is uploaded.</p>
+          <div className="setting-row">
+            <span>Default scan mode</span>
+            <div className="chip-row inline">
+              <Chip active={settings.scanMode === 'cards'} onClick={() => update({ scanMode: 'cards' })}>
+                Single cards
+              </Chip>
+              <Chip active={settings.scanMode === 'page'} onClick={() => update({ scanMode: 'page' })}>
+                Binder page
+              </Chip>
+            </div>
+          </div>
+          <div className="setting-row">
+            <span>Binder page layout</span>
+            <div className="chip-row inline">
+              {PAGE_LAYOUTS.map((l) => (
+                <Chip key={l.id} active={settings.pageLayout === l.id} onClick={() => update({ pageLayout: l.id })}>
+                  {l.label}
+                </Chip>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-section">
+          <h2>Guided tour</h2>
+          <p className="hint">A short walk through the five tabs. It runs once on first launch; replay it any time.</p>
+          <div className="btn-row">
+            <button type="button" className="btn" onClick={() => openTour()}>
+              {settings.tourDone ? 'Restart tour' : 'Start tour'}
+            </button>
+          </div>
         </section>
 
         <section className="settings-section">

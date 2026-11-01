@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { CatalogProvider } from '@/app/context';
 import { useSettings } from '@/app/settings';
+import { openTour, useTourOpen } from '@/app/tourState';
+import { Tour } from '@/ui/Tour';
 import { loadCatalog, type CatalogIndex } from '@/data/catalog';
 import { BackpackIcon, BinderIcon, CameraIcon, PokeballIcon, SearchIcon } from '@/ui/icons';
 import { href, useRoute, useScrollTopOnRoute } from '@/ui/router';
@@ -80,6 +82,14 @@ function Shell() {
   const [section, arg] = route.segments;
   useScrollTopOnRoute(route.path);
   const isScan = section === 'scan';
+  const tourOpen = useTourOpen();
+  const [settings] = useSettings();
+
+  // First launch: start the guided tour once the catalog is on screen.
+  useEffect(() => {
+    if (!settings.tourDone) openTour();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   let page: React.ReactNode;
   switch (section) {
@@ -121,13 +131,20 @@ function Shell() {
         {NAV.map(({ path, label, Icon }) => {
           const active = `/${section ?? 'dex'}` === path || (path === '/dex' && !section) || (path === '/sets' && section === 'card');
           return (
-            <a key={path} href={href(path)} className={`nav-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
+            <a
+              key={path}
+              href={href(path)}
+              className={`nav-item${active ? ' active' : ''}`}
+              aria-current={active ? 'page' : undefined}
+              data-tour={`nav-${path.slice(1)}`}
+            >
               <Icon size={24} />
               <span>{label}</span>
             </a>
           );
         })}
       </nav>
+      {tourOpen && <Tour />}
     </div>
   );
 }

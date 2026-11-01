@@ -36,6 +36,14 @@ with Capacitor. Your collection lives only on your device.
   Tesseract.js with the English model bundled in `public/tessdata/`, so it works offline. The card
   should fill most of the frame: the printed number (bottom-left) is what pins down the exact printing;
   a name alone lists every printing in the alternatives.
+- **Binder page mode** – switch the scanner to *Binder page*, pick the page layout (9-, 4-, 12- or
+  16-pocket), line the page up with the on-screen grid and capture it (or scan a photo of the page).
+  Every pocket is cropped at full resolution and read on its own; the review grid then shows each
+  pocket's card with a copy counter, so pockets holding several copies in one sleeve get the right
+  count, wrong guesses can be swapped from the alternatives, and empty pockets are skipped. One tap
+  adds the whole page.
+- **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
+  replayed from Settings.
 
 ## Data
 
@@ -100,8 +108,35 @@ Or open `android/` in Android Studio (`npm run android:open`) and run it on a de
 GitHub Actions builds the web app and a debug APK on every push; the APK is attached as a workflow
 artifact.
 
-For a store build, create a signing key and run `./gradlew bundleRelease` (see the Android docs on
-app signing); the project has no release keystore committed.
+### Release builds
+
+Releases are signed with a keystore that is **not** in the repository. One-time setup (the key must
+be kept and backed up; every future update has to be signed with the same key):
+
+```bash
+mkdir -p android/keystore
+keytool -genkeypair -v -keystore android/keystore/cardcodex-release.jks -alias cardcodex   -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Then create `android/keystore.properties` (gitignored):
+
+```properties
+storeFile=keystore/cardcodex-release.jks
+storePassword=…
+keyAlias=cardcodex
+keyPassword=…
+```
+
+(CI can use the `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and
+`ANDROID_KEY_PASSWORD` environment variables instead.) Bump the version in `package.json`
+(`versionName` and `versionCode` derive from it), then:
+
+```bash
+npm run android:release
+# → release/CardCodex-<version>-arm64-v8a-release.apk (+ armeabi-v7a, x86_64, universal)
+```
+
+`npm run android:debug` builds the debug-signed equivalents with the same names.
 
 ## Credits and legal
 

@@ -1374,3 +1374,214 @@ textarea:focus {
   border-radius: 12px;
   pointer-events: none;
 }
+
+/* ===== Scanner: mode switch, binder page mode ===== */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+.segmented button.active {
+  background: var(--accent);
+  color: #fff;
+}
+.page-guide {
+  position: absolute;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
+}
+.page-cell {
+  position: absolute;
+  border: 1px dashed rgba(255, 255, 255, 0.55);
+  border-radius: 6px;
+}
+.page-cell span {
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.page-progress {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  text-align: center;
+  padding: 24px;
+}
+.spinner-ring {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, 0.25);
+  border-top-color: var(--accent-strong);
+  animation: spin 0.9s linear infinite;
+}
+.scan-hud.static {
+  position: static;
+  color: var(--fg);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+}
+.scan-hud.static .scan-status {
+  background: transparent;
+  color: var(--fg);
+  backdrop-filter: none;
+  padding-left: 0;
+}
+.page-review {
+  overflow-y: auto;
+  background: var(--bg);
+}
+.pocket-grid {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+.pocket {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-width: 0;
+}
+.pocket-empty {
+  opacity: 0.75;
+}
+.pocket-thumb {
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: var(--bg-card);
+  aspect-ratio: 63 / 88;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+}
+.pocket-thumb > img:first-child {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.pocket-match {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 34%;
+  border-radius: 3px;
+  border: 2px solid var(--ok);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.pocket-body {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.pocket-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pocket-sub {
+  font-size: 11px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pocket-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.btn.small {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* ===== Guided tour ===== */
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+.tour-dim {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+.tour-spotlight {
+  position: absolute;
+  border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.6);
+  outline: 2px solid var(--accent-strong);
+  pointer-events: none;
+}
+.tour-card {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(92vw, 420px);
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: rise 0.18s ease-out;
+}
+.tour-card h2 {
+  font-size: 18px;
+}
+.tour-card p {
+  margin: 0;
+  color: var(--fg-muted);
+  line-height: 1.5;
+  font-size: 14px;
+}
+.tour-step {
+  font-size: 11px;
+  color: var(--fg-faint);
+  letter-spacing: 0.06em;
+}
+.tour-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.tour-spacer {
+  flex: 1;
+}

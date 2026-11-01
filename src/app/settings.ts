@@ -15,10 +15,24 @@ export interface Settings {
   dimMissing: boolean;
   /** Prefer the on-device ML Kit engine on Android when available. */
   scanEngine: 'auto' | 'tesseract';
+  /** Scanner mode the Scan tab opens in. */
+  scanMode: 'cards' | 'page';
+  /** Binder page layout id (see PAGE_LAYOUTS in src/scanner/page.ts). */
+  pageLayout: string;
+  /** The guided tour was completed or skipped. */
+  tourDone: boolean;
 }
 
 const KEY = 'cardcodex.settings';
-const DEFAULTS: Settings = { theme: 'system', tileSize: 'medium', dimMissing: true, scanEngine: 'auto' };
+const DEFAULTS: Settings = {
+  theme: 'system',
+  tileSize: 'medium',
+  dimMissing: true,
+  scanEngine: 'auto',
+  scanMode: 'cards',
+  pageLayout: '3x3',
+  tourDone: false,
+};
 
 function read(): Settings {
   try {

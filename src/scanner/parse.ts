@@ -11,6 +11,7 @@
  *   "$25 Wugtrio" / "»90@" / "w110" / "#330"            → name line junk + HP without "HP"
  */
 import type {
+  DexObservation,
   FrameObservations,
   HpObservation,
   NameObservation,
@@ -316,12 +317,35 @@ export function parseName(line: RecognizedLine, lineIndex: number): NameObservat
 }
 
 // ---------------------------------------------------------------------------
+// Pokédex number
+// ---------------------------------------------------------------------------
+
+/** Highest National Pokédex number in the species list. */
+const MAX_DEX = 1025;
+
+/**
+ * "NO. 0204 …" / "No. 162 …" on the Pokédex line (see DexObservation). The
+ * digits must follow "NO" directly (with an optional dot), so "No Pokémon in
+ * play" in rules text never matches; O/I confusions inside the digits are
+ * tolerated ("NO. O2O4").
+ */
+export function parseDex(line: RecognizedLine, lineIndex: number): DexObservation | null {
+  const m = /(?:^|[^A-Za-z])N[Oo0]\.?\s*([0-9OoIl]{1,4})(?![0-9A-Za-z])/.exec(line.text);
+  if (!m) return null;
+  const d = toDigits(m[1]);
+  if (!d) return null;
+  const dex = Number(d.digits);
+  if (!Number.isInteger(dex) || dex < 1 || dex > MAX_DEX) return null;
+  return { kind: 'dex', dex, raw: m[0].trim(), bbox: line.bbox, lineIndex };
+}
+
+// ---------------------------------------------------------------------------
 // Whole frame
 // ---------------------------------------------------------------------------
 
 /** Parse all lines of a frame into observations. Pure and deterministic. */
 export function parseLines(lines: readonly RecognizedLine[], ctx: ParseContext = {}): FrameObservations {
-  const res: FrameObservations = { lines: [...lines], numbers: [], setCodes: [], hps: [], names: [] };
+  const res: FrameObservations = { lines: [...lines], numbers: [], setCodes: [], hps: [], names: [], dexes: [] };
   lines.forEach((line, i) => {
     if (!line.text.trim()) return;
     const nums = parseNumbers(line, i, ctx);
@@ -332,6 +356,8 @@ export function parseLines(lines: readonly RecognizedLine[], ctx: ParseContext =
     res.hps.push(...parseHp(line, i));
     const name = parseName(line, i);
     if (name) res.names.push(name);
+    const dex = parseDex(line, i);
+    if (dex) res.dexes.push(dex);
   });
   return res;
 }

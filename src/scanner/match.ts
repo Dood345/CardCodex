@@ -25,6 +25,7 @@
 import type { Catalog, CatalogCard, CatalogSet } from '../data/types';
 import type {
   Box,
+  DexObservation,
   FrameObservations,
   HpObservation,
   NumberObservation,
@@ -62,6 +63,8 @@ export interface ScanIndex {
   cardBySetNum: Map<string, CatalogCard>;
   /** Normalized full name → cards (all printings, newest set first). */
   cardsByName: Map<string, CatalogCard[]>;
+  /** National Pokédex number → cards featuring that species, newest set first. */
+  cardsByDex: Map<number, CatalogCard[]>;
   /** Normalized card name per card id (cached). */
   normNameById: Map<string, string>;
   /** Unique normalized full names; position = name id. */
@@ -99,6 +102,7 @@ export function buildScanIndex(catalog: Catalog): ScanIndex {
 
   const cardBySetNum = new Map<string, CatalogCard>();
   const cardsByName = new Map<string, CatalogCard[]>();
+  const cardsByDex = new Map<number, CatalogCard[]>();
   const normNameById = new Map<string, string>();
   const rec = (c: CatalogCard) => setRecency.get(c.set) ?? 0;
   for (const c of catalog.cards) {
@@ -106,8 +110,11 @@ export function buildScanIndex(catalog: Catalog): ScanIndex {
     const n = normalizeName(c.name);
     normNameById.set(c.id, n);
     if (n) push(cardsByName, n, c);
+    if (c.dex) for (const d of c.dex) push(cardsByDex, d, c);
   }
-  for (const list of cardsByName.values()) list.sort((a, b) => rec(b) - rec(a) || a.id.localeCompare(b.id));
+  const newestFirst = (a: CatalogCard, b: CatalogCard) => rec(b) - rec(a) || a.id.localeCompare(b.id);
+  for (const list of cardsByName.values()) list.sort(newestFirst);
+  for (const list of cardsByDex.values()) list.sort(newestFirst);
 
   const names = [...cardsByName.keys()].sort();
   const namesByBase = new Map<string, number[]>();
@@ -126,6 +133,7 @@ export function buildScanIndex(catalog: Catalog): ScanIndex {
     setsByAbbr,
     cardBySetNum,
     cardsByName,
+    cardsByDex,
     normNameById,
     names,
     namesByBase,
@@ -320,6 +328,17 @@ function rectFromName(b: Box, H: number): Box {
   return { x: b.x - 0.12 * W, y: cy - 0.06 * H, w: W, h: H };
 }
 
+/**
+ * Card outline from a lone Pokédex line ("NO. 0204 …"): it runs under the
+ * artwork, centred ~0.55 of the card height down (SV) / ~0.48 (SWSH), and
+ * starts ~10% in from the left edge.
+ */
+function rectFromDex(b: Box, H: number): Box {
+  const W = H * CARD_ASPECT;
+  const cy = b.y + b.h / 2;
+  return { x: b.x - 0.1 * W, y: cy - 0.52 * H, w: W, h: H };
+}
+
 function grow(b: Box, f: number): Box {
   return { x: b.x - b.w * f, y: b.y - b.h * f, w: b.w * (1 + 2 * f), h: b.h * (1 + 2 * f) };
 }
@@ -419,6 +438,15 @@ export function groupCards(obs: FrameObservations, nameInfo: Map<number, NameLin
     const H = scaleFor(lines[nm.lineIndex].bbox.h * H_PER_NAME_LINE);
     groups.push({ cardBox: rectFromName(lines[nm.lineIndex].bbox, H), lineIndices: [], nameLine: nm.lineIndex });
   }
+  // 3b) A Pokédex line with no name or number nearby still marks a card
+  //     (stylised names and tiny numbers are what OCR loses first).
+  for (const d of obs.dexes) {
+    if (used.has(d.lineIndex) || inExisting(d.lineIndex)) continue;
+    used.add(d.lineIndex);
+    // The Pokédex line is printed at rules-text size.
+    const H = scaleFor(lines[d.lineIndex].bbox.h * H_PER_RULES_LINE);
+    groups.push({ cardBox: rectFromDex(lines[d.lineIndex].bbox, H), lineIndices: [] });
+  }
 
   // 4) Assign every other line to the card whose (5%-grown) outline contains
   //    its centre; if several do (overlapping estimates), the nearest centre.
@@ -465,6 +493,8 @@ const SCORE_TOTAL = 0.25;
 const SCORE_TOTAL_NEAR = 0.1;
 const SCORE_ABBR = [0.2, 0.1] as const; // by distance 0 / 1
 const SCORE_NAME = 0.4;
+/** Pokédex number on the card's Pokédex line: identifies the species as surely as the name. */
+const SCORE_DEX = 0.3;
 const SCORE_HP = { explicit: 0.1, loose: 0.06 } as const;
 /** Newest printing wins ties (most scans are of recent cards). */
 const SCORE_RECENCY = 0.02;
@@ -496,6 +526,7 @@ interface GroupEvidence {
   numbers: NumberObservation[];
   codes: SetCodeObservation[];
   hps: HpObservation[];
+  dexes: DexObservation[];
   /** name → weighted strength (best over lines in the group). */
   names: Map<string, { strength: number; raw: string }>;
 }
@@ -527,6 +558,7 @@ function collectEvidence(
   }
   return {
     numbers: obs.numbers.filter((n) => inGroup.has(n.lineIndex)),
+    dexes: obs.dexes.filter((d) => inGroup.has(d.lineIndex)),
     // Set codes are printed next to the number at the bottom.
     codes: obs.setCodes.filter((c) => inGroup.has(c.lineIndex) && (c.lineIndex === group.numberLine || relY(c.bbox) > 0.8)),
     // HP is printed on the name's row, to its right. Relative to the name
@@ -605,6 +637,14 @@ function scoreCard(card: CatalogCard, set: CatalogSet, ev: GroupEvidence, index:
     evidence.push(`name "${nm.raw.trim()}"`);
   }
 
+  if (card.dex) {
+    const d = ev.dexes.find((x) => card.dex!.includes(x.dex));
+    if (d) {
+      raw += SCORE_DEX;
+      evidence.push(`dex #${d.dex}`);
+    }
+  }
+
   if (card.hp !== undefined) {
     const h = ev.hps.filter((x) => x.hp === card.hp).sort((a, b) => Number(b.explicit) - Number(a.explicit))[0];
     if (h) {
@@ -638,6 +678,9 @@ function candidatePool(ev: GroupEvidence, index: ScanIndex): Map<string, Catalog
   }
   for (const [name] of ev.names) {
     for (const c of (index.cardsByName.get(name) ?? []).slice(0, MAX_PRINTINGS_PER_NAME)) add(c);
+  }
+  for (const d of ev.dexes) {
+    for (const c of (index.cardsByDex.get(d.dex) ?? []).slice(0, MAX_PRINTINGS_PER_NAME)) add(c);
   }
   return pool;
 }
@@ -687,6 +730,7 @@ export function matchObservations(obs: FrameObservations, index: ScanIndex): Sca
     if (g.nameLine !== undefined) contributing.add(g.nameLine);
     if (g.numberLine !== undefined) contributing.add(g.numberLine);
     for (const n of ev.numbers) contributing.add(n.lineIndex);
+    for (const d of ev.dexes) if (best.card.dex?.includes(d.dex)) contributing.add(d.lineIndex);
     out.push({
       key: best.card.id,
       card: best.card,
