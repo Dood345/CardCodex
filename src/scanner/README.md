@@ -200,8 +200,8 @@ searched. Items are scored by the directed edge evidence at their 2n edges with 
 weighted most (a cell offset inside the cards finds n−1 good items and one bad one), less the edge
 energy found in the gaps between cards, with a mild preference for cards that fill their pitch.
 Columns and rows must agree with the card aspect within 20%. Confidence is the mean absolute edge
-energy at the fitted edges (1 = average): below 0.4 the fit is dropped. Measured on two real
-9-pocket photos (Pixel 11 Pro XL, Z Fold 8): both boxes within a pocket gap of the cards,
+energy at the fitted edges (1 = average): below 0.4 the fit is dropped. Measured on the two real
+9-pocket photos in `scripts/fixtures/binder-pages/` (Pixel 11 Pro XL, Z Fold 8): both boxes within a pocket gap of the cards,
 confidence 0.59–0.62, 10–15 ms per fit; two single-card photos: 0.27 and no fit. The capture UI
 runs it 3×/s, eases the guide towards each fit, and calls the page "found" after three fits within
 1.5% of each other; a capture before that is shown as a still with the guide for a check.
