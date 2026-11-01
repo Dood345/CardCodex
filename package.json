@@ -2,7 +2,7 @@
   "name": "cardcodex",
   "private": true,
   "version": "1.0.0",
-  "description": "Pokédex-style Pokémon TCG card collection tracker with camera card scanning. Web app (PWA) wrapped with Capacitor for Android.",
+  "description": "Pok\u00e9dex-style Pok\u00e9mon TCG card collection tracker with camera card scanning. Web app (PWA) wrapped with Capacitor for Android.",
   "type": "module",
   "scripts": {
     "dev": "vite --host",
@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "catalog": "node scripts/build-catalog.mjs",
     "android:sync": "npm run build && npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "android:release": "node scripts/android-release.mjs",
+    "android:debug": "node scripts/android-release.mjs --debug"
   },
   "dependencies": {
     "@capacitor-mlkit/text-recognition": "^8.2.2",

@@ -33,3 +33,8 @@ Thumbs.db
 
 # Catalog build scratch
 scripts/.cache/
+
+# Release outputs and signing (never commit)
+release/
+android/keystore/
+android/keystore.properties

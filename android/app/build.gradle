@@ -1,5 +1,24 @@
 apply plugin: 'com.android.application'
 
+// App version comes from package.json ("1.2.3" → versionName 1.2.3, versionCode 10203),
+// so bumping the npm version is the whole release-numbering step.
+def packageJson = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json'))
+def semver = (packageJson.version as String).tokenize('.').collect { it.replaceAll(/\D.*/, '').toInteger() }
+while (semver.size() < 3) semver << 0
+def appVersionName = packageJson.version as String
+def appVersionCode = semver[0] * 10000 + semver[1] * 100 + semver[2]
+
+// Release signing: android/keystore.properties (gitignored; see README "Android") or, in CI,
+// the ANDROID_KEYSTORE_* environment variables. Without either, release builds are unsigned.
+def keystoreProps = new Properties()
+def keystorePropsFile = rootProject.file('keystore.properties')
+if (keystorePropsFile.exists()) keystorePropsFile.withInputStream { keystoreProps.load(it) }
+def signingStoreFile = System.getenv('ANDROID_KEYSTORE_PATH') ?: keystoreProps['storeFile']
+def signingStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: keystoreProps['storePassword']
+def signingKeyAlias = System.getenv('ANDROID_KEY_ALIAS') ?: keystoreProps['keyAlias']
+def signingKeyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: keystoreProps['keyPassword']
+def hasReleaseSigning = signingStoreFile && signingStorePassword && signingKeyAlias && signingKeyPassword
+
 android {
     namespace = "com.independent.cardcodex"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +26,8 @@ android {
         applicationId "com.independent.cardcodex"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +35,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (hasReleaseSigning) {
+                storeFile rootProject.file(signingStoreFile)
+                storePassword signingStorePassword
+                keyAlias signingKeyAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
         }
     }
     // ML Kit ships native text-recognition libraries for every ABI (~45 MB in
@@ -31,6 +61,13 @@ android {
             reset()
             include 'arm64-v8a', 'armeabi-v7a', 'x86_64'
             universalApk true
+        }
+    }
+    // Name outputs CardCodex-<version>-<abi>-<buildType>.apk instead of app-<abi>-<buildType>.apk.
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            def abi = output.filters.find { it.filterType == 'ABI' }?.identifier ?: 'universal'
+            outputFileName = "CardCodex-${variant.versionName}-${abi}-${variant.buildType.name}.apk"
         }
     }
 }
