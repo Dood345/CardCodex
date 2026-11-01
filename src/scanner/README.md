@@ -17,6 +17,8 @@ device except the one-time Tesseract language-model download (see Engines).
 | `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search), `perspectiveCheck` (pure) |
 | `guidance.ts` | binder-page capture guidance: `sharpness`, `measureGuidance`, `adviseCapture` ("Move closer", "Flatten the phone", "More light", "Hold still") |
 | `photo.ts` | full-resolution stills from the camera stream through ImageCapture (`takePhoto`, `probePhotoSize`), null when the API is missing |
+| `hash.ts` | artwork matching: perceptual card hash (`hashCard`), the hash table (`public/data/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
+| `artwork.ts` | loads the hash table (`loadHashTable`) and merges a pocket's nearest hashes into the OCR candidates (`mergeArtworkEvidence`, pure) |
 | `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
 | `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion`, `previewToPhoto` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
@@ -195,7 +197,13 @@ from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page of 6
 the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected, 5.2 s for the page.
 
 **Reading a pocket**: each cell is padded by 6% (`pad`) so a grid that is a little off cannot cut
-the collector number, cropped between 1000 and 1400 px wide and read. When that read does not
+the collector number, cropped between 1000 and 1400 px wide and read. Before the OCR the pocket's
+picture is hashed and matched against the catalog's artwork hashes (`matchPocket`, see "Artwork
+matching" below); the nearest hashes are merged into every OCR result of the pocket
+(`mergeArtworkEvidence`), so a picture match plus a read number is confident at once and skips the
+magnified strip, and a picture match alone shows up as an unsure candidate with that picture's
+printings as alternatives. `PocketScan.artwork` lists the nearest hashes, `hashMs` the time they
+took; `artwork: false` in the options turns the step off. When that read does not
 settle the printing, the bottom 15% of the card is read again at 2.5× (`numberStrip`): the number
 line is the smallest text on the card and the one that pins it down; its lines are added unless
 they repeat a line already read. Measured on the three fixture photos (27 pockets, Tesseract in
@@ -297,6 +305,98 @@ of a card sharing nothing with the pool retires the track at once (the user swap
 `ScanCandidate.stability` is the leader's share of the pool ramped in over three frames, drawn as
 the chip's confidence bar; the pool (as shares) is exposed through `alternatives` and listed as
 runners-up under the row.
+
+## Artwork matching (`hash.ts`, `scripts/build-hashes.mjs`)
+
+Commercial scanners identify a card by its picture, not its text. `hash.ts` adds that as a second,
+OCR-independent signal: every Pokémon card's TCGdex reference image is reduced offline to a 128-bit
+perceptual hash (`npm run hashes` → `public/data/hashes.json`, 32 bytes per card, ~355 KB gzip for
+19.7k cards; 1.6k cards have no image on TCGdex), and a pocket crop is hashed the same way and
+compared with every entry by Hamming distance (a linear scan of 20k × 128 bits is ~1 ms).
+
+**The hash** (`HASH_SPEC`): two difference hashes of the luma, each on a 9×8 grid of cell means
+(8 rows × 8 "is the cell darker than its right neighbour" bits = 64 bits): one of the whole card,
+one of the artwork window (x 10–90 %, y 12–47 % of the card, inside the picture box of both modern
+and Base Set layouts). A dHash ignores brightness, contrast and smooth lighting gradients, which is
+what a photo through a binder sleeve adds. Transparent pixels (the reference scans' rounded corners)
+are composited over white. The build script decodes with `sharp` and calls the very same `hashCard`
+through Vite, and a reference image hashed in the browser (canvas → `getImageData`) matches its
+table entry bit for bit (18/18 in the bench), so the table and the scanner never disagree on the spec.
+
+**Alignment is everything.** Measured on reference images: a 1 % shift of the card costs ~13 bits,
+3 % costs 28–41, while unrelated cards differ by ~64 and reprints of the same picture by 0–8; a card
+drawn 6 % too small costs ~18. The fitted grid is within a pocket gap of the cards, never exact, so
+`matchPocket` searches: the padded pocket crop is sampled once (272 px wide, the card ≈ 245 px like
+a reference image) into a luma summed-area table, from which the hash of *any* window costs 144
+lookups. A coarse pass hashes 75 alignments (±4 % in 2 % steps × card 92/96/100 % of the cell) against
+the whole table, then the 96 nearest cards get a fine pass over 1,183 alignments (±6 % in 1 % steps ×
+90–102 %).
+
+**Measured on the three fixture photos** (`node scripts/hash-bench.mjs`, 27 pockets, expected ids in
+`scripts/fixtures/binder-pages/README.md`; OCR alone got 8 of these 27 printings right in the earlier
+manual bench and 6 in `scripts/page-bench.mjs`):
+
+| placement of the card in the pocket | exact | same artwork | median distance to the expected card | median margin to the next artwork / next card |
+|---|---|---|---|---|
+| the grid cell as is | 4/27 | 4/27 | 44 | 1 / 1 |
+| the card box the fitter measured | 6/27 | 6/27 | 43 | 1 / 1 |
+| padded crop tightened to the card's edges (`refineCardBox`) | 12/27 | 12/27 | 37 | 3 / 3 |
+| coarse search alone (75 alignments) | 22/27 | 23/27 | 15 | 9 / 7 |
+| **coarse-to-fine search (`matchPocket`)** | **24/27** | **25/27** | **11** | **14 / 12** |
+
+Per photo (exact): Fold 8/9, Pixel 8/9, Pixel page B 8/9 (9/9 by artwork). The matched pockets sit at
+5–14 bits from their card with the runner-up 8–23 bits further away; the two exceptions are Butterfree
+`sv09-003` (26–27 bits, margin 1–2, a textured holo) and the misses below. The miss on both pages is
+Wartortle `swsh10.5-016`: a glare band across the top of the picture, so the nearest entry is Relicanth
+`swsh3-40`, a Sword & Shield Water card with the same layout (Fold: 27 vs 41 bits for Wartortle; Pixel:
+26 vs 26, a tie). Alignment tolerance, from the reference images shifted and scaled in the bench: a 1 %
+shift (≈ 13 bits) keeps every card at rank 1, 2 % (≈ 25) keeps 14 of 18, 3 % (≈ 35) 8 of 18; a card 6 %
+too small (≈ 18 bits) keeps all 18, 10 % (≈ 27) 16 of 18. Cost: ~110 ms per pocket in headless Chrome
+with software rendering against the full table (the coarse pass, 19.7k cards × 75 probes, is most of
+it; 20–34 ms with a 4k-card table), so ~1 s per 9-pocket page beside 2.7 s of OCR; not yet timed on a
+phone. Browser hash versus the Node-built table entry: 0 bits apart for all 18 reference images (the
+runtime's resampled path 0–4).
+
+The third miss is `base1-55` (Nidoran♂, Base Set), whose nearest entry is `lc-83`, the Legendary
+Collection reprint of the same picture (12 vs 18 bits): an artwork hash names the picture,
+and the printing has to come from the OCR'd set code or number, exactly the evidence OCR does read.
+
+**Merging with the OCR** (`artwork.ts`, `mergeArtworkEvidence`): every card named by either side is
+scored `min(1, OCR score + artworkBonus)`, where the bonus is 0.9 for an identical picture, 0.55 at
+the match limit of 24 bits and fades to 0 at 32, so a strong match outranks a name-only read (~0.45)
+on its own but not a clean number + total + name read (0.95–1). Hits within 6 bits of the best one are
+the same picture (reprints). The best card is confident when the picture matched (≤ 24) and the OCR
+read a number or set code for it — or its name, when the picture exists in one printing only — or
+when the OCR was already confident and the picture does not point at a different card. A match
+alone is an unsure candidate with the picture's printings as alternatives, newest first; a weak hit
+(25–32 bits) only adds alternatives. The hash evidence appears as `artwork N` (N = bits) in
+`evidence`. The table is loaded once per game by `loadHashTable` (Pokémon only; Yu-Gi-Oh! has none
+yet and runs on OCR alone) and the matcher resolves ids through `ScanMatcher.lookup`.
+
+**End to end** (`node scripts/page-bench.mjs`, scanPage with Tesseract on the same 27 pockets, the
+printing must be exact):
+
+| pipeline (Tesseract, number strip on) | exact | confident (right / wrong) | expected among alternatives | 3 pages |
+|---|---|---|---|---|
+| OCR only (`--no-hash`) | 6/27 | 2 (2 / 0) | 11 | 53.4 s |
+| **OCR + artwork** | **26/27** | **12 (12 / 0)** | 1 | 47.3 s, of which hashing 1.1 s |
+
+Per page with artwork: Fold 9/9 (4 confident), Pixel 9/9 (5), Pixel page B 8/9 (3). The one miss is
+the Nidoran♂ reprint again: the OCR read the name and HP but no number, so Base Set and Legendary
+Collection tie and the newer printing is shown with the other as the first alternative. Every pocket
+whose OCR read nothing usable (10 of 27) is now identified by its picture alone (`artwork 7`–`14`,
+unsure, printings as alternatives), the Butterfree holo by a weak hit (`artwork 27`); the glare-struck
+Wartortle on the Pixel page is right through name + a weak hit (26). Pages got faster because a
+confident hash + number read skips the magnified strip. Hashing cost 0.33–0.39 s per page
+(≈ 40 ms per pocket, full-resolution crops, headless Chrome with software rendering); the table
+loads in 40 ms and holds 307 KB of hash words plus the 19.7k id strings and their index, roughly
+1.7 MB of heap in all (the browser's `performance.memory` could not resolve the delta). Not yet
+timed on a phone.
+
+**Yu-Gi-Oh!** is not hashed yet. The same build-script shape works: YGOPRODeck allows each image to
+be downloaded once (`cards_small/<passcode>.jpg`, 168×245, 14.6k cards, ~25 min at 10 requests/s),
+the hash is per passcode (printings share the picture) with the 59×86 card aspect and an artwork
+window of x 10–90 %, y 18–55 %; `matchPocket` is already aspect-agnostic.
 
 ## Pokédex line as a species cue (`parseDex`)
 

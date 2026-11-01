@@ -56,6 +56,10 @@ with Capacitor. Your collection lives only on your device.
   the review header shows the captured size. While you aim, the guide tells you when a shot would
   not read — *Move closer*, *Flatten the phone*, *More light*, *Hold still* — and the capture
   button turns amber with the reason (it still captures).
+  Each pocket's picture is also matched
+  against a table of perceptual hashes of every card's artwork (OCR-independent), so a card whose
+  small number line did not read is still identified by its picture, with the printings of that
+  picture offered as alternatives when the number did not settle it.
 - **Picks up where you left off** – leaving the Scan tab (to look something up) and coming back
   keeps the camera, the photo or the page review you had open; an interrupted page review even
   survives the app being killed. Live scanning shows a confidence bar that fills while successive
@@ -97,6 +101,10 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   [YGOPRODeck API](https://ygoprodeck.com/api-guide/) (two-level: cards by passcode with type,
   attribute, monster type, level, ATK/DEF, archetype; printings by set code with rarity). Expanded
   into the shared catalog shape at load time (`src/games/ygo/catalog.ts`).
+- `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (19.7k cards,
+  32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
+  (`src/scanner/hash.ts`). Built from the TCGdex images by `npm run hashes` (each image is downloaded
+  once into `scripts/.cache/`).
 
 Pokémon card images are served by TCGdex (`assets.tcgdex.net`), species sprites and artwork by the
 PokéAPI sprites repository; Yu-Gi-Oh! images by YGOPRODeck, stored on the device after the first
@@ -108,6 +116,10 @@ npm run catalog
 
 ```bash
 npm run catalog:ygo
+```
+
+```bash
+npm run hashes
 ```
 
 See [`scripts/README.md`](scripts/README.md) for details.

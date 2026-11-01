@@ -117,6 +117,12 @@ export interface FrameObservations {
 export interface ScanMatcher {
   readonly game: string;
   scanLines(lines: readonly RecognizedLine[]): ScanCandidate[];
+  /**
+   * The matcher's catalog by card id, for evidence that names cards by id
+   * (the artwork hash table, artwork.ts). Optional: without it the
+   * binder-page scanner runs on OCR alone.
+   */
+  lookup?(cardId: string): { card: CatalogCard; set: CatalogSet } | undefined;
 }
 
 /** One ranked alternative for a detected card (for tap-to-correct). */

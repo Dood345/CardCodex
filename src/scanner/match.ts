@@ -767,5 +767,14 @@ export function scanLines(lines: readonly RecognizedLine[], index: ScanIndex): S
 /** The Pokémon TCG matcher: this file's pipeline over an index built once. */
 export function createPokemonMatcher(catalog: Catalog): ScanMatcher {
   const index = buildScanIndex(catalog);
-  return { game: 'pokemon', scanLines: (lines) => scanLines(lines, index) };
+  const cardById = new Map(catalog.cards.map((c) => [c.id, c]));
+  return {
+    game: 'pokemon',
+    scanLines: (lines) => scanLines(lines, index),
+    lookup: (id) => {
+      const card = cardById.get(id);
+      const set = card && index.setById.get(card.set);
+      return card && set ? { card, set } : undefined;
+    },
+  };
 }
