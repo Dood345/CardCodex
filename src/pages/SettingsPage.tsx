@@ -273,7 +273,7 @@ export default function SettingsPage() {
           </p>
           <p className="hint">
             To pick up new sets, rebuild the catalog with <code>{game.id === 'ygo' ? 'npm run catalog:ygo' : 'npm run catalog'}</code> and
-            ship a new build.
+            deploy: the web app loads the new data on its next start, the Android app with its next APK.
           </p>
         </section>
 

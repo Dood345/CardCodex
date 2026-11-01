@@ -12,7 +12,9 @@ Two builders, Node 22+, built-ins only, run from the repo root (details: `script
 | `npm run catalog` | `public/data/catalog.json` (~3.3 MB, all English Pokémon sets and cards), `public/data/species.json` (~61 KB, species 1–1025) | TCGdex GraphQL (bulk cards) + REST (per-set details), PokéAPI CSVs on GitHub |
 | `npm run catalog:ygo` | `public/data/ygo/catalog.json` (~3.6 MB; cards by passcode + printings by set code) | YGOPRODeck API v7 `cardinfo.php` + `cardsets.php` |
 
-The generated JSON files are build artifacts that are **committed**; the app loads them at run time.
+Both also rewrite `public/data/manifest.json` (content hash, size and `builtAt` per data file; see
+`scripts/data-manifest.mjs`), which the deployed web app uses to notice a rebuilt catalog. The
+generated JSON files are build artifacts that are **committed**; the app loads them at run time.
 
 ## The cache, and when to bypass it
 
@@ -54,7 +56,9 @@ only grow), `categories:` only Pokemon/Trainer/Energy, `out-of-range dex ids: 0`
 
 Yu-Gi-Oh!: `N cards, M sets, P printings (X codes shared by different cards, Y cards with no TCG
 printing)` (~14.6k cards, ~38.7k printings, growing), any `skipped … placeholder code(s)` and
-`synthesized … set(s)` lines (expected, a few), then `Wrote public/data/ygo/catalog.json (3.6x MB)`.
+`synthesized … set(s)` lines (expected, a few), then `Wrote public/data/ygo/catalog.json (3.6x MB)`
+and `Wrote public/data/manifest.json (ygo/catalog.json v=<hash>)`. The Pokémon summary ends with a
+`manifest.json versions:` line listing the hash per file.
 
 ## Check the result before committing
 
@@ -69,14 +73,31 @@ node -e "for (const p of ['public/data/catalog.json','public/data/ygo/catalog.js
 Compare with the committed version (`git show HEAD:public/data/catalog.json | node -e "…"` with the
 same snippet reading stdin). `builtAt` changes on every run; when that is the only difference the
 refresh found nothing new: restore with `git checkout -- public/data` instead of committing a
-no-op. Then run `npx vitest run` (the scanner tests load the real catalog) and commit the JSON
-together with any code that depends on it.
+no-op (this restores `manifest.json` as well; never leave a new manifest next to an old catalog).
+
+When something did change, the manifest must match the files that are committed:
+
+```bash
+node scripts/data-manifest.mjs --check
+```
+
+prints `public/data/manifest.json matches public/data` with the `v=<hash>` per file, or exits 1
+(`node scripts/data-manifest.mjs` regenerates it; the `public/data/manifest.json` test in
+`src/data/manifest.test.ts` fails on the same mismatch). In `git diff public/data/manifest.json` the
+hash must change for exactly the files whose content changed. Then run `npx vitest run` and commit
+the JSON and the manifest together with any code that depends on them.
 
 ## Where the new data shows up
 
-`src/data/catalog.ts` fetches `/data/*.json` with `cache: 'no-cache'` **only in dev**
-(`import.meta.env.DEV`); production builds use `force-cache`. So `npm run dev` shows a rebuilt
-catalog on the next reload, while the deployed web app needs a new deploy (and a browser that
-already holds `/data/catalog.json` may keep it until its HTTP cache lets go: the service worker is
-network-first for same-origin files, but the page's own fetch asks for the cache first) and
-Android needs a new APK (release-build skill).
+- `npm run dev`: on the next reload. Dev fetches the plain `/data/*.json` URLs with `cache: 'no-cache'`
+  and never reads the manifest.
+- Deployed web app: on the user's next start after the deploy (the host's CDN may hold the old
+  manifest for its TTL, ~10 minutes on GitHub Pages). The app fetches `manifest.json` with
+  `no-cache`, then `catalog.json?v=<hash>` with `force-cache`; a new hash is a new URL, so it is
+  downloaded once and the service worker's data cache (`cardcodex-v*-data` under DevTools →
+  Application → Cache Storage) drops the old version. To check a deploy: DevTools → Network, filter
+  `data/`: `manifest.json` small (304 or a few hundred bytes), the catalog request carrying the new
+  `?v=` with its full size on the first start and `(ServiceWorker)` / `(disk cache)` with 0 bytes
+  transferred on later ones. A manifest that still lists an old hash means the deploy shipped the
+  catalog without the regenerated manifest; users then keep the old data.
+- Android: with the next APK (release-build skill); the files are bundled, the manifest is not used.

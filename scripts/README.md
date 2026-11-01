@@ -44,7 +44,21 @@ Expected size: ~3.6 MB (~0.8 MB gzip) for ~14.6k cards and ~38.7k printings.
 
 Both builders reuse the raw downloads in `scripts/.cache/` (gitignored); pass `--no-cache` (as
 `npm run catalog -- --no-cache`) to pick up new sets. `builtAt` changes on every run: when it is the
-only diff, `git checkout -- public/data` instead of committing.
+only diff, `git checkout -- public/data` instead of committing (that restores the manifest below too).
+
+## data-manifest.mjs
+
+Writes `public/data/manifest.json`: for each of `catalog.json`, `species.json` and `ygo/catalog.json`
+the first 12 hex digits of its SHA-256 (`hash`), its size (`bytes`) and its `builtAt`. Both builders
+call it after writing their files; the deployed web app fetches it with `no-cache` on every start and
+requests the catalogs as `catalog.json?v=<hash>` with `force-cache`, so a rebuilt catalog is a new URL
+(downloaded once) and an unchanged one never is (see `src/data/manifest.ts`). It has no timestamp of
+its own, so regenerating it without data changes produces no diff.
+
+    node scripts/data-manifest.mjs           # = npm run data:manifest; regenerate from public/data
+    node scripts/data-manifest.mjs --check   # exit 1 when the manifest does not match the files
+
+`src/data/manifest.test.ts` runs the same check in the test suite.
 
 ## scan-check.mjs
 

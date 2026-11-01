@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { writeDataManifest } from './data-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = path.join(ROOT, 'scripts', '.cache');
@@ -316,7 +317,10 @@ async function main() {
   for (const c of cards) catCounts[c.cat] = (catCounts[c.cat] || 0) + 1;
   const pokeNoDex = cards.filter((c) => c.cat === 'Pokemon' && !c.dex);
 
-  // Logo/symbol URL check (HEAD every logo/symbol .webp; flags are cleared when the URL 404s)
+  // Logo/symbol URL check (HEAD every logo/symbol .webp; flags are cleared when the URL 404s).
+  // The API's `symbol` field points at assets.tcgdex.net/univ/..., but only the
+  // /en/ path serves the .webp (the app uses /en/, src/data/types.ts), so that
+  // is the one probed.
   log('Checking asset URLs for all sets...');
   const probe = async (u) => {
     try {
@@ -325,7 +329,7 @@ async function main() {
       return false;
     }
   };
-  const extResults = { logoEnWebp: [0, 0], symbolEnWebp: [0, 0], symbolUnivWebp: [0, 0] };
+  const extResults = { logoEnWebp: [0, 0], symbolEnWebp: [0, 0] };
   const failures = [];
   await pool(sets, 8, async (s) => {
     if (s.logo) {
@@ -343,8 +347,6 @@ async function main() {
         failures.push('symbol(en) ' + s.id);
         delete s.symbol;
       }
-      const ok2 = await probe(`https://assets.tcgdex.net/univ/${s.series}/${s.id}/symbol.webp`);
-      extResults.symbolUnivWebp[ok2 ? 0 : 1]++;
     }
   });
   log('asset flags cleared (API advertised but 404):', failures.length);
@@ -356,6 +358,8 @@ async function main() {
   const spStr = JSON.stringify(speciesFile);
   fs.writeFileSync(path.join(OUT, 'catalog.json'), catStr);
   fs.writeFileSync(path.join(OUT, 'species.json'), spStr);
+  // Versions for the web app's cache busting (see scripts/data-manifest.mjs).
+  const manifest = writeDataManifest(OUT);
 
   // Report
   const byId = new Map(cards.map((c) => [c.id, c]));
@@ -373,6 +377,7 @@ async function main() {
   const sz = (n, s) => `${n}: ${Buffer.byteLength(s)} bytes raw, ${zlib.gzipSync(s).length} gzip`;
   log(sz('catalog.json', catStr));
   log(sz('species.json', spStr));
+  log('manifest.json versions:', JSON.stringify(Object.fromEntries(Object.entries(manifest.files).map(([f, e]) => [f, e.hash]))));
   log('sets without logo:', sets.filter((s) => !s.logo).length, 'without symbol:', sets.filter((s) => !s.symbol).length);
   log('sets with official=0:', sets.filter((s) => !s.official).length, 'no releaseDate:', sets.filter((s) => !s.releaseDate).length, 'no abbr:', sets.filter((s) => !s.abbr).length);
   const nameCount = {};

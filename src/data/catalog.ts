@@ -5,8 +5,19 @@
  * indexed into Maps so every page can answer "cards in set X", "cards
  * featuring species Y / archetype Z" and "card with id W" synchronously.
  */
+import { isNative } from '@/app/platform';
 import type { GameId } from '@/games/ids';
 import { expandYgoCatalog, type YgoCatalogFile } from '@/games/ygo/catalog';
+import {
+  dataCacheMode,
+  dataFileUrl,
+  parseManifest,
+  resolveManifest,
+  usesManifest,
+  versionMismatch,
+  versionOf,
+  type DataManifest,
+} from './manifest';
 import type { Catalog, CatalogCard, CatalogSet, Species, SpeciesFile } from './types';
 import { normalizeText } from './normalize';
 
@@ -56,24 +67,86 @@ export interface CatalogIndex {
 }
 
 const DATA_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/data`;
+const MANIFEST_URL = `${DATA_BASE}/manifest.json`;
+/** localStorage key of the last manifest seen (web build only). */
+const REMEMBERED_MANIFEST_KEY = 'cardcodex.dataManifest';
 
-async function fetchJson<T>(path: string): Promise<T> {
-  // Catalogs only change with a new build (new asset URLs on the web, new APK
-  // on Android), so the HTTP cache may serve them; in dev, pick up rebuilds.
-  const res = await fetch(path, { cache: import.meta.env.DEV ? 'no-cache' : 'force-cache' });
-  if (!res.ok) throw new Error(`Failed to load ${path}: HTTP ${res.status}`);
-  return (await res.json()) as T;
+/**
+ * How the catalogs are fetched, and why.
+ *
+ * The files are several MB and change only when a builder rewrites them, so
+ * the web build asks for them with `cache: 'force-cache'`: an unchanged catalog
+ * must never be downloaded twice. A static host cannot tell the browser
+ * "still current" for a URL that never changes without a round trip per file,
+ * so the versioning is moved into the URL: the small public/data/manifest.json
+ * (fetched with `no-cache`, one conditional request per start) carries a
+ * content hash per file and the catalog is requested as
+ * `catalog.json?v=<hash>`. Unchanged → same URL → cache hit; rebuilt and
+ * deployed → new URL → one download, and the browser, the service worker and
+ * the host's CDN all miss exactly once. The service worker keeps one version
+ * of each file for offline use (public/sw.js). This was chosen over a
+ * stale-while-revalidate worker because it needs no second parse of a 3 MB
+ * file to notice a change, no "reload for new data" prompt, and no ETag
+ * support from the host, and because it also busts CDN caches.
+ *
+ * Dev keeps `no-cache` on plain URLs so a rebuilt catalog shows on the next
+ * reload; the Android build reads bundled assets (a new APK is a new catalog),
+ * so it keeps `force-cache` on plain URLs. Neither fetches the manifest.
+ */
+async function loadManifest(): Promise<DataManifest | null> {
+  if (!usesManifest({ dev: import.meta.env.DEV, native: isNative() })) return null;
+  return resolveManifest({
+    fetchFresh: async () => {
+      const res = await fetch(MANIFEST_URL, { cache: 'no-cache' });
+      if (!res.ok) return null;
+      return parseManifest(await res.json());
+    },
+    remembered: readRememberedManifest(),
+    remember: rememberManifest,
+  });
+}
+
+function readRememberedManifest(): DataManifest | null {
+  try {
+    const raw = localStorage.getItem(REMEMBERED_MANIFEST_KEY);
+    return raw ? parseManifest(JSON.parse(raw)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function rememberManifest(manifest: DataManifest): void {
+  try {
+    localStorage.setItem(REMEMBERED_MANIFEST_KEY, JSON.stringify(manifest));
+  } catch {
+    /* storage disabled or full: the next start simply waits for the manifest */
+  }
+}
+
+/** Fetches one data file (path relative to public/data) at the manifest's version. */
+async function fetchJson<T extends { builtAt?: string }>(file: string, manifest: DataManifest | null): Promise<T> {
+  const version = versionOf(manifest, file);
+  const url = dataFileUrl(DATA_BASE, file, version);
+  const cache = dataCacheMode({ dev: import.meta.env.DEV, native: isNative(), versioned: !!version });
+  const res = await fetch(url, { cache });
+  if (!res.ok) throw new Error(`Failed to load ${url}: HTTP ${res.status}`);
+  const data = (await res.json()) as T;
+  if (versionMismatch(manifest, file, data)) {
+    console.warn(`[catalog] ${file} v=${version} was built ${data.builtAt}; manifest expected ${manifest?.files[file]?.builtAt}`);
+  }
+  return data;
 }
 
 /** Fetches a game's catalog JSON and builds the index. */
 export async function loadCatalog(game: GameId = 'pokemon'): Promise<CatalogIndex> {
+  const manifest = await loadManifest();
   if (game === 'ygo') {
-    const file = await fetchJson<YgoCatalogFile>(`${DATA_BASE}/ygo/catalog.json`);
+    const file = await fetchJson<YgoCatalogFile>('ygo/catalog.json', manifest);
     return buildIndex(expandYgoCatalog(file), []);
   }
   const [catalog, speciesFile] = await Promise.all([
-    fetchJson<Catalog>(`${DATA_BASE}/catalog.json`),
-    fetchJson<SpeciesFile>(`${DATA_BASE}/species.json`),
+    fetchJson<Catalog>('catalog.json', manifest),
+    fetchJson<SpeciesFile>('species.json', manifest),
   ]);
   return buildIndex(catalog, speciesFile.species);
 }
