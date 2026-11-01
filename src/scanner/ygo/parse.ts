@@ -241,7 +241,10 @@ export function parseKind(line: RecognizedLine, lineIndex: number): KindObservat
   const t = line.text.trim();
   // Brackets are often half lost ("[SPELLCASTER/NORMAL"): one bracket-ish
   // character on either side is enough; with none, the line must contain a slash.
-  const stripped = t.replace(/^[\[({Il1|]\s*/, '').replace(/\s*[\])}Il1|]$/, '');
+  // An I/l/1 only counts as a bracket when it cannot be part of the word:
+  // leading before a capital ("IDragon"), trailing after a lower-case letter
+  // as a capital I or a 1 ("NormalI"), never the l of "Normal".
+  const stripped = t.replace(/^(?:[\[({|]|[Il1](?=[A-Z ]))\s*/, '').replace(/\s*(?:[\])}|]|(?<=[a-z])[I1])$/, '');
   const bracketed = stripped !== t;
   const m = bracketed
     ? /^([A-Za-z][A-Za-z -]*(?:\s*\/\s*[A-Za-z][A-Za-z -]*){0,4})$/.exec(stripped)
