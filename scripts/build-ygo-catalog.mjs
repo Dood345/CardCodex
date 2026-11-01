@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeDataManifest } from './data-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = path.join(ROOT, 'scripts', '.cache');
@@ -187,3 +188,6 @@ const out = { version: 1, game: 'ygo', builtAt: new Date().toISOString(), sets, 
 const json = JSON.stringify(out);
 fs.writeFileSync(OUT, json);
 log(`Wrote ${path.relative(ROOT, OUT)} (${(json.length / 1e6).toFixed(2)} MB)`);
+// Versions for the web app's cache busting (see scripts/data-manifest.mjs).
+const manifest = writeDataManifest();
+log(`Wrote public/data/manifest.json (ygo/catalog.json v=${manifest.files['ygo/catalog.json'].hash})`);

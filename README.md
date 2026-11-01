@@ -112,6 +112,23 @@ npm run catalog:ygo
 
 See [`scripts/README.md`](scripts/README.md) for details.
 
+### How a rebuilt catalog reaches users
+
+Both builders also write `public/data/manifest.json` (regenerate it on its own with
+`npm run data:manifest`): the content hash, size and `builtAt` of every data file. The deployed web
+app fetches that small file on every start with `cache: 'no-cache'` (one conditional request, a 304
+when nothing changed) and then loads each catalog as `catalog.json?v=<hash>` with
+`cache: 'force-cache'`. An unchanged catalog is served from the browser or service-worker cache
+without a download; a rebuilt one has a new URL and is downloaded exactly once, by browsers, the
+service worker and the host's CDN alike. The service worker (`public/sw.js`) keeps the manifest and
+one version of each catalog so the app opens offline, and drops older versions when a new one is
+stored (`src/data/manifest.ts`, `src/data/catalog.ts`).
+
+So a refresh is: rebuild, commit the JSON **together with the manifest** (a test checks that they
+match), deploy. Existing web users get the new sets on their next start, once the host's CDN has
+let go of the old manifest (about 10 minutes on GitHub Pages). `npm run dev` always revalidates the
+plain URLs, and the Android app reads the files bundled in the APK, so there a new APK is the update.
+
 ## Develop
 
 Requires Node 22+.
