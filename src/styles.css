@@ -1356,6 +1356,41 @@ textarea:focus {
   width: 24px;
   height: 24px;
 }
+/* "Last added" bar in single-card mode: fix the count right after adding. */
+.scan-last {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ok) 14%, var(--bg-card));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, var(--border));
+  animation: rise 0.15s ease-out;
+}
+.scan-last img {
+  width: 32px;
+  height: 45px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex: none;
+}
+.scan-last-text {
+  flex: 1;
+  min-width: 0;
+}
+.scan-last-text .cand-name,
+.scan-last-text .cand-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.scan-last-text .cand-name {
+  font-weight: 600;
+}
+.scan-last-text .cand-sub {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
 /* One live track: the leader row plus the runners-up from its candidate pool. */
 .scan-track {
   display: flex;
@@ -1697,7 +1732,11 @@ textarea:focus {
   animation: spin 0.9s linear infinite;
 }
 .scan-hud.static {
-  position: static;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* In flow, so the safe-area inset (status bar) must be padding, not `top`. */
+  padding-top: calc(10px + var(--safe-t));
   color: var(--fg);
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);

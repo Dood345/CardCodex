@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { edgeProfiles, fit1D, fitGrid, pitchCandidates, type RgbaImage } from './grid';
+import { edgeProfiles, fit1D, fitGrid, fitSingleCard, pitchCandidates, type RgbaImage } from './grid';
 
 /** Deterministic noise. */
 function lcg(seed: number) {
@@ -165,5 +165,28 @@ describe('fitGrid', () => {
       }
     }
     expect(fitGrid({ width: w, height: h, data }, { cols: 3, rows: 3 })).toBeNull();
+  });
+});
+
+describe('fitSingleCard', () => {
+  it('tightens a padded pocket crop to the card inside it', () => {
+    // One card of 176×246 inside a 200×270 crop: a cell plus 6% margin, with the grid a little off.
+    const img = synthPage({ w: 200, h: 270, cols: 1, rows: 1, x0: 15, y0: 10, cardW: 176, cardH: 246, gap: 0 });
+    const fit = fitSingleCard(img);
+    expect(fit).not.toBeNull();
+    expect(Math.abs(fit!.x - 15)).toBeLessThanOrEqual(2);
+    expect(Math.abs(fit!.y - 10)).toBeLessThanOrEqual(2);
+    expect(Math.abs(fit!.w - 176)).toBeLessThanOrEqual(3);
+    expect(Math.abs(fit!.h - 246)).toBeLessThanOrEqual(3);
+  });
+
+  it('declines when there is no card', () => {
+    const rnd = lcg(5);
+    const data = new Uint8ClampedArray(200 * 270 * 4);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = data[i + 1] = data[i + 2] = 120 + (rnd() - 0.5) * 30;
+      data[i + 3] = 255;
+    }
+    expect(fitSingleCard({ width: 200, height: 270, data })).toBeNull();
   });
 });

@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useSettings } from '@/app/settings';
-import { useCollection } from '@/data/collection';
+import { adjustQty, useCollection } from '@/data/collection';
 import { formatCardNumber } from '@/data/catalog';
 import { db } from '@/data/db';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
@@ -24,7 +24,7 @@ import {
 } from '@/scanner';
 import type { PocketEntry } from '@/scanner/page';
 import { Toast, useToast } from '@/ui/components';
-import { CameraIcon, CheckIcon, CloseIcon, PlusIcon } from '@/ui/icons';
+import { CameraIcon, CheckIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 import { PageScan, openPagePhoto } from './scan/PageScan';
 import {
@@ -54,8 +54,39 @@ const STILL_MIN_WIDTH = 1200;
 /** Runner-up candidates listed under a live chip's row need at least this share of its pool. */
 const RUNNER_UP_MIN = 0.12;
 const RUNNER_UPS = 2;
+/** How long the "last added" stepper stays after the last interaction. */
+const LAST_ADDED_MS = 6000;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** Live single-card mode shows at most this many cards at once. */
+const MAX_LIVE_CARDS = 2;
+/** A second card must be at least this share of the first by (area × centrality) to be shown too. */
+const SECOND_CARD_SHARE = 0.45;
+
+/**
+ * Single-card mode is for one card at a time: when the camera also sees a
+ * binder page or the next card in the pile, keep the largest card nearest
+ * the middle of the frame (and a second one only if it is nearly as big)
+ * instead of covering the view with chips.
+ */
+export function focusTracks(results: ScanCandidate[], frame: { w: number; h: number }): ScanCandidate[] {
+  if (results.length <= 1 || !frame.w || !frame.h) return results;
+  const cx = frame.w / 2;
+  const cy = frame.h / 2;
+  const diag = Math.hypot(frame.w, frame.h) / 2;
+  const ranked = results
+    .map((r) => {
+      const b = r.cardBox ?? r.bbox;
+      const d = Math.hypot(b.x + b.w / 2 - cx, b.y + b.h / 2 - cy) / diag;
+      return { r, score: Math.max(1, b.w * b.h) * (1 - 0.6 * Math.min(1, d)) };
+    })
+    .sort((a, b) => b.score - a.score);
+  const top = ranked[0].score;
+  return ranked
+    .filter((x, i) => i === 0 || (i < MAX_LIVE_CARDS && x.score >= top * SECOND_CARD_SHARE))
+    .map((x) => x.r);
+}
 
 export default function ScanPage() {
   const index = useCatalog();
@@ -78,6 +109,15 @@ export default function ScanPage() {
   const [correcting, setCorrecting] = useState<ScanCandidate | null>(null);
   const [justAdded, setJustAdded] = useState<Map<string, number>>(() => new Map());
   const [savedReview, setSavedReview] = useState(false);
+  /** The card added last, with a stepper to fix its count (hidden after a few seconds). */
+  const [lastAdded, setLastAdded] = useState<{ card: CatalogCard; set: CatalogSet } | null>(null);
+  const lastTimer = useRef<number | undefined>(undefined);
+  const showLast = useCallback((card: CatalogCard, set: CatalogSet) => {
+    setLastAdded({ card, set });
+    window.clearTimeout(lastTimer.current);
+    lastTimer.current = window.setTimeout(() => setLastAdded(null), LAST_ADDED_MS);
+  }, []);
+  useEffect(() => () => window.clearTimeout(lastTimer.current), []);
   const viewRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
@@ -169,10 +209,59 @@ export default function ScanPage() {
           2500,
         );
       }
-      showToast(`+1 ${card.name} · ${set.name} ${formatCardNumber(card, set)}`);
+      showLast(card, set);
       if ('vibrate' in navigator) navigator.vibrate?.(30);
     },
-    [scanner.engine, showToast, pushRecent],
+    [scanner.engine, pushRecent, showLast],
+  );
+
+  /** The "last added" bar: name, new total, −/+ and undo. */
+  const lastAddedBar = lastAdded && (
+    <div className="scan-last" role="status">
+      <img src={cardImageUrl(lastAdded.card, lastAdded.set.series, 'low')} alt="" />
+      <div className="scan-last-text">
+        <div className="cand-name">{lastAdded.card.name}</div>
+        <div className="cand-sub">
+          {lastAdded.set.name} · {formatCardNumber(lastAdded.card, lastAdded.set)}
+        </div>
+      </div>
+      <div className="stepper stepper-sm" aria-label="Copies owned">
+        <button
+          type="button"
+          className="stepper-btn"
+          aria-label="One fewer"
+          disabled={(collection.get(lastAdded.card.id)?.qty ?? 0) <= 0}
+          onClick={() => {
+            void adjustQty(lastAdded.card.id, -1);
+            showLast(lastAdded.card, lastAdded.set);
+          }}
+        >
+          <MinusIcon size={14} />
+        </button>
+        <span className="stepper-value">{collection.get(lastAdded.card.id)?.qty ?? 0}</span>
+        <button
+          type="button"
+          className="stepper-btn"
+          aria-label="One more"
+          onClick={() => {
+            void adjustQty(lastAdded.card.id, 1);
+            showLast(lastAdded.card, lastAdded.set);
+          }}
+        >
+          <PlusIcon size={14} />
+        </button>
+      </div>
+      <button
+        type="button"
+        className="btn ghost small"
+        onClick={() => {
+          void adjustQty(lastAdded.card.id, -1);
+          setLastAdded(null);
+        }}
+      >
+        Undo
+      </button>
+    </div>
   );
 
   const addPage = useCallback(
@@ -218,7 +307,7 @@ export default function ScanPage() {
     patchScanSession({ still: null });
   };
 
-  const results: ScanCandidate[] = still ? still.results : scanner.results;
+  const results: ScanCandidate[] = still ? still.results : focusTracks(scanner.results, scanner.frameSize);
 
   const statusText = still
     ? still.busy
@@ -416,6 +505,7 @@ export default function ScanPage() {
       </div>
 
       <div className="scan-bottom">
+        {lastAddedBar}
         {!still && scanner.status === 'error' && (
           <div className="hint">
             {scanner.error}. Try{' '}

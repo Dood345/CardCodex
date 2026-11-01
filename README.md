@@ -47,7 +47,10 @@ with Capacitor. Your collection lives only on your device.
   resolution and read on its own; the review grid then shows each pocket's crop beside its card with
   a copy counter, so pockets holding several copies in one sleeve get the right count, wrong guesses
   can be swapped from the alternatives (or any card searched for), and empty pockets are skipped.
-  One tap adds the whole page; the grid can be adjusted and the same frame rescanned.
+  One tap adds the whole page; the grid can be adjusted and the same frame rescanned, and "Save
+  capture" shares the frame with a report of what was read, for pages that scan badly. Each pocket
+  is read with a margin, tightened to the card, and its number line read again magnified; on
+  Android two frames are captured and their reads merged.
 - **Picks up where you left off** – leaving the Scan tab (to look something up) and coming back
   keeps the camera, the photo or the page review you had open; an interrupted page review even
   survives the app being killed. Live scanning shows a confidence bar that fills while successive

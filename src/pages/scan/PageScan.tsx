@@ -15,6 +15,7 @@ import { formatCardNumber } from '@/data/catalog';
 import type { CollectionMap } from '@/data/collection';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import { useGame } from '@/app/context';
+import { isNative } from '@/app/platform';
 import { useSettings } from '@/app/settings';
 import {
   coverTransform,
@@ -39,6 +40,7 @@ import {
   scanPage,
   type FracBox,
   type PageLayoutId,
+  type PageSource,
   type PocketEntry,
 } from '@/scanner/page';
 import { Chip } from '@/ui/components';
@@ -72,6 +74,8 @@ const LOCK_TOLERANCE = 0.015;
 const UNLOCK_MISSES = 4;
 /** Still photos get a finer sample than the live loop. */
 const STILL_SAMPLE_WIDTH = 400;
+/** Gap between the two frames of a capture (long enough for a different focus/exposure sample, short enough to hold still). */
+const EXTRA_FRAME_DELAY_MS = 180;
 
 /** Show a page photo (or any still) in page mode with the guide on it. */
 export async function openPagePhoto(file: File): Promise<void> {
@@ -121,6 +125,9 @@ export function PageScan({
   const [settings, update] = useSettings();
   const { cardMm, Icon } = useGame();
   const layout = pageLayout(settings.pageLayout);
+  // ML Kit (Android) reads a pocket in ~0.3 s, so two frames are cheap; Tesseract is not.
+  const frames = isNative() ? 2 : 1;
+  const [notice, setNotice] = useState<string | null>(null);
   const session = useScanSession();
   const page = session.page ?? EMPTY_PAGE;
   const { phase, still, frac, auto, pockets, pageMs, frame, frameFrac } = page;
@@ -303,7 +310,7 @@ export function PageScan({
   /* ---------- scanning ---------- */
 
   const runScan = useCallback(
-    async (src: PageStill, box: Box) => {
+    async (src: PageStill, box: Box, extraFrames: PageSource[] = []) => {
       abortRef.current?.abort();
       const ac = new AbortController();
       abortRef.current = ac;
@@ -314,7 +321,8 @@ export function PageScan({
       try {
         const results = await scanPage(src.source, layout, recognizer, matcher, {
           signal: ac.signal,
-          geometry: { page: box },
+          geometry: { page: box, cardMm },
+          extraFrames,
           onProgress: (done, total) => setProgress({ done, total }),
         });
         if (ac.signal.aborted) return;
@@ -343,25 +351,98 @@ export function PageScan({
         if (!ac.signal.aborted) setScanning(false);
       }
     },
-    [layout, recognizer, matcher, index.game],
+    [layout, recognizer, matcher, index.game, cardMm],
   );
 
-  async function capture() {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth || !visible || !pageBox) return;
-    // grabFrame reuses one canvas; copy it so the scan owns its pixels.
+  /**
+   * Hand the scanned frame (and what was read from it) to the share sheet, or
+   * download it on the web: a page that scanned badly on a phone can then be
+   * dropped into scripts/fixtures/binder-pages/ and reproduced on a desk.
+   */
+  async function saveCapture() {
+    if (!frame) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = frame.w;
+    canvas.height = frame.h;
+    canvas.getContext('2d')!.drawImage(frame.source, 0, 0);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.92));
+    if (!blob) return;
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const image = new File([blob], `cardcodex-page-${stamp}.jpg`, { type: 'image/jpeg' });
+    const report = new File(
+      [
+        JSON.stringify(
+          {
+            game: index.game,
+            layout: layout.id,
+            frame: { w: frame.w, h: frame.h },
+            page: frameFrac,
+            pockets: pockets.map((p) => ({
+              index: p.scan.pocket.index,
+              read: p.scan.candidate?.card.id ?? null,
+              score: p.scan.candidate?.score ?? 0,
+              confident: p.scan.candidate?.confident ?? false,
+              chosen: p.card?.id ?? null,
+              lines: p.scan.lineCount,
+              cardBox: p.scan.cardBox,
+              frames: p.scan.frames,
+            })),
+          },
+          null,
+          2,
+        ),
+      ],
+      `cardcodex-page-${stamp}.json`,
+      { type: 'application/json' },
+    );
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    try {
+      if (isNative() && nav.share && nav.canShare?.({ files: [image, report] })) {
+        await nav.share({ files: [image, report], title: 'CardCodex page capture' });
+        setNotice('Capture shared.');
+        return;
+      }
+    } catch (e) {
+      if ((e as { name?: string })?.name === 'AbortError') return;
+    }
+    for (const f of [image, report]) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(f);
+      a.download = f.name;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    }
+    setNotice(`Saved ${image.name} and its report.`);
+  }
+
+  /** Copy of the current video frame (grabFrame reuses one canvas; the scan must own its pixels). */
+  function snapFrame(video: HTMLVideoElement): HTMLCanvasElement {
     const shared = grabFrame(video, CAPTURE_MAX_WIDTH);
     const canvas = document.createElement('canvas');
     canvas.width = shared.width;
     canvas.height = shared.height;
     canvas.getContext('2d')!.drawImage(shared, 0, 0);
+    return canvas;
+  }
+
+  async function capture() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !visible || !pageBox) return;
+    const canvas = snapFrame(video);
     const k = canvas.width / video.videoWidth;
     const box: Box = { x: pageBox.x * k, y: pageBox.y * k, w: pageBox.w * k, h: pageBox.h * k };
     // Remember where the page was, for the next scan from the same spot.
     update({ pageFrames: { ...settings.pageFrames, [layout.id]: boxToFrac(pageBox, visible) } });
     const captured: PageStill = { source: canvas, url: await canvasUrl(canvas), w: canvas.width, h: canvas.height };
     if (fit?.locked) {
-      void runScan(captured, box);
+      // A second frame a moment later: pockets are read from both and the
+      // candidates merged, so one blurred frame cannot decide a pocket.
+      const extra: PageSource[] = [];
+      if (frames > 1) {
+        await new Promise((r) => window.setTimeout(r, EXTRA_FRAME_DELAY_MS));
+        if (video.videoWidth) extra.push(snapFrame(video));
+      }
+      void runScan(captured, box, extra);
     } else {
       // Not sure where the page is: show the frame with the guide for a check.
       fitRef.current = { last: null, stable: 0, misses: 0 };
@@ -526,7 +607,7 @@ export function PageScan({
           ))}
         </div>
         <div className="scan-bottom review-actions">
-          <p className="hint">Tap a pocket to correct its card; bump the count where several copies share one sleeve.</p>
+          <p className="hint">{notice ?? 'Tap a pocket to correct its card; bump the count where several copies share one sleeve.'}</p>
           <div className="btn-row">
             <button type="button" className="btn primary" disabled={totalCards === 0} onClick={addPage}>
               Add {totalCards} {totalCards === 1 ? 'card' : 'cards'} to collection
@@ -539,6 +620,11 @@ export function PageScan({
             <button type="button" className="btn ghost" onClick={() => backToCapture(false)}>
               Rescan
             </button>
+            {frame && (
+              <button type="button" className="btn ghost small" title="Share or download this frame and what was read from it" onClick={() => void saveCapture()}>
+                Save capture
+              </button>
+            )}
           </div>
         </div>
         <CorrectionSheet

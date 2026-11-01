@@ -267,6 +267,8 @@ export async function loadReview(
         lineCount: p.lineCount,
         thumb: p.thumb,
         ms: 0,
+        cardBox: ZERO_BOX,
+        frames: 1,
       },
       card: chosen?.card,
       set: chosen?.set,

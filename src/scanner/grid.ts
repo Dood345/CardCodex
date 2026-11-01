@@ -373,6 +373,67 @@ export function fitGrid(img: RgbaImage, layout: GridLayoutLike, opts: FitGridOpt
   return best && best.confidence >= minConf ? best : null;
 }
 
+/* ---------- single card inside a pocket crop ---------- */
+
+/**
+ * The card must cover at least this share of the padded pocket crop in each
+ * dimension: the crop is the cell plus a 6% margin, so the card is ~88% of it,
+ * while the art frame printed on it is ~70% and must not be mistaken for it.
+ */
+const MIN_CARD_SHARE = 0.8;
+/** Score multiplier lost per unit of centre offset (as a share of the crop): the card sits near the middle. */
+const OFF_CENTRE_PENALTY = 1.5;
+/** Mean absolute edge energy at the four edges needed to trust a single-card fit. */
+const SINGLE_CARD_MIN_EDGE = 1.8;
+
+/**
+ * Tighten a pocket crop (the cell plus some margin) to the card inside it:
+ * the best left/right edge pair and top/bottom pair with the card's aspect,
+ * scored like fit1D but for one item. Returns null when the edges are not
+ * clear enough, in which case the caller keeps the padded crop.
+ */
+export function fitSingleCard(img: RgbaImage, cardAspect = 63 / 88): (Box & { confidence: number }) | null {
+  const p = edgeProfiles(img);
+  const W = img.width;
+  const H = img.height;
+  // Edge evidence for an item [l, r], discounted by how far its centre sits from the crop's.
+  const edgeAt = (prof: Profile, l: number, r: number, L: number) => {
+    const e = Math.max(prof.plus[l] + prof.minus[r], prof.minus[l] + prof.plus[r]);
+    const off = Math.abs((l + r + 1) / 2 - L / 2) / L;
+    return e * Math.max(0.2, 1 - OFF_CENTRE_PENALTY * off);
+  };
+  // Columns: every (x0, w) with w ≥ MIN_CARD_SHARE·W.
+  let bestCol: { x: number; w: number; e: number } | null = null;
+  for (let w = Math.floor(W * MIN_CARD_SHARE); w <= W; w++) {
+    for (let x = 0; x + w <= W; x++) {
+      const e = edgeAt(p.cols, x, x + w - 1, W);
+      if (!bestCol || e > bestCol.e) bestCol = { x, w, e };
+    }
+  }
+  if (!bestCol) return null;
+  // Rows: height within ±12% of what the aspect predicts, and at least MIN_CARD_SHARE·H.
+  const hMid = bestCol.w / cardAspect;
+  let bestRow: { y: number; h: number; e: number } | null = null;
+  for (let h = Math.max(Math.floor(H * MIN_CARD_SHARE), Math.floor(hMid * 0.88)); h <= Math.min(H, Math.ceil(hMid * 1.12)); h++) {
+    for (let y = 0; y + h <= H; y++) {
+      const e = edgeAt(p.rows, y, y + h - 1, H);
+      if (!bestRow || e > bestRow.e) bestRow = { y, h, e };
+    }
+  }
+  if (!bestRow) return null;
+  const at = (abs: Float32Array, x: number) => Math.max(abs[Math.max(0, x - 1)], abs[x], abs[Math.min(abs.length - 1, x + 1)]);
+  const meanEdge =
+    (at(p.cols.abs, bestCol.x) + at(p.cols.abs, bestCol.x + bestCol.w - 1) + at(p.rows.abs, bestRow.y) + at(p.rows.abs, bestRow.y + bestRow.h - 1)) / 4;
+  if (meanEdge < SINGLE_CARD_MIN_EDGE) return null;
+  return {
+    x: bestCol.x,
+    y: bestRow.y,
+    w: bestCol.w,
+    h: bestRow.h,
+    confidence: Math.max(0, Math.min(1, (meanEdge - RANDOM_EDGE) / (SURE_EDGE - RANDOM_EDGE))),
+  };
+}
+
 /* ---------- DOM helpers ---------- */
 
 let sampleCanvas: HTMLCanvasElement | null = null;
@@ -396,6 +457,22 @@ export function sampleRgba(source: GridSource, region: Box, width: number): Rgba
 
 /** Sample width: a 3-wide page gives ~100 px cards, enough to tell the border from the art frame. */
 export const GRID_SAMPLE_WIDTH = 320;
+/** Sample width for tightening one pocket crop to its card. */
+export const CARD_SAMPLE_WIDTH = 200;
+
+/**
+ * Tighten `region` (a pocket cell plus margin, frame px) to the card in it.
+ * Returns the card box in frame px, or null to keep the region as is.
+ */
+export function refineCardBox(source: GridSource, region: Box, cardAspect = 63 / 88): Box | null {
+  if (region.w <= 0 || region.h <= 0) return null;
+  const img = sampleRgba(source, region, CARD_SAMPLE_WIDTH);
+  const fit = fitSingleCard(img, cardAspect);
+  if (!fit) return null;
+  const sx = region.w / img.width;
+  const sy = region.h / img.height;
+  return { x: region.x + fit.x * sx, y: region.y + fit.y * sy, w: fit.w * sx, h: fit.h * sy };
+}
 
 /**
  * Fit the grid inside `region` of `source` (frame px) and return the page box

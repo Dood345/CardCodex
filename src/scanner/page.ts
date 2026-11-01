@@ -9,8 +9,9 @@
  * pixels-per-glyph as a single-card scan.
  */
 import type { CatalogCard, CatalogSet } from '../data/types';
+import { refineCardBox } from './grid';
 import type { TextRecognizer } from './recognizer';
-import type { Box, ScanAlternative, ScanCandidate, ScanMatcher } from './types';
+import type { Box, RecognizedLine, ScanAlternative, ScanCandidate, ScanMatcher } from './types';
 
 /** Standard (Pokémon) card size, mm; pocket cells keep the card's aspect. */
 export const DEFAULT_CARD_MM = { w: 63, h: 88 } as const;
@@ -157,12 +158,44 @@ export interface PocketScan {
   thumb: string;
   /** Recognition time for this pocket, ms. */
   ms: number;
+  /** The rectangle that was actually read (frame px): the cell plus margin, tightened to the card when its edges were found. */
+  cardBox: Box;
+  /** Frames the pocket was read from. */
+  frames: number;
 }
 
 /** Anything drawImage accepts that also reports its pixel size (ImageBitmap, canvas, video). */
 export type PageSource = CanvasImageSource & { width: number; height: number };
 
 export interface ScanPageOptions {
+  /**
+   * Margin added around each pocket cell before reading it, as a fraction of
+   * the cell. Default 0.06: a grid that is a little off (the fitter's sample
+   * is 320 px wide, a hand-dragged frame is approximate) must not cut the
+   * collector number, which sits ~3% from the card's bottom-left corner.
+   */
+  pad?: number;
+  /**
+   * Tighten each padded crop to the card's own edges before reading it
+   * (grid.ts refineCardBox), falling back to the padded cell when the edges
+   * are not clear. Default false: on the fixture photos it lost two pockets
+   * (crops that no longer held the name line) and gained none; the padding
+   * alone is what recovered the number line.
+   */
+  refine?: boolean;
+  /**
+   * When the full read leaves the printing unsettled, read the bottom strip
+   * of the card again at higher magnification and add those lines. Default
+   * true: the number line is the smallest text on the card and the one that
+   * pins down the printing.
+   */
+  numberStrip?: boolean;
+  /**
+   * More frames of the same page captured moments apart (same geometry).
+   * Every pocket is read from each frame and the candidates are merged, so
+   * one blurred or glared frame cannot decide a pocket alone.
+   */
+  extraFrames?: PageSource[];
   /**
    * Crops narrower than this are upscaled to it before OCR. Default 1000:
    * the collector number on a ~600 px wide card is ~9 px tall, below what
@@ -185,6 +218,126 @@ export interface ScanPageOptions {
 const MIN_CROP_WIDTH = 1000;
 const MAX_CROP_WIDTH = 1400;
 const THUMB_WIDTH = 240;
+const PAD = 0.06;
+/** Bottom share of the card read again, magnified. */
+const STRIP_SHARE = 0.15;
+/** Magnification of the strip relative to the crop (the ~15 px number becomes ~40 px). */
+const STRIP_SCALE = 2.5;
+/** Share of an alternative's score that counts towards the merged pool. */
+const ALT_WEIGHT = 0.5;
+
+/** `box` grown by `pad` × its size on every side, kept inside the frame. */
+export function padBox(box: Box, pad: number, frameW: number, frameH: number): Box {
+  const dx = box.w * pad;
+  const dy = box.h * pad;
+  const x = Math.max(0, box.x - dx);
+  const y = Math.max(0, box.y - dy);
+  return { x, y, w: Math.min(frameW, box.x + box.w + dx) - x, h: Math.min(frameH, box.y + box.h + dy) - y };
+}
+
+/**
+ * The bottom `STRIP_SHARE` of `crop`, magnified `STRIP_SCALE`×. Returned
+ * lines must be mapped back with `stripLines`.
+ */
+function cropStrip(crop: HTMLCanvasElement): { canvas: HTMLCanvasElement; top: number } {
+  const top = Math.round(crop.height * (1 - STRIP_SHARE));
+  const h = crop.height - top;
+  const out = document.createElement('canvas');
+  out.width = Math.round(crop.width * STRIP_SCALE);
+  out.height = Math.round(h * STRIP_SCALE);
+  const ctx = out.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(crop, 0, top, crop.width, h, 0, 0, out.width, out.height);
+  return { canvas: out, top };
+}
+
+/** Strip lines mapped into crop coordinates, minus exact repeats of lines already read. */
+export function stripLines(lines: readonly RecognizedLine[], top: number, already: readonly RecognizedLine[]): RecognizedLine[] {
+  const seen = new Set(already.map((l) => l.text.trim().toUpperCase()));
+  const out: RecognizedLine[] = [];
+  for (const l of lines) {
+    const key = l.text.trim().toUpperCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      ...l,
+      bbox: { x: l.bbox.x / STRIP_SCALE, y: top + l.bbox.y / STRIP_SCALE, w: l.bbox.w / STRIP_SCALE, h: l.bbox.h / STRIP_SCALE },
+    });
+  }
+  return out;
+}
+
+interface PoolEntry {
+  weight: number;
+  best: ScanCandidate | null;
+  alt: ScanAlternative | null;
+  /** Frames in which the card was the pocket's top read. */
+  tops: number;
+}
+
+/**
+ * Merge the candidate lists of one pocket read from several frames (and of
+ * the live frame's alternatives): weights add up over frames, so a card that
+ * is top-1 in two frames beats one that was top-1 in one, and a card listed
+ * second every time can still win. Returns the best candidate and the rest
+ * as alternatives, best first.
+ */
+export function mergePocketCandidates(perFrame: readonly (readonly ScanCandidate[])[]): {
+  candidate?: ScanCandidate;
+  alternatives: ScanAlternative[];
+} {
+  const pool = new Map<string, PoolEntry>();
+  const entry = (id: string): PoolEntry => {
+    let e = pool.get(id);
+    if (!e) {
+      e = { weight: 0, best: null, alt: null, tops: 0 };
+      pool.set(id, e);
+    }
+    return e;
+  };
+  for (const cands of perFrame) {
+    cands.forEach((c, i) => {
+      const e = entry(c.card.id);
+      e.weight += c.score * (i === 0 ? 1 : 0.8);
+      if (i === 0) e.tops++;
+      if (!e.best || c.score > e.best.score) e.best = c;
+      for (const a of c.alternatives) {
+        const ea = entry(a.card.id);
+        ea.weight += a.score * ALT_WEIGHT;
+        if (!ea.alt || a.score > ea.alt.score) ea.alt = a;
+      }
+    });
+  }
+  const ranked = [...pool.entries()].sort((a, b) => b[1].weight - a[1].weight);
+  if (!ranked.length) return { alternatives: [] };
+  const [bestId, best] = ranked[0];
+  const toAlt = (e: PoolEntry): ScanAlternative =>
+    e.best
+      ? { card: e.best.card, set: e.best.set, score: e.best.score, evidence: e.best.evidence }
+      : { card: e.alt!.card, set: e.alt!.set, score: e.alt!.score, evidence: e.alt!.evidence };
+  const alternatives = ranked.slice(1).map(([, e]) => toAlt(e));
+  const frames = perFrame.length;
+  if (!best.best) {
+    // Only ever an alternative: promote it as an unsure candidate.
+    const a = best.alt!;
+    return {
+      candidate: { key: bestId, card: a.card, set: a.set, score: a.score, margin: 0, confident: false, evidence: a.evidence, bbox: { x: 0, y: 0, w: 0, h: 0 }, cardBox: { x: 0, y: 0, w: 0, h: 0 }, alternatives },
+      alternatives,
+    };
+  }
+  const runnerUp = ranked[1]?.[1].weight ?? 0;
+  const margin = best.weight > 0 ? Math.max(0, Math.min(1, (best.weight - runnerUp) / best.weight)) : 0;
+  const agreed = frames >= 2 && best.tops === frames;
+  const candidate: ScanCandidate = {
+    ...best.best,
+    key: bestId,
+    margin: Math.max(best.best.margin, margin),
+    confident: best.best.confident || (agreed && margin >= 0.3),
+    alternatives,
+  };
+  return { candidate, alternatives };
+}
 
 /**
  * Crop `box` from `source` into a new canvas, upscaled so its width is at least
@@ -227,33 +380,57 @@ export async function scanPage(
   const results: PocketScan[] = [];
   const minWidth = opts.minCropWidth ?? MIN_CROP_WIDTH;
   const maxWidth = opts.maxCropWidth ?? MAX_CROP_WIDTH;
+  const pad = opts.pad ?? PAD;
+  const refine = opts.refine ?? false;
+  const strip = opts.numberStrip ?? true;
+  const frames: PageSource[] = [frame, ...(opts.extraFrames ?? [])];
+  const card = opts.geometry?.cardMm ?? DEFAULT_CARD_MM;
+  const aspect = card.w / card.h;
   for (const pocket of pockets) {
     if (opts.signal?.aborted) break;
-    const crop = cropPocket(frame, pocket.box, minWidth, maxWidth);
     const started = performance.now();
-    let lines: Awaited<ReturnType<TextRecognizer['recognize']>> = [];
-    try {
-      lines = await recognizer.recognize(crop);
-    } catch (e) {
-      console.warn('[scanner] pocket', pocket.index, 'recognition failed:', e);
+    const padded = padBox(pocket.box, pad, frame.width, frame.height);
+    const cardBox = (refine && refineCardBox(frame, padded, aspect)) || padded;
+    const perFrame: ScanCandidate[][] = [];
+    let thumb = '';
+    let lineCount = 0;
+    for (const src of frames) {
+      if (opts.signal?.aborted) break;
+      const crop = cropPocket(src, cardBox, minWidth, maxWidth);
+      if (!thumb) thumb = thumbnail(crop, opts.thumbWidth ?? THUMB_WIDTH);
+      let lines: RecognizedLine[] = [];
+      let cands: ScanCandidate[] = [];
+      try {
+        lines = await recognizer.recognize(crop);
+        cands = matcher.scanLines(lines);
+        // The number line is what pins the printing: when the full read did
+        // not settle it, read the bottom of the card again, magnified.
+        if (strip && !cands[0]?.confident) {
+          const s = cropStrip(crop);
+          const extra = stripLines(await recognizer.recognize(s.canvas), s.top, lines);
+          if (extra.length) {
+            lines = [...lines, ...extra];
+            cands = matcher.scanLines(lines);
+          }
+        }
+      } catch (e) {
+        console.warn('[scanner] pocket', pocket.index, 'recognition failed:', e);
+      }
+      lineCount = Math.max(lineCount, lines.length);
+      perFrame.push(cands);
     }
-    const candidates = matcher.scanLines(lines);
-    // A pocket holds one card: keep the strongest candidate, demote the rest
-    // to alternatives so the user can correct a wrong pick in place.
-    const best = candidates[0];
-    const alternatives: ScanAlternative[] = best
-      ? [
-          ...best.alternatives,
-          ...candidates.slice(1).map((c) => ({ card: c.card, set: c.set, score: c.score, evidence: c.evidence })),
-        ].filter((a, i, arr) => a.card.id !== best.card.id && arr.findIndex((b) => b.card.id === a.card.id) === i)
-      : [];
+    // A pocket holds one card: keep the strongest candidate across frames,
+    // demote the rest to alternatives so the user can correct a wrong pick.
+    const merged = mergePocketCandidates(perFrame);
     results.push({
       pocket,
-      candidate: best,
-      alternatives,
-      lineCount: lines.length,
-      thumb: thumbnail(crop, opts.thumbWidth ?? THUMB_WIDTH),
+      candidate: merged.candidate,
+      alternatives: merged.alternatives,
+      lineCount,
+      thumb,
       ms: performance.now() - started,
+      cardBox,
+      frames: perFrame.length,
     });
     opts.onProgress?.(results.length, pockets.length);
   }

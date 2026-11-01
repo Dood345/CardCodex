@@ -189,6 +189,21 @@ alternatives + crop thumbnail). Pockets are not trimmed (`inset` 0): the collect
 from the card edge and a 4% trim lost it. Measured on a synthetic 3×3 page of 600 px TCGdex scans in
 the browser (Tesseract): 4/5 cards exact, 4/4 empty pockets detected, 5.2 s for the page.
 
+**Reading a pocket**: each cell is padded by 6% (`pad`) so a grid that is a little off cannot cut
+the collector number, cropped between 1000 and 1400 px wide and read. When that read does not
+settle the printing, the bottom 15% of the card is read again at 2.5× (`numberStrip`): the number
+line is the smallest text on the card and the one that pins it down; its lines are added unless
+they repeat a line already read. Measured on the three fixture photos (27 pockets, Tesseract in
+the browser): cells cut exactly to the fitted grid 5 right, padded 8 right with five of them
+confident; the strip changed little for Tesseract (it is aimed at ML Kit, which reads names but
+drops the small number line). `refine` (tighten the padded crop to the card's own edges with
+`refineCardBox`) is off by default: it lost two pockets and gained none. With `extraFrames` (the phone captures a second frame 180 ms after the first) every pocket
+is read from each frame and `mergePocketCandidates` adds the scores up per card, so a card that is
+top-1 in two frames beats one that was top-1 in one, and a pocket counts as confident when every
+frame agrees with a clear margin. The review's "Save capture" shares (Android) or downloads the
+scanned frame and a JSON report of what was read, so a page that scanned badly on a phone can be
+reproduced from `scripts/fixtures/binder-pages/`.
+
 **Where the page is** (`grid.ts`): the capture view shows the camera with `object-fit: cover`, so
 the guide must live in the visible part of the frame (`visibleRegion`), and a fixed rectangle still
 asks the user to line the binder up with it. `fitGridOnSource(source, region, layout)` finds the
