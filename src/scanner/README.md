@@ -10,8 +10,10 @@ device except the one-time Tesseract language-model download (see Engines).
 | `index.ts` | public entry; re-exports everything below |
 | `types.ts` | `Box`, `RecognizedLine`, observations, `ScanCandidate`, `ScanAlternative` |
 | `useCardScanner.ts` | React hook: camera + OCR loop + debounced results |
-| `match.ts` | `buildScanIndex`, `matchObservations`, `scanLines`, `printingsOf`, `findNames` (pure) |
-| `parse.ts` / `ocr-normalize.ts` | OCR-noise-tolerant parsing of number / set code / HP / name (pure) |
+| `match.ts` | Pokémon: `buildScanIndex`, `matchObservations`, `scanLines`, `printingsOf`, `findNames`, `createPokemonMatcher` (pure) |
+| `parse.ts` / `ocr-normalize.ts` | OCR-noise-tolerant parsing of number / set code / HP / name / Pokédex line (pure) |
+| `ygo/parse.ts` / `ygo/match.ts` | Yu-Gi-Oh!: passcode / set code / ATK-DEF / type line parsing and `createYgoMatcher` (pure) |
+| `page.ts` | binder-page geometry and per-pocket scanning (any game's matcher) |
 | `tracker.ts` | cross-frame merge, 2 s hold, vote-based identity (pure) |
 | `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
@@ -20,12 +22,13 @@ device except the one-time Tesseract language-model download (see Engines).
 ## Usage
 
 ```tsx
-import { buildScanIndex, useCardScanner, coverTransform, mapBox, printingsOf } from '@/scanner';
+import { useCardScanner, coverTransform, mapBox } from '@/scanner';
 
-// Once per catalog load (~100 ms for 21k cards). Memoize it.
-const index = useMemo(() => (catalog ? buildScanIndex(catalog) : null), [catalog]);
+// Once per catalog load (~100 ms for 21k cards / 38k printings). Memoize it.
+// The game profile picks the matcher: createPokemonMatcher / createYgoMatcher.
+const matcher = useMemo(() => game.createMatcher(index), [game, index]);
 
-const scanner = useCardScanner({ index, enabled: isScanTabActive });
+const scanner = useCardScanner({ matcher, enabled: isScanTabActive });
 // scanner: { videoRef, status, error, results, frameSize, engine, paused, start, stop, pause, resume }
 
 <div ref={wrapRef} style={{ position: 'relative' }}>
@@ -135,6 +138,34 @@ stopped on unmount. **Hold cards close: the number is what makes a match exact.*
 Most promising next step: a second OCR pass on a 2× upscaled crop of the
 bottom ~8% of each detected `cardBox`, so the number line can be read.
 
+## Yu-Gi-Oh! (`ygo/`)
+
+Same pipeline shape, different evidence. `ScanMatcher` (`types.ts`) is the seam: the camera hook and
+`scanPage` only call `matcher.scanLines(lines)`; `createYgoMatcher(catalog)` builds a Pokémon-style
+index for names (8-word windows) plus passcode and printed-code lookups.
+
+- **Passcode** (8 digits bottom-left, ≈ H/60 tall): parsed with the usual digit confusions, optionally
+  split 4+4, validated against every passcode (alternate arts included); one wrong digit is found
+  through wildcard keys (`4698_414`) and scored lower (`passcode ≈…`). Names the card, not the printing:
+  every printing ties, so the chip is `?` with the printings as alternatives.
+- **Set code** (`LOB-EN005` under the artwork, right-aligned, ≈ H/55): prefix and body are normalized
+  against the catalog's prefixes/codes (letter↔digit confusions, lost or spaced hyphen); an unknown body
+  under a known prefix is matched to codes one character away (`code ≈…`). Names the exact printing.
+- **ATK/DEF** (`ATK/2500 DEF/2100`, also `?` and `LINK-2`) and the bracketed **type line**
+  (`[Spellcaster/Normal]`, `[Spell Card]`) are small bonuses; the **name** scores like Pokémon.
+- Weights (raw, ÷ 0.85): passcode 0.6 (near 0.35), code 0.6 (near 0.3), name 0.4 × strength, stats
+  0.1/0.05, type 0.05, recency 0.02. The confidence margin is computed on raw sums because passcode +
+  name + stats put every printing of a card at the 1.0 ceiling and only the code separates them.
+- Geometry (fractions of H, 59×86 mm card): name 0.08, set code 0.725, type line 0.77, ATK/DEF 0.925,
+  passcode 0.962. Anchors in order passcode → code → stats → strong name; binder pages use
+  `cardMm: {59, 86}`.
+
+Measured in the browser (Tesseract) on a YGOPRODeck render of Dark Magician with a code and passcode
+painted on (the renders are replicas without them): at 813 px wide the passcode was read and the card
+identified (`?`, printings as alternatives), the stylised serif name and ATK/DEF were not; at 1600 px
+ATK/DEF and the type line were also read (0.85). Stills narrower than 1200 px are therefore upscaled
+to 1600 px before OCR (`fileToCanvas`). Real cards, and ML Kit on Android, remain to be measured.
+
 ## Tuning knobs
 
 `useCardScanner({ intervalMs, maxWidth, holdMs })`; `SCORE_*`,
@@ -148,7 +179,7 @@ Run `node scripts/scan-check.mjs [--verbose] [--psm N] [--high-only]` after chan
 ## Binder pages (`page.ts`)
 
 `pageRect` / `pocketBoxes` give the page guide (largest cols×63 : rows×88 rectangle centred in the
-frame) and its pocket cells; `scanPage(source, layout, recognizer, index)` crops every pocket from the
+frame; `cardMm` changes the card size) and its pocket cells; `scanPage(source, layout, recognizer, matcher)` crops every pocket from the
 full-resolution source (an `ImageBitmap` of the photo or a full-size capture canvas), upscales crops
 narrower than 1000 px, runs the recognizer on each crop in turn and returns one `PocketScan` per
 pocket (best candidate + alternatives + crop thumbnail). Pockets are not trimmed (`inset` 0): the

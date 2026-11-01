@@ -146,6 +146,72 @@ export function GridIcon({ size = 24, className, style }: IconProps) {
   );
 }
 
+/** Yu-Gi-Oh!: the Millennium eye in a pyramid (game switch, splash). */
+export function MillenniumIcon({ size = 24, className, style }: IconProps) {
+  return (
+    <svg {...base(size)} className={className} style={style}>
+      <path d="M12 3 21 20H3z" />
+      <path d="M7.5 14.5c1.3-1.5 2.8-2.2 4.5-2.2s3.2.7 4.5 2.2c-1.3 1.5-2.8 2.2-4.5 2.2s-3.2-.7-4.5-2.2z" />
+      <circle cx="12" cy="14.5" r="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Stacked cards: the Archetypes tab. */
+export function ArchetypeIcon({ size = 24, className, style }: IconProps) {
+  return (
+    <svg {...base(size)} className={className} style={style}>
+      <rect x="7" y="3" width="12" height="16" rx="2" />
+      <path d="M4 7v12a2 2 0 0 0 2 2h10" />
+      <path d="M10 7h6M10 10h6" />
+    </svg>
+  );
+}
+
+/* ---------- Yu-Gi-Oh! attributes ---------- */
+
+export const ATTRIBUTE_COLORS: Record<string, string> = {
+  DARK: '#6a3fa0',
+  LIGHT: '#e0b321',
+  EARTH: '#8a6a3c',
+  WATER: '#2f7fd6',
+  FIRE: '#d8432a',
+  WIND: '#3aa655',
+  DIVINE: '#c9a227',
+};
+
+function attributeGlyph(attr: string) {
+  switch (attr) {
+    case 'DARK':
+      return <path d="M15.5 5A7 7 0 1 0 19 13.5 6 6 0 0 1 15.5 5z" fill="#fff" />;
+    case 'LIGHT':
+      return <path d="M12 4l1.6 5.4L19 11l-5.4 1.6L12 18l-1.6-5.4L5 11l5.4-1.6z" fill="#fff" />;
+    case 'EARTH':
+      return <path d="M5 17l4-7 3 4 2-2 5 5z" fill="#fff" />;
+    case 'WATER':
+      return <path d="M12 4c3 4 5 6.5 5 9.5a5 5 0 0 1-10 0C7 10.5 9 8 12 4z" fill="#fff" />;
+    case 'FIRE':
+      return <path d="M12 4c1 3 4 4 4 8a4 4 0 0 1-8 0c0-1.5.6-2.6 1.3-3.4C9.5 10 10 11 11 11c0-3-1-4 1-7z" fill="#fff" />;
+    case 'WIND':
+      return <path d="M5 9h9a2.5 2.5 0 1 0-2.5-2.5M4 13h12a3 3 0 1 1-3 3" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" />;
+    default:
+      return <path d="M12 5l2 5h5l-4 3 1.5 5L12 15l-4.5 3L9 13 5 10h5z" fill="#fff" />;
+  }
+}
+
+/** Round attribute badge for "DARK", "LIGHT", ... */
+export function AttributeIcon({ type, size = 18, className, style }: { type: string } & IconProps) {
+  const color = ATTRIBUTE_COLORS[type] ?? '#9e9e9e';
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" className={className} style={style} role="img" aria-label={`${type} attribute`}>
+      <title>{type}</title>
+      <circle cx="12" cy="12" r="11" fill={color} />
+      <circle cx="12" cy="12" r="11" fill="none" stroke="rgba(0,0,0,.25)" strokeWidth="1" />
+      {attributeGlyph(type)}
+    </svg>
+  );
+}
+
 /* ---------- TCG energy types ---------- */
 
 export const ENERGY_COLORS: Record<string, string> = {

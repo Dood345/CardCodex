@@ -1,8 +1,8 @@
 # CardCodex
 
-A Pokédex-style collection tracker for the **Pokémon Trading Card Game**. Browse every English card
-ever printed with its artwork, keep track of exactly which ones you own, hunt for the ones you're
-missing, and add cards by pointing your phone's camera at them.
+A Pokédex-style collection tracker for the **Pokémon Trading Card Game** and the **Yu-Gi-Oh! Trading
+Card Game**. Browse every English card ever printed with its artwork, keep track of exactly which ones
+you own, hunt for the ones you're missing, and add cards by pointing your phone's camera at them.
 
 CardCodex is a single web app (installable PWA) that is also packaged as a native **Android** app
 with Capacitor. Your collection lives only on your device.
@@ -14,6 +14,10 @@ with Capacitor. Your collection lives only on your device.
 
 ## What it does
 
+- **Two games, one collection** – pick Pokémon or Yu-Gi-Oh! in Settings or from the pill in the
+  browse and collection tabs. Each game has its own offline catalog, browse tab, card facts and
+  scanner; your collection and backups hold both games' cards. (See *Yu-Gi-Oh! mode* below for what
+  differs.)
 - **Pokédex** – all 1,025 species with sprites and type colours. Species you own no cards of show as
   silhouettes, Pokédex-style. Filter by generation or collected/missing; tap a species for its
   official artwork and every card that features it (newest first) with owned counts.
@@ -43,21 +47,52 @@ with Capacitor. Your collection lives only on your device.
   count, wrong guesses can be swapped from the alternatives, and empty pockets are skipped. One tap
   adds the whole page.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
-  replayed from Settings.
+  replayed from Settings. Its wording follows the active game.
+
+### Yu-Gi-Oh! mode
+
+- **Archetypes** replaces the Pokédex: all ~665 archetypes with a cover artwork and how many of
+  their distinct cards you own; an archetype lists its cards (newest printing shown, copies summed
+  over printings) or every printing. Cards outside any archetype are reachable from Search and Sets.
+- **Printings are the unit**: every catalog entry is one printed set code (`LOB-EN001`), so the
+  Sets tab (grouped by release year, ~1,037 sets), binders and quantities all work per printing, and
+  a card page lists the other printings of the same card.
+- **Card facts**: card type, attribute, monster type / spell & trap property, Level/Rank/Link,
+  ATK/DEF, archetype link, rarity and passcode. Search understands names, archetypes, monster types,
+  set names, set codes and 8-digit passcodes; filters narrow by attribute, rarity and year.
+- **Scanner**: the printed set code under the artwork names the exact printing and the 8-digit
+  passcode at the bottom-left names the card; name, ATK/DEF and the type line are supporting
+  evidence. One wrong OCR character in either code is tolerated and marked with `≈`. Binder page
+  mode uses the smaller 59×86 mm card aspect for its grid.
+- **Images** come from [YGOPRODeck](https://ygoprodeck.com), whose API guide forbids hotlinking.
+  On Android every image is therefore downloaded once (through Capacitor's native HTTP bridge) and
+  stored in the app's IndexedDB, bounded to ~8,000 images with least-recently-used eviction; in a
+  browser the images cannot be read by script (no CORS), so the browser's own HTTP cache and the
+  service worker do the same job. Settings → *Card images* can point the app at a self-hosted mirror
+  of the `cards_small/` and `cards/` folders and shows/clears the stored images.
 
 ## Data
 
-The card catalog is a prebuilt, offline snapshot in `public/data/`:
+The card catalogs are prebuilt, offline snapshots in `public/data/`:
 
-- `catalog.json` – every English set and card from [TCGdex](https://tcgdex.dev) (id, set, number,
-  name, kind, National Dex ids, energy types, rarity, HP, stage, image flag).
+- `catalog.json` – every English Pokémon set and card from [TCGdex](https://tcgdex.dev) (id, set,
+  number, name, kind, National Dex ids, energy types, rarity, HP, stage, image flag).
 - `species.json` – the National Pokédex (name, generation, types) from PokéAPI's CSV data.
+- `ygo/catalog.json` – every Yu-Gi-Oh! TCG card and printing from the
+  [YGOPRODeck API](https://ygoprodeck.com/api-guide/) (two-level: cards by passcode with type,
+  attribute, monster type, level, ATK/DEF, archetype; printings by set code with rarity). Expanded
+  into the shared catalog shape at load time (`src/games/ygo/catalog.ts`).
 
-Card images are served by TCGdex (`assets.tcgdex.net`), species sprites and artwork by the PokéAPI
-sprites repository. Rebuild the catalog to pick up new sets:
+Pokémon card images are served by TCGdex (`assets.tcgdex.net`), species sprites and artwork by the
+PokéAPI sprites repository; Yu-Gi-Oh! images by YGOPRODeck, stored on the device after the first
+view (see above). Rebuild a catalog to pick up new sets:
 
 ```bash
 npm run catalog
+```
+
+```bash
+npm run catalog:ygo
 ```
 
 See [`scripts/README.md`](scripts/README.md) for details.
@@ -140,9 +175,11 @@ npm run android:release
 
 ## Credits and legal
 
-Card data and images: [TCGdex](https://tcgdex.dev). Pokédex data and sprites:
-[PokéAPI](https://pokeapi.co). Pokémon and Pokémon character names are trademarks of Nintendo,
-Creatures Inc. and GAME FREAK; card images are © The Pokémon Company. CardCodex is an independent
-fan project and is not affiliated with or endorsed by any of them.
+Pokémon card data and images: [TCGdex](https://tcgdex.dev). Pokédex data and sprites:
+[PokéAPI](https://pokeapi.co). Yu-Gi-Oh! card data and images: [YGOPRODeck](https://ygoprodeck.com).
+Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK; Pokémon
+card images are © The Pokémon Company. Yu-Gi-Oh! is a trademark of Konami; Yu-Gi-Oh! card images and
+text are © Konami Digital Entertainment / 4K Media. CardCodex is an independent fan project and is not
+affiliated with or endorsed by any of them.
 
 Licensed under GPL-3.0 – see [LICENSE](LICENSE).

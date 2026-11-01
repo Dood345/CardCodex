@@ -57,14 +57,21 @@ export function containTransform(w: number, h: number, ew: number, eh: number): 
   return { scale, offsetX: (ew - w * scale) / 2, offsetY: (eh - h * scale) / 2 };
 }
 
-/** Decode an image file into a canvas no wider than `maxWidth` (EXIF orientation applied). */
-export async function fileToCanvas(file: File, maxWidth: number): Promise<HTMLCanvasElement> {
+/**
+ * Decode an image file into a canvas no wider than `maxWidth` (EXIF
+ * orientation applied). Images narrower than `minWidth` are upscaled to
+ * `maxWidth`: on an 813 px card render Tesseract garbled "ATK/2500 DEF/2100"
+ * and missed the type line; at 1600 px it read both (measured, Yu-Gi-Oh!).
+ */
+export async function fileToCanvas(file: File, maxWidth: number, minWidth = 0): Promise<HTMLCanvasElement> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, maxWidth / bitmap.width);
+  const scale = bitmap.width < minWidth ? maxWidth / bitmap.width : Math.min(1, maxWidth / bitmap.width);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
   return canvas;
 }

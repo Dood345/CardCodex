@@ -2,10 +2,13 @@
  * Guided tour: a handful of coach marks that walk through the main tabs.
  * Each step may navigate to a route and spotlight an element marked with a
  * `data-tour` attribute. Skippable at any step; Settings can restart it.
+ * The wording comes from the active game's profile.
  */
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useGame } from '@/app/context';
 import { updateSettings } from '@/app/settings';
 import { closeTour } from '@/app/tourState';
+import type { GameProfile } from '@/games/types';
 import { navigate } from './router';
 
 interface TourStep {
@@ -17,46 +20,30 @@ interface TourStep {
   target?: string;
 }
 
-export const TOUR_STEPS: TourStep[] = [
-  {
-    title: 'Welcome to CardCodex',
-    body: 'A Pokédex for your Pokémon TCG collection. This quick tour shows the five tabs; skip it any time and restart it from Settings.',
-  },
-  {
-    title: 'Pokédex',
-    route: '/dex',
-    target: 'nav-dex',
-    body: 'Every species, with silhouettes for the ones you own no cards of. Tap a Pokémon to see all of its cards, newest first, and what you have.',
-  },
-  {
-    title: 'Sets',
-    route: '/sets',
-    target: 'nav-sets',
-    body: 'Your binders: every set with a completion bar. Inside a set, turn on Quick add and each tap on a card adds one copy.',
-  },
-  {
-    title: 'Search',
-    route: '/search',
-    target: 'nav-search',
-    body: 'Find any card by name, set, set code like SVI, or the printed number such as 057/198. Filters narrow by owned, type, rarity and series.',
-  },
-  {
-    title: 'Scan',
-    route: '/scan',
-    target: 'nav-scan',
-    body: 'Point the camera at cards to add them with a tap, or switch to Binder page mode to read a whole page at once and confirm how many copies sit in each pocket.',
-  },
-  {
-    title: 'Collection',
-    route: '/collection',
-    target: 'nav-collection',
-    body: 'Totals, everything you own grouped by set, and your wishlist. The gear opens Settings: theme, backups, scanner options and this tour.',
-  },
-  {
-    title: "You're all set",
-    body: 'Start by scanning a few cards or opening a set. Your collection stays on this device; export a backup from Settings whenever you like.',
-  },
-];
+export function tourSteps(game: GameProfile): TourStep[] {
+  return [
+    { title: 'Welcome to CardCodex', body: game.text.tourWelcome },
+    { title: game.text.tourBrowseTitle, route: game.browse.path, target: 'nav-browse', body: game.text.tourBrowse },
+    {
+      title: 'Sets',
+      route: '/sets',
+      target: 'nav-sets',
+      body: 'Your binders: every set with a completion bar. Inside a set, turn on Quick add and each tap on a card adds one copy.',
+    },
+    { title: 'Search', route: '/search', target: 'nav-search', body: game.text.tourSearch },
+    { title: 'Scan', route: '/scan', target: 'nav-scan', body: game.text.tourScan },
+    {
+      title: 'Collection',
+      route: '/collection',
+      target: 'nav-collection',
+      body: 'Totals, everything you own grouped by set, and your wishlist. The gear opens Settings: game, theme, backups, scanner options and this tour.',
+    },
+    {
+      title: "You're all set",
+      body: 'Start by scanning a few cards or opening a set. Your collection stays on this device; export a backup from Settings whenever you like.',
+    },
+  ];
+}
 
 const PAD = 8;
 
@@ -77,10 +64,12 @@ function measure(target: string | undefined): Rect | null {
 }
 
 export function Tour() {
+  const game = useGame();
+  const steps = useMemo(() => tourSteps(game), [game]);
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
-  const step = TOUR_STEPS[i];
-  const last = i === TOUR_STEPS.length - 1;
+  const step = steps[Math.min(i, steps.length - 1)];
+  const last = i >= steps.length - 1;
 
   useEffect(() => {
     if (step.route) navigate(step.route);
@@ -139,7 +128,7 @@ export function Tour() {
       )}
       <div className="tour-card" style={cardStyle}>
         <div className="tour-step">
-          {i + 1} / {TOUR_STEPS.length}
+          {i + 1} / {steps.length}
         </div>
         <h2>{step.title}</h2>
         <p>{step.body}</p>

@@ -1585,3 +1585,147 @@ textarea:focus {
 .tour-spacer {
   flex: 1;
 }
+
+/* ===== Game switch ===== */
+.game-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.game-options {
+  display: grid;
+  gap: 8px;
+}
+.game-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  text-align: left;
+  color: var(--fg);
+  font-size: 14px;
+}
+.game-option.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.game-option small {
+  display: block;
+  color: var(--fg-muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+.setting-row.column {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+/* ===== Archetypes (Yu-Gi-Oh!) ===== */
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  gap: 8px;
+  padding: 12px;
+}
+.arch-tile {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 156px;
+  transition: transform 0.15s;
+}
+.arch-tile:active {
+  transform: scale(0.96);
+}
+/* The card image is cropped to its artwork: art spans ~11–89% × 17–70% of a card. */
+.arch-art {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+.arch-art img {
+  position: absolute;
+  width: 128%;
+  max-width: none;
+  height: auto;
+  left: -14%;
+  top: -32%;
+}
+.arch-art .img-skeleton,
+.arch-art .img-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+.arch-missing .arch-art img {
+  filter: grayscale(0.85) opacity(0.6);
+}
+.arch-name {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 6px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.arch-count {
+  font-size: 10px;
+  color: var(--fg-muted);
+  padding: 0 6px 6px;
+}
+.arch-owned .arch-count {
+  color: var(--ok);
+  font-weight: 600;
+}
+.arch-hero {
+  display: flex;
+  gap: 16px;
+  padding: 16px 12px;
+  align-items: center;
+}
+.arch-hero-art {
+  width: 110px;
+  flex: none;
+  border-radius: 8px;
+  overflow: hidden;
+  aspect-ratio: 59 / 86;
+  background: var(--bg-card);
+}
+.arch-hero-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.species-pill img.smooth {
+  image-rendering: auto;
+  border-radius: 6px;
+  object-fit: cover;
+  object-position: 50% 30%;
+}
+.set-badge span.long {
+  font-size: 8px;
+  letter-spacing: -0.02em;
+}

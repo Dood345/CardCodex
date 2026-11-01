@@ -1,14 +1,17 @@
 /**
- * Per-device preferences in localStorage (theme, grid density, scanner
- * engine). Wrapped in try/catch: storage can be unavailable in private
- * windows and the app must still render.
+ * Per-device preferences in localStorage (active game, theme, grid density,
+ * scanner engine). Wrapped in try/catch: storage can be unavailable in
+ * private windows and the app must still render.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { isGameId, type GameId } from '@/games/ids';
 
 export type Theme = 'system' | 'dark' | 'light';
 export type TileSize = 'small' | 'medium' | 'large';
 
 export interface Settings {
+  /** Which card game the app shows. The collection keeps every game's cards. */
+  game: GameId;
   theme: Theme;
   tileSize: TileSize;
   /** Dim cards you don't own in set binders. */
@@ -21,10 +24,13 @@ export interface Settings {
   pageLayout: string;
   /** The guided tour was completed or skipped. */
   tourDone: boolean;
+  /** Self-hosted mirror of the YGOPRODeck image folders ("" = YGOPRODeck itself). */
+  ygoImageBase: string;
 }
 
 const KEY = 'cardcodex.settings';
 const DEFAULTS: Settings = {
+  game: 'pokemon',
   theme: 'system',
   tileSize: 'medium',
   dimMissing: true,
@@ -32,13 +38,16 @@ const DEFAULTS: Settings = {
   scanMode: 'cards',
   pageLayout: '3x3',
   tourDone: false,
+  ygoImageBase: '',
 };
 
 function read(): Settings {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return DEFAULTS;
-    return { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) };
+    const s = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) };
+    if (!isGameId(s.game)) s.game = DEFAULTS.game;
+    return s;
   } catch {
     return DEFAULTS;
   }
@@ -80,6 +89,7 @@ export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
 }
 
 export function applyTheme(theme: Theme): void {
+  if (typeof document === 'undefined') return;
   const root = document.documentElement;
   if (theme === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', theme);

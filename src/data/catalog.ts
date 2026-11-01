@@ -1,11 +1,12 @@
 /**
  * Catalog loading and in-memory indexing.
  *
- * The catalog (every English TCG card) and the species list ship as static
- * JSON under /data. They are loaded once at startup and indexed into Maps so
- * every page can answer "cards in set X", "cards featuring species Y" and
- * "card with id Z" synchronously.
+ * One game's catalog is loaded at a time (the active game in Settings) and
+ * indexed into Maps so every page can answer "cards in set X", "cards
+ * featuring species Y / archetype Z" and "card with id W" synchronously.
  */
+import type { GameId } from '@/games/ids';
+import { expandYgoCatalog, type YgoCatalogFile } from '@/games/ygo/catalog';
 import type { Catalog, CatalogCard, CatalogSet, Species, SpeciesFile } from './types';
 import { normalizeText } from './normalize';
 
@@ -16,7 +17,17 @@ export interface SeriesGroup {
   sets: CatalogSet[];
 }
 
+/** A Yu-Gi-Oh! archetype and its printings. */
+export interface Archetype {
+  name: string;
+  /** All printings, newest set first. */
+  cards: CatalogCard[];
+  /** Distinct cards (passcodes). */
+  unique: number;
+}
+
 export interface CatalogIndex {
+  game: GameId;
   catalog: Catalog;
   species: Species[];
   setsById: Map<string, CatalogSet>;
@@ -27,6 +38,12 @@ export interface CatalogIndex {
   cardsByDex: Map<number, CatalogCard[]>;
   /** Cards sharing a normalized name (all printings), newest set first. */
   cardsByName: Map<string, CatalogCard[]>;
+  /** Printings of a Yu-Gi-Oh! card (by passcode, alternate arts included), newest set first. */
+  cardsByPasscode: Map<number, CatalogCard[]>;
+  /** Printings per archetype, newest set first. */
+  cardsByArchetype: Map<string, CatalogCard[]>;
+  /** Archetypes sorted by name (empty for Pokémon). */
+  archetypes: Archetype[];
   speciesById: Map<number, Species>;
   /** Series newest first, each with its sets newest first. */
   series: SeriesGroup[];
@@ -34,20 +51,26 @@ export interface CatalogIndex {
   searchText: Map<string, { name: string; all: string }>;
   /** Distinct rarity strings in display order (by frequency). */
   rarities: string[];
-  /** Distinct TCG types. */
+  /** Distinct `CatalogCard.types` values (energy types / attributes). */
   types: string[];
 }
 
 const DATA_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/data`;
 
 async function fetchJson<T>(path: string): Promise<T> {
-  const res = await fetch(path, { cache: 'force-cache' });
+  // Catalogs only change with a new build (new asset URLs on the web, new APK
+  // on Android), so the HTTP cache may serve them; in dev, pick up rebuilds.
+  const res = await fetch(path, { cache: import.meta.env.DEV ? 'no-cache' : 'force-cache' });
   if (!res.ok) throw new Error(`Failed to load ${path}: HTTP ${res.status}`);
   return (await res.json()) as T;
 }
 
-/** Fetches catalog + species JSON and builds the index. */
-export async function loadCatalog(): Promise<CatalogIndex> {
+/** Fetches a game's catalog JSON and builds the index. */
+export async function loadCatalog(game: GameId = 'pokemon'): Promise<CatalogIndex> {
+  if (game === 'ygo') {
+    const file = await fetchJson<YgoCatalogFile>(`${DATA_BASE}/ygo/catalog.json`);
+    return buildIndex(expandYgoCatalog(file), []);
+  }
   const [catalog, speciesFile] = await Promise.all([
     fetchJson<Catalog>(`${DATA_BASE}/catalog.json`),
     fetchJson<SpeciesFile>(`${DATA_BASE}/species.json`),
@@ -69,40 +92,42 @@ export function buildIndex(catalog: Catalog, species: Species[]): CatalogIndex {
   const cardsBySet = new Map<string, CatalogCard[]>();
   const cardsByDex = new Map<number, CatalogCard[]>();
   const cardsByName = new Map<string, CatalogCard[]>();
+  const cardsByPasscode = new Map<number, CatalogCard[]>();
+  const cardsByArchetype = new Map<string, CatalogCard[]>();
   const searchText = new Map<string, { name: string; all: string }>();
   const rarityCount = new Map<string, number>();
   const typeSet = new Set<string>();
+  const push = <K,>(m: Map<K, CatalogCard[]>, k: K, c: CatalogCard) => {
+    const l = m.get(k);
+    if (l) l.push(c);
+    else m.set(k, [c]);
+  };
 
   for (const card of catalog.cards) {
     cardsById.set(card.id, card);
-    let list = cardsBySet.get(card.set);
-    if (!list) cardsBySet.set(card.set, (list = []));
-    list.push(card);
-
-    if (card.dex) {
-      for (const dex of card.dex) {
-        let dl = cardsByDex.get(dex);
-        if (!dl) cardsByDex.set(dex, (dl = []));
-        dl.push(card);
-      }
-    }
+    push(cardsBySet, card.set, card);
+    if (card.dex) for (const dex of card.dex) push(cardsByDex, dex, card);
     const normName = normalizeText(card.name);
-    let nl = cardsByName.get(normName);
-    if (!nl) cardsByName.set(normName, (nl = []));
-    nl.push(card);
+    push(cardsByName, normName, card);
+    if (card.pc !== undefined) {
+      push(cardsByPasscode, card.pc, card);
+      if (card.alt) for (const a of card.alt) push(cardsByPasscode, a, card);
+    }
+    if (card.arc) push(cardsByArchetype, card.arc, card);
 
     const set = setsById.get(card.set);
     const setText = set ? `${normalizeText(set.name)} ${set.abbr.toLowerCase()}` : '';
+    const extra = [card.pc, card.arc && normalizeText(card.arc), card.race && normalizeText(card.race)].filter(Boolean).join(' ');
     searchText.set(card.id, {
       name: normName,
-      all: `${normName} | ${setText} ${card.num.toLowerCase()} ${card.id} ${card.set} ${set?.official ?? ''}`,
+      all: `${normName} | ${setText} ${card.num.toLowerCase()} ${card.id} ${card.set} ${set?.official ?? ''} ${extra}`,
     });
 
     if (card.rarity) rarityCount.set(card.rarity, (rarityCount.get(card.rarity) ?? 0) + 1);
     if (card.types) for (const t of card.types) typeSet.add(t);
   }
 
-  // Newest printing first for species and name groups.
+  // Newest printing first for species, name, passcode and archetype groups.
   const byRecency = (a: CatalogCard, b: CatalogCard) => {
     const sa = setsById.get(a.set);
     const sb = setsById.get(b.set);
@@ -113,6 +138,11 @@ export function buildIndex(catalog: Catalog, species: Species[]): CatalogIndex {
   };
   for (const list of cardsByDex.values()) list.sort(byRecency);
   for (const list of cardsByName.values()) list.sort(byRecency);
+  for (const list of cardsByPasscode.values()) list.sort(byRecency);
+  for (const list of cardsByArchetype.values()) list.sort(byRecency);
+  const archetypes: Archetype[] = [...cardsByArchetype.entries()]
+    .map(([name, cards]) => ({ name, cards, unique: new Set(cards.map((c) => c.pc)).size }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const speciesById = new Map<number, Species>();
   for (const s of species) speciesById.set(s.id, s);
@@ -136,6 +166,7 @@ export function buildIndex(catalog: Catalog, species: Species[]): CatalogIndex {
   const types = [...typeSet].sort();
 
   return {
+    game: catalog.game ?? 'pokemon',
     catalog,
     species,
     setsById,
@@ -143,6 +174,9 @@ export function buildIndex(catalog: Catalog, species: Species[]): CatalogIndex {
     cardsBySet,
     cardsByDex,
     cardsByName,
+    cardsByPasscode,
+    cardsByArchetype,
+    archetypes,
     speciesById,
     series,
     searchText,
@@ -161,7 +195,10 @@ export function compareCardNum(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true });
 }
 
-/** Printed number with the set's denominator, e.g. "057/198". */
+/**
+ * Printed number for display: with the set's denominator and zero padding
+ * ("057/198") when the game numbers cards that way, else as printed ("LOB-EN001").
+ */
 export function formatCardNumber(card: CatalogCard, set: CatalogSet | undefined): string {
   if (!set) return card.num;
   const official = set.official;

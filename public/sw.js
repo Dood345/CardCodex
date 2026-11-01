@@ -4,7 +4,7 @@
 const VERSION = 'cardcodex-v1';
 const SHELL = `${VERSION}-shell`;
 const IMAGES = `${VERSION}-images`;
-const IMAGE_HOSTS = ['assets.tcgdex.net', 'raw.githubusercontent.com'];
+const IMAGE_HOSTS = ['assets.tcgdex.net', 'raw.githubusercontent.com', 'images.ygoprodeck.com'];
 const MAX_IMAGES = 1500;
 
 self.addEventListener('install', (event) => {

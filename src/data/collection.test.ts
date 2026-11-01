@@ -27,7 +27,14 @@ describe('computeStats', () => {
       ['b-1', entry('b-1', 1, 1)],
       ['a-2', entry('a-2', 0, 1)],
     ]);
-    expect(computeStats(col, index)).toEqual({ totalCopies: 4, uniqueCards: 2, wanted: 2, speciesOwned: 1, setsTouched: 2 });
+    expect(computeStats(col, index)).toEqual({ totalCopies: 4, uniqueCards: 2, wanted: 2, groupsOwned: 1, setsTouched: 2 });
+  });
+  it('ignores entries of a game whose catalog is not loaded', () => {
+    const col: CollectionMap = new Map([
+      ['a-1', entry('a-1', 1)],
+      ['ygo:LOB-001', entry('ygo:LOB-001', 3, 1)],
+    ]);
+    expect(computeStats(col, index)).toEqual({ totalCopies: 1, uniqueCards: 1, wanted: 0, groupsOwned: 1, setsTouched: 1 });
   });
 });
 

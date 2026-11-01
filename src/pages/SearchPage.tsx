@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useCatalog } from '@/app/context';
+import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
-import { searchCards, searchSpecies, type OwnedFilter, type SearchFilters } from '@/data/search';
+import { searchCards, type OwnedFilter, type SearchFilters } from '@/data/search';
 import type { CardCategory } from '@/data/types';
-import { speciesSpriteUrl } from '@/data/types';
-import { CardGrid, CardTile, Chip, EmptyState, TopBar, dexNumber } from '@/ui/components';
-import { EnergyIcon } from '@/ui/icons';
+import { CardGrid, CardTile, Chip, EmptyState, TopBar } from '@/ui/components';
 import { href, useQueryParam, type Route } from '@/ui/router';
 
 const PAGE = 120;
 
 export default function SearchPage({ route }: { route: Route }) {
   const index = useCatalog();
+  const game = useGame();
   const collection = useCollection();
   const [q, setQ] = useQueryParam(route, 'q');
   const [text, setText] = useState(q);
@@ -38,16 +37,17 @@ export default function SearchPage({ route }: { route: Route }) {
     () => (q.trim() || hasFilter ? searchCards(index, q, filters, collection, limit) : { cards: [], total: 0 }),
     [index, q, filters, collection, limit, hasFilter],
   );
-  const species = useMemo(() => (q.trim() && !/\//.test(q) ? searchSpecies(index, q, 8) : []), [index, q]);
+  const groups = useMemo(() => game.quickGroups(index, q), [game, index, q]);
+  const { TypeIcon } = game;
 
   return (
     <>
-      <TopBar title="Search" subtitle={q.trim() || hasFilter ? `${result.total} cards` : 'Cards, sets, numbers like 57/198'}>
+      <TopBar title="Search" subtitle={q.trim() || hasFilter ? `${result.total} cards` : game.text.searchSubtitle}>
         <div className="toolbar">
           <input
             className="search-input"
             type="search"
-            placeholder="Pikachu, Base Set, SVI, 004/102…"
+            placeholder={game.text.searchPlaceholder}
             value={text}
             onChange={(e) => setText(e.target.value)}
             autoFocus
@@ -67,19 +67,22 @@ export default function SearchPage({ route }: { route: Route }) {
                 </Chip>
               ))}
               <span className="chip-sep" />
-              {(['', 'Pokemon', 'Trainer', 'Energy'] as const).map((c) => (
-                <Chip key={c || 'all'} active={cat === c} onClick={() => setCat(c)}>
-                  {c || 'All kinds'}
+              <Chip active={cat === ''} onClick={() => setCat('')}>
+                All kinds
+              </Chip>
+              {game.categories.map((c) => (
+                <Chip key={c} active={cat === c} onClick={() => setCat(cat === c ? '' : c)}>
+                  {c}
                 </Chip>
               ))}
             </div>
             <div className="chip-row">
               <Chip active={type === ''} onClick={() => setType('')}>
-                Any type
+                Any {game.typeLabel.toLowerCase()}
               </Chip>
               {index.types.map((t) => (
                 <Chip key={t} active={type === t} onClick={() => setType(type === t ? '' : t)}>
-                  <EnergyIcon type={t} size={16} /> {t}
+                  <TypeIcon type={t} size={16} /> {t}
                 </Chip>
               ))}
             </div>
@@ -92,8 +95,8 @@ export default function SearchPage({ route }: { route: Route }) {
                   </option>
                 ))}
               </select>
-              <select className="select" value={series} onChange={(e) => setSeries(e.target.value)} aria-label="Series">
-                <option value="">Any series</option>
+              <select className="select" value={series} onChange={(e) => setSeries(e.target.value)} aria-label={game.seriesLabel}>
+                <option value="">Any {game.seriesLabel.toLowerCase()}</option>
                 {index.series.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.name}
@@ -105,13 +108,14 @@ export default function SearchPage({ route }: { route: Route }) {
         )}
       </TopBar>
 
-      {species.length > 0 && (
+      {groups.length > 0 && (
         <div className="species-strip">
-          {species.map((s) => (
-            <a key={s.id} className="species-pill" href={href(`/dex/${s.id}`)}>
-              <img src={speciesSpriteUrl(s.id)} alt="" width={36} height={36} loading="lazy" />
+          {groups.map((g) => (
+            <a key={g.key} className="species-pill" href={href(g.href)}>
+              {g.img && <img src={g.img} alt="" width={36} height={36} loading="lazy" className={g.pixel ? '' : 'smooth'} />}
               <span>
-                {dexNumber(s.id)} {s.name}
+                {g.sub ? `${g.sub} · ` : ''}
+                {g.name}
               </span>
             </a>
           ))}
@@ -134,9 +138,9 @@ export default function SearchPage({ route }: { route: Route }) {
           )}
         </>
       ) : q.trim() || hasFilter ? (
-        <EmptyState title="No cards found" hint="Try a shorter name, a set code like SVI, or a number like 25/102." />
+        <EmptyState title="No cards found" hint={game.text.searchEmptyHint} />
       ) : (
-        <EmptyState title="Find any card" hint="Search by Pokémon, card name, set, set code or printed number." />
+        <EmptyState title="Find any card" hint={game.text.searchFindHint} />
       )}
     </>
   );

@@ -8,6 +8,7 @@ import type { CatalogIndex } from '@/data/catalog';
 import { formatCardNumber } from '@/data/catalog';
 import type { CollectionMap } from '@/data/collection';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
+import { useGame } from '@/app/context';
 import { useSettings } from '@/app/settings';
 import {
   coverTransform,
@@ -16,7 +17,7 @@ import {
   startCamera,
   stopCamera,
   type ScanAlternative,
-  type ScanIndex,
+  type ScanMatcher,
   type TextRecognizer,
 } from '@/scanner';
 import {
@@ -49,7 +50,7 @@ interface PocketState {
 
 export function PageScan({
   index,
-  scanIndex,
+  matcher,
   recognizer,
   collection,
   engineName,
@@ -58,7 +59,7 @@ export function PageScan({
   onExit,
 }: {
   index: CatalogIndex;
-  scanIndex: ScanIndex;
+  matcher: ScanMatcher;
   recognizer: TextRecognizer;
   collection: CollectionMap;
   engineName: string;
@@ -68,6 +69,7 @@ export function PageScan({
   onExit: () => void;
 }) {
   const [settings, update] = useSettings();
+  const { cardMm } = useGame();
   const layout = pageLayout(settings.pageLayout);
   const [phase, setPhase] = useState<Phase>('capture');
   const [error, setError] = useState<string | null>(null);
@@ -134,8 +136,9 @@ export function PageScan({
       setProgress({ done: 0, total: layout.cols * layout.rows });
       const started = performance.now();
       try {
-        const results = await scanPage(frame, layout, recognizer, scanIndex, {
+        const results = await scanPage(frame, layout, recognizer, matcher, {
           signal: ac.signal,
+          geometry: { cardMm },
           onProgress: (done, total) => setProgress({ done, total }),
         });
         if (ac.signal.aborted) return;
@@ -157,7 +160,7 @@ export function PageScan({
         if ('close' in frame && typeof frame.close === 'function') frame.close();
       }
     },
-    [layout, recognizer, scanIndex],
+    [layout, recognizer, matcher, cardMm],
   );
 
   // A photo handed in from the intro screen.
@@ -218,10 +221,10 @@ export function PageScan({
     if (!videoSize.w || !viewSize.w) return null;
     const t = coverTransform(videoSize.w, videoSize.h, viewSize.w, viewSize.h);
     return {
-      page: mapBox(pageRect(videoSize.w, videoSize.h, layout), t),
-      cells: pocketBoxes(videoSize.w, videoSize.h, layout).map((p) => mapBox(p.box, t)),
+      page: mapBox(pageRect(videoSize.w, videoSize.h, layout, { cardMm }), t),
+      cells: pocketBoxes(videoSize.w, videoSize.h, layout, { cardMm }).map((p) => mapBox(p.box, t)),
     };
-  }, [videoSize, viewSize, layout]);
+  }, [videoSize, viewSize, layout, cardMm]);
 
   const correctingOptions: ScanAlternative[] = useMemo(() => {
     if (correcting === null) return [];

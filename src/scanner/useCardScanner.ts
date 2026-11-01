@@ -1,15 +1,13 @@
 /**
  * React hook that owns the camera → OCR → match loop. UI-free (no JSX).
  *
- *   const scanner = useCardScanner({ index, enabled: true });
+ *   const scanner = useCardScanner({ matcher, enabled: true });
  *   <video ref={scanner.videoRef} style={{ objectFit: 'cover' }} />
  *   scanner.results.map(c => <Chip key={c.key} ... />)
  */
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import type { EngineName, ScanCandidate } from './types';
+import type { EngineName, ScanCandidate, ScanMatcher } from './types';
 import type { TextRecognizer } from './recognizer';
-import type { ScanIndex } from './match';
-import { scanLines } from './match';
 import { CameraError, grabFrame, startCamera, stopCamera } from './camera';
 import { getRecognizer } from './engine';
 import { updateTracks, type Track } from './tracker';
@@ -17,8 +15,8 @@ import { updateTracks, type Track } from './tracker';
 export type ScannerStatus = 'idle' | 'starting' | 'scanning' | 'error';
 
 export interface UseCardScannerOptions {
-  /** From buildScanIndex(catalog). While null, the camera runs but no OCR happens. */
-  index: ScanIndex | null;
+  /** The active game's matcher (GameProfile.createMatcher). While null, the camera runs but no OCR happens. */
+  matcher: ScanMatcher | null;
   /** Start the camera when true (and on mount); stop it when false. Default true. */
   enabled?: boolean;
   /**
@@ -60,7 +58,7 @@ export interface CardScanner {
 
 /** See CardScanner. Never runs two recognitions at once; frames are skipped while one is in flight. */
 export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
-  const { index, enabled = true, intervalMs = 900, maxWidth = 1280, holdMs = 2000 } = opts;
+  const { matcher, enabled = true, intervalMs = 900, maxWidth = 1280, holdMs = 2000 } = opts;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [status, setStatus] = useState<ScannerStatus>('idle');
   const [error, setError] = useState<string | undefined>();
@@ -80,8 +78,8 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
   /** Bumped by start/stop; async work from an older generation is discarded. */
   const genRef = useRef(0);
   const pausedRef = useRef(false);
-  const cfgRef = useRef({ index, intervalMs, maxWidth, holdMs, recognizer: opts.recognizer });
-  cfgRef.current = { index, intervalMs, maxWidth, holdMs, recognizer: opts.recognizer };
+  const cfgRef = useRef({ matcher, intervalMs, maxWidth, holdMs, recognizer: opts.recognizer });
+  cfgRef.current = { matcher, intervalMs, maxWidth, holdMs, recognizer: opts.recognizer };
   pausedRef.current = userPaused || hidden;
 
   const clearTimer = () => {
@@ -97,7 +95,7 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
       if (gen === genRef.current) timerRef.current = setTimeout(() => void tick(gen), delay);
     };
     const video = videoRef.current;
-    if (pausedRef.current || inFlightRef.current || !cfg.index || !video || video.readyState < 2) {
+    if (pausedRef.current || inFlightRef.current || !cfg.matcher || !video || video.readyState < 2) {
       schedule(cfg.intervalMs);
       return;
     }
@@ -112,7 +110,7 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
       if (gen !== genRef.current) return;
       const took = performance.now() - t0;
       avgFrameMsRef.current = avgFrameMsRef.current ? avgFrameMsRef.current * 0.7 + took * 0.3 : took;
-      const found = scanLines(lines, cfg.index);
+      const found = cfg.matcher.scanLines(lines);
       // With Tesseract a frame can take 1.5–3 s, longer than holdMs: a track
       // must survive at least ~2.5 recognition cycles or every chip would be
       // re-created (new key, votes lost) on every frame.

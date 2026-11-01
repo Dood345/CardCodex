@@ -3,23 +3,21 @@
  * and binder-page mode (PageScan). Shared pieces live in ./scan/shared.tsx.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCatalog } from '@/app/context';
+import { useCatalog, useGame } from '@/app/context';
 import { useSettings } from '@/app/settings';
 import { useCollection } from '@/data/collection';
 import { formatCardNumber } from '@/data/catalog';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import {
-  buildScanIndex,
   coverTransform,
   getRecognizer,
   mapBox,
-  scanLines,
   useCardScanner,
   type Box,
   type CoverTransform,
   type ScanAlternative,
   type ScanCandidate,
-  type ScanIndex,
+  type ScanMatcher,
 } from '@/scanner';
 import type { PocketEntry } from '@/scanner/page';
 import { Toast, useToast } from '@/ui/components';
@@ -50,9 +48,12 @@ interface Still {
 }
 
 const STILL_MAX_WIDTH = 1600;
+/** Smaller stills (saved images, screenshots) are upscaled to STILL_MAX_WIDTH; see fileToCanvas. */
+const STILL_MIN_WIDTH = 1200;
 
 export default function ScanPage() {
   const index = useCatalog();
+  const game = useGame();
   const collection = useCollection();
   const [settings, update] = useSettings();
   const mode = settings.scanMode;
@@ -67,12 +68,12 @@ export default function ScanPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
 
-  // Built once per catalog; ~21k cards → a few tens of ms.
-  const scanIndex: ScanIndex = useMemo(() => buildScanIndex(index.catalog), [index]);
+  // Built once per catalog (~21k Pokémon cards / 38k Yu-Gi-Oh! printings → ~100 ms).
+  const matcher: ScanMatcher = useMemo(() => game.createMatcher(index), [game, index]);
   const recognizer = recognizerFor(settings);
   const pageMode = mode === 'page';
 
-  const scanner = useCardScanner({ index: scanIndex, enabled: armed && !still && !pageMode, recognizer });
+  const scanner = useCardScanner({ matcher, enabled: armed && !still && !pageMode, recognizer });
   const engineName = scanner.engine === 'mlkit' ? 'ML Kit' : scanner.engine === 'tesseract' ? 'Tesseract' : 'on-device OCR';
 
   useEffect(() => {
@@ -144,15 +145,15 @@ export default function ScanPage() {
       setStill({ url, w: 0, h: 0, results: [], busy: true });
       const started = performance.now();
       try {
-        const canvas = await fileToCanvas(file, STILL_MAX_WIDTH);
+        const canvas = await fileToCanvas(file, STILL_MAX_WIDTH, STILL_MIN_WIDTH);
         const lines = await (recognizer ?? getRecognizer()).recognize(canvas);
-        const results = scanLines(lines, scanIndex);
+        const results = matcher.scanLines(lines);
         setStill({ url, w: canvas.width, h: canvas.height, results, busy: false, ms: performance.now() - started, lineCount: lines.length });
       } catch (e) {
         setStill((s) => (s && s.url === url ? { ...s, busy: false, error: e instanceof Error ? e.message : String(e) } : s));
       }
     },
-    [recognizer, scanIndex],
+    [recognizer, matcher],
   );
 
   const results: ScanCandidate[] = still ? still.results : scanner.results;
@@ -202,7 +203,7 @@ export default function ScanPage() {
       <>
         <PageScan
           index={index}
-          scanIndex={scanIndex}
+          matcher={matcher}
           recognizer={recognizer ?? getRecognizer()}
           collection={collection}
           engineName={engineName}
@@ -242,10 +243,7 @@ export default function ScanPage() {
           ) : (
             <>
               <h2>Scan your cards</h2>
-              <p>
-                Point the camera at one or more cards. CardCodex reads the name, HP and the printed number and shows a chip over each
-                card it recognises. Tap a chip to add that card, or open the alternatives to correct it.
-              </p>
+              <p>{game.text.scanIntro}</p>
             </>
           )}
           <p>Everything runs on this device; no images are uploaded.</p>
@@ -374,15 +372,12 @@ export default function ScanPage() {
               {still.lineCount
                 ? `Read ${still.lineCount} lines of text but none matched a card. `
                 : 'No readable text found in this photo. '}
-              Fill the frame with one card, keep it flat and well lit, and make sure the name and the number at the bottom-left are
-              sharp.
+              {game.text.scanPhotoHint}
             </div>
           )
         ) : (
           scanner.status === 'scanning' && (
-            <div className="hint">
-              Hold a card inside the frame. Good light and a flat angle help; the number at the bottom-left is the strongest clue.
-            </div>
+            <div className="hint">{game.text.scanHint}</div>
           )
         )}
         {recent.length > 0 && <RecentStrip recent={recent} />}

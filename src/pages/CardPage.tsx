@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useCatalog } from '@/app/context';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useCatalog, useGame } from '@/app/context';
 import { adjustQty, setNote, toggleWanted, useCollection, useEntry } from '@/data/collection';
 import { VARIANT_KEYS, VARIANT_LABELS } from '@/data/db';
 import { formatCardNumber } from '@/data/catalog';
 import { cardImageUrl } from '@/data/types';
 import { normalizeText } from '@/data/normalize';
-import { CardGrid, CardTile, EmptyState, Img, QtyStepper, SetBadge, TopBar, CardPlaceholder, dexNumber } from '@/ui/components';
-import { EnergyIcon, HeartIcon, MinusIcon, PlusIcon } from '@/ui/icons';
+import { CardGrid, CardTile, EmptyState, Img, QtyStepper, SetBadge, TopBar, CardPlaceholder } from '@/ui/components';
+import { HeartIcon, MinusIcon, PlusIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 
 export default function CardPage({ id }: { id: string }) {
   const index = useCatalog();
+  const game = useGame();
   const collection = useCollection();
   const entry = useEntry(id);
   const card = index.cardsById.get(id);
@@ -38,7 +39,7 @@ export default function CardPage({ id }: { id: string }) {
 
   const qty = entry?.qty ?? 0;
   const wanted = !!entry?.wanted;
-  const speciesList = (card.dex ?? []).map((d) => index.speciesById.get(d)).filter((s): s is NonNullable<typeof s> => !!s);
+  const facts = game.facts(card, set, index);
 
   return (
     <>
@@ -119,48 +120,12 @@ export default function CardPage({ id }: { id: string }) {
             </dd>
             <dt>Number</dt>
             <dd>{formatCardNumber(card, set)}</dd>
-            <dt>Category</dt>
-            <dd>
-              {card.cat}
-              {card.stage ? ` · ${card.stage}` : ''}
-            </dd>
-            {card.types && (
-              <>
-                <dt>Type</dt>
-                <dd className="type-icons">
-                  {card.types.map((t) => (
-                    <span key={t} className="type-icon-label">
-                      <EnergyIcon type={t} size={20} /> {t}
-                    </span>
-                  ))}
-                </dd>
-              </>
-            )}
-            {card.hp !== undefined && (
-              <>
-                <dt>HP</dt>
-                <dd>{card.hp}</dd>
-              </>
-            )}
-            {card.rarity && (
-              <>
-                <dt>Rarity</dt>
-                <dd>{card.rarity}</dd>
-              </>
-            )}
-            {speciesList.length > 0 && (
-              <>
-                <dt>Pokédex</dt>
-                <dd className="species-links">
-                  {speciesList.map((s) => (
-                    <a key={s.id} className="species-link" href={href(`/dex/${s.id}`)}>
-                      <img src={`https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${s.id}.png`} alt="" width={32} height={32} />
-                      {dexNumber(s.id)} {s.name}
-                    </a>
-                  ))}
-                </dd>
-              </>
-            )}
+            {facts.map((f) => (
+              <Fragment key={f.label}>
+                <dt>{f.label}</dt>
+                <dd>{f.value}</dd>
+              </Fragment>
+            ))}
             <dt>Card id</dt>
             <dd className="mono">{card.id}</dd>
           </dl>

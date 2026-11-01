@@ -9,6 +9,8 @@ import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type CollectionEntry, type VariantKey, VARIANT_KEYS } from './db';
 import type { CatalogIndex } from './catalog';
+import type { CatalogCard } from './types';
+import { gameOfId, type GameId } from '@/games/ids';
 
 export type CollectionMap = Map<string, CollectionEntry>;
 
@@ -104,8 +106,13 @@ export function setNote(cardId: string, note: string): Promise<CollectionEntry |
   });
 }
 
-export async function clearCollection(): Promise<void> {
-  await db.collection.clear();
+/** Remove every entry of one game (or of all games when `game` is omitted). */
+export async function clearCollection(game?: GameId): Promise<void> {
+  if (!game) {
+    await db.collection.clear();
+    return;
+  }
+  await db.collection.filter((e) => gameOfId(e.cardId) === game).delete();
 }
 
 /* ---------- export / import ---------- */
@@ -129,7 +136,9 @@ export interface ImportResult {
 
 /**
  * Imports a previous export. `merge` keeps existing entries and adds the
- * imported quantities; `replace` wipes the collection first.
+ * imported quantities; `replace` wipes the collection first. Entries of the
+ * active game's catalog are validated against `index`; entries of another
+ * game (whose catalog is not loaded) are imported as they are.
  */
 export async function importCollection(
   data: unknown,
@@ -149,7 +158,7 @@ export async function importCollection(
         skipped++;
         continue;
       }
-      if (index && !index.cardsById.has(raw.cardId)) {
+      if (index && gameOfId(raw.cardId) === index.game && !index.cardsById.has(raw.cardId)) {
         skipped++;
         continue;
       }
@@ -196,31 +205,37 @@ export interface CollectionStats {
   totalCopies: number;
   uniqueCards: number;
   wanted: number;
-  /** Distinct species (dex ids) with at least one owned card. */
-  speciesOwned: number;
+  /** Distinct groups (Pokémon species / Yu-Gi-Oh! archetypes) with at least one owned card. */
+  groupsOwned: number;
   /** Sets with at least one owned card. */
   setsTouched: number;
 }
 
+/** Grouping keys of a card for the stats tile: species dex ids or the archetype. */
+export function groupsOf(card: Pick<CatalogCard, 'dex' | 'arc'>): string[] {
+  if (card.dex) return card.dex.map(String);
+  return card.arc ? [card.arc] : [];
+}
+
+/** Stats over the entries that belong to the loaded catalog (other games' entries are ignored). */
 export function computeStats(collection: CollectionMap, index: CatalogIndex): CollectionStats {
   let totalCopies = 0;
   let uniqueCards = 0;
   let wanted = 0;
-  const species = new Set<number>();
+  const groups = new Set<string>();
   const sets = new Set<string>();
   for (const e of collection.values()) {
+    const card = index.cardsById.get(e.cardId);
+    if (!card) continue;
     if (e.wanted) wanted++;
     if (e.qty > 0) {
       totalCopies += e.qty;
       uniqueCards++;
-      const card = index.cardsById.get(e.cardId);
-      if (card) {
-        sets.add(card.set);
-        if (card.dex) for (const d of card.dex) species.add(d);
-      }
+      sets.add(card.set);
+      for (const g of groupsOf(card)) groups.add(g);
     }
   }
-  return { totalCopies, uniqueCards, wanted, speciesOwned: species.size, setsTouched: sets.size };
+  return { totalCopies, uniqueCards, wanted, groupsOwned: groups.size, setsTouched: sets.size };
 }
 
 /** Owned-distinct / total for a list of cards. */

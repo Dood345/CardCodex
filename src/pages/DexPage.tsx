@@ -3,6 +3,7 @@ import { useCatalog } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
 import { Chip, SpeciesTile, TopBar } from '@/ui/components';
+import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 
@@ -54,9 +55,12 @@ export default function DexPage() {
         title="Pokédex"
         subtitle={`${speciesCollected} / ${index.species.length} species in your collection`}
         actions={
-          <a className="icon-btn" href={href('/settings')} aria-label="Settings">
-            <GearIcon />
-          </a>
+          <>
+            <GameSwitch />
+            <a className="icon-btn" href={href('/settings')} aria-label="Settings">
+              <GearIcon />
+            </a>
+          </>
         }
       >
         <div className="toolbar">

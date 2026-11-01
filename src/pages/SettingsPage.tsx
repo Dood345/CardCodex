@@ -1,29 +1,47 @@
-import { useRef, useState } from 'react';
-import { useCatalog } from '@/app/context';
+import { useEffect, useRef, useState } from 'react';
+import { useCatalog, useGame } from '@/app/context';
+import { isNative } from '@/app/platform';
 import { useSettings, type Theme, type TileSize } from '@/app/settings';
 import { openTour } from '@/app/tourState';
 import { PAGE_LAYOUTS } from '@/scanner/page';
 import { clearCollection, exportCollection, importCollection } from '@/data/collection';
+import { clearImageCache, imageCacheStats } from '@/data/imageCache';
+import { YGOPRODECK_IMAGES } from '@/data/types';
+import { GAMES } from '@/games';
 import { Chip, Sheet, Toast, TopBar, useToast } from '@/ui/components';
 
-const isNative = typeof (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform === 'function'
-  && (window as unknown as { Capacitor: { isNativePlatform: () => boolean } }).Capacitor.isNativePlatform();
+function formatBytes(n: number): string {
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
 
 export default function SettingsPage() {
   const index = useCatalog();
+  const game = useGame();
   const [settings, update] = useSettings();
   const [toast, showToast] = useToast();
   const [pendingImport, setPendingImport] = useState<unknown | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [exportText, setExportText] = useState<string | null>(null);
+  const [imageBase, setImageBase] = useState(settings.ygoImageBase);
+  const [cache, setCache] = useState<{ count: number; bytes: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (game.id !== 'ygo') return;
+    let live = true;
+    imageCacheStats().then((s) => live && setCache(s)).catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [game.id]);
 
   async function onExport() {
     const data = await exportCollection();
     const json = JSON.stringify(data, null, 2);
     const name = `cardcodex-collection-${data.exportedAt.slice(0, 10)}.json`;
     try {
-      if (isNative && 'share' in navigator && 'canShare' in navigator) {
+      if (isNative() && 'share' in navigator && 'canShare' in navigator) {
         const file = new File([json], name, { type: 'application/json' });
         if ((navigator as Navigator & { canShare: (d: ShareData) => boolean }).canShare({ files: [file] })) {
           await navigator.share({ files: [file], title: 'CardCodex collection' });
@@ -68,10 +86,35 @@ export default function SettingsPage() {
     }
   }
 
+  const groupsLine =
+    game.id === 'pokemon' ? `${index.species.length} species` : `${index.archetypes.length} archetypes, ${index.cardsByPasscode.size.toLocaleString()} distinct cards`;
+
   return (
     <>
       <TopBar title="Settings" backTo="/collection" />
       <div className="settings">
+        <section className="settings-section">
+          <h2>Game</h2>
+          <div className="game-options">
+            {GAMES.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                className={`game-option${settings.game === g.id ? ' active' : ''}`}
+                aria-pressed={settings.game === g.id}
+                onClick={() => settings.game !== g.id && update({ game: g.id })}
+              >
+                <g.Icon size={28} />
+                <span>
+                  <strong>{g.name}</strong>
+                  <small>{g.id === 'pokemon' ? 'Pokédex, sets, printed numbers' : 'Archetypes, sets, set codes and passcodes'}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+          <p className="hint">Each game has its own catalog, browse tab and scanner. Your collection keeps both games' cards.</p>
+        </section>
+
         <section className="settings-section">
           <h2>Appearance</h2>
           <div className="setting-row">
@@ -147,6 +190,51 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {game.id === 'ygo' && (
+          <section className="settings-section">
+            <h2>Card images</h2>
+            <p className="hint">
+              YGOPRODeck asks apps not to hotlink its images, so each one is downloaded once and kept on this device. If you mirror the
+              image folders yourself, point the app at that server instead.
+            </p>
+            <label className="setting-row column">
+              <span>Image server</span>
+              <input
+                className="search-input"
+                type="url"
+                inputMode="url"
+                placeholder={YGOPRODECK_IMAGES}
+                value={imageBase}
+                onChange={(e) => setImageBase(e.target.value)}
+                onBlur={() => {
+                  const v = imageBase.trim();
+                  if (v !== settings.ygoImageBase) {
+                    update({ ygoImageBase: v });
+                    showToast(v ? 'Using your image server' : 'Using YGOPRODeck');
+                  }
+                }}
+                autoComplete="off"
+                spellCheck={false}
+              />
+            </label>
+            <p className="hint">Expected layout: {'<server>'}/cards_small/{'<passcode>'}.jpg and {'<server>'}/cards/{'<passcode>'}.jpg.</p>
+            <div className="btn-row">
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  void clearImageCache().then(() => {
+                    setCache({ count: 0, bytes: 0 });
+                    showToast('Image cache cleared');
+                  });
+                }}
+              >
+                Clear stored images{cache ? ` (${cache.count.toLocaleString()} · ${formatBytes(cache.bytes)})` : ''}
+              </button>
+            </div>
+          </section>
+        )}
+
         <section className="settings-section">
           <h2>Backup</h2>
           <div className="btn-row">
@@ -167,36 +255,39 @@ export default function SettingsPage() {
               }}
             />
           </div>
-          <p className="hint">Your collection lives only on this device. Export a JSON backup before switching phones.</p>
+          <p className="hint">
+            Your collection lives only on this device. The export holds every game's cards; export a JSON backup before switching phones.
+          </p>
           <button type="button" className="btn danger" onClick={() => setConfirmClear(true)}>
-            Clear collection
+            Clear {game.short} collection
           </button>
         </section>
 
         <section className="settings-section">
           <h2>Catalog</h2>
           <p className="hint">
-            {index.catalog.cards.length.toLocaleString()} cards across {index.catalog.sets.length} sets, {index.species.length} species.
+            {game.name}: {index.catalog.cards.length.toLocaleString()} {game.id === 'ygo' ? 'printings' : 'cards'} across{' '}
+            {index.catalog.sets.length.toLocaleString()} sets, {groupsLine}.
             <br />
-            Built {new Date(index.catalog.builtAt).toLocaleDateString()} from TCGdex and PokéAPI. Card images © The Pokémon
-            Company; served by TCGdex.
+            Built {new Date(index.catalog.builtAt).toLocaleDateString()}. {game.text.credits}
           </p>
           <p className="hint">
-            To pick up new sets, rebuild the catalog with <code>npm run catalog</code> and ship a new build.
+            To pick up new sets, rebuild the catalog with <code>{game.id === 'ygo' ? 'npm run catalog:ygo' : 'npm run catalog'}</code> and
+            ship a new build.
           </p>
         </section>
 
         <section className="settings-section">
           <h2>About</h2>
           <p className="hint">
-            CardCodex v{__APP_VERSION__} · open source under GPL-3.0. Not affiliated with Nintendo, Creatures, GAME FREAK or
-            The Pokémon Company.
+            CardCodex v{__APP_VERSION__} · open source under GPL-3.0. Not affiliated with Nintendo, Creatures, GAME FREAK, The Pokémon
+            Company, Konami, Shueisha or 4K Media.
           </p>
         </section>
       </div>
 
       <Sheet open={pendingImport !== null} onClose={() => setPendingImport(null)} title="Import collection">
-        <p>Merge adds the imported quantities to what you already have. Replace wipes this device's collection first.</p>
+        <p>Merge adds the imported quantities to what you already have. Replace wipes this device's collection (every game) first.</p>
         <div className="sheet-actions">
           <button type="button" className="btn primary" onClick={() => void doImport('merge')}>
             Merge
@@ -210,18 +301,21 @@ export default function SettingsPage() {
         </div>
       </Sheet>
 
-      <Sheet open={confirmClear} onClose={() => setConfirmClear(false)} title="Clear your collection?">
-        <p>This removes every owned card, wishlist entry and note on this device. Export first if you want a backup.</p>
+      <Sheet open={confirmClear} onClose={() => setConfirmClear(false)} title={`Clear your ${game.short} collection?`}>
+        <p>
+          This removes every owned {game.short} card, wishlist entry and note on this device. Cards of the other game are kept. Export
+          first if you want a backup.
+        </p>
         <div className="sheet-actions">
           <button
             type="button"
             className="btn danger"
             onClick={() => {
               setConfirmClear(false);
-              void clearCollection().then(() => showToast('Collection cleared'));
+              void clearCollection(game.id).then(() => showToast(`${game.short} collection cleared`));
             }}
           >
-            Clear everything
+            Clear {game.short} cards
           </button>
           <button type="button" className="btn ghost" onClick={() => setConfirmClear(false)}>
             Cancel

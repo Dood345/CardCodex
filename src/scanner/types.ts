@@ -109,6 +109,16 @@ export interface FrameObservations {
   dexes: DexObservation[];
 }
 
+/**
+ * A game's matcher: OCR lines of one frame → one candidate per physical card.
+ * Built once per loaded catalog by the game profile (src/games); the camera
+ * hook and the binder-page scanner only ever call `scanLines`.
+ */
+export interface ScanMatcher {
+  readonly game: string;
+  scanLines(lines: readonly RecognizedLine[]): ScanCandidate[];
+}
+
 /** One ranked alternative for a detected card (for tap-to-correct). */
 export interface ScanAlternative {
   card: CatalogCard;

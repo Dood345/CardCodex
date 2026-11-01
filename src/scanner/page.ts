@@ -10,12 +10,10 @@
  */
 import type { CatalogCard, CatalogSet } from '../data/types';
 import type { TextRecognizer } from './recognizer';
-import { scanLines, type ScanIndex } from './match';
-import type { Box, ScanAlternative, ScanCandidate } from './types';
+import type { Box, ScanAlternative, ScanCandidate, ScanMatcher } from './types';
 
-/** Standard card size, mm; pocket cells keep this aspect. */
-const CARD_W = 63;
-const CARD_H = 88;
+/** Standard (Pokémon) card size, mm; pocket cells keep the card's aspect. */
+export const DEFAULT_CARD_MM = { w: 63, h: 88 } as const;
 
 export type PageLayoutId = '3x3' | '2x2' | '3x4' | '4x4';
 
@@ -54,6 +52,8 @@ export interface PageGeometryOptions {
    * ~3% from the card's edge (measured: a 4% trim lost it on a tight page).
    */
   inset?: number;
+  /** Physical card size in mm (sets the cell aspect). Default 63×88 (Pokémon); Yu-Gi-Oh! is 59×86. */
+  cardMm?: { w: number; h: number };
 }
 
 /**
@@ -65,7 +65,8 @@ export function pageRect(frameW: number, frameH: number, layout: PageLayout, opt
   const margin = (opts.margin ?? 0.03) * Math.min(frameW, frameH);
   const availW = Math.max(1, frameW - 2 * margin);
   const availH = Math.max(1, frameH - 2 * margin);
-  const aspect = (layout.cols * CARD_W) / (layout.rows * CARD_H);
+  const card = opts.cardMm ?? DEFAULT_CARD_MM;
+  const aspect = (layout.cols * card.w) / (layout.rows * card.h);
   let w = availW;
   let h = w / aspect;
   if (h > availH) {
@@ -168,7 +169,7 @@ export async function scanPage(
   frame: PageSource,
   layout: PageLayout,
   recognizer: TextRecognizer,
-  index: ScanIndex,
+  matcher: ScanMatcher,
   opts: ScanPageOptions = {},
 ): Promise<PocketScan[]> {
   const pockets = pocketBoxes(frame.width, frame.height, layout, opts.geometry);
@@ -184,7 +185,7 @@ export async function scanPage(
     } catch (e) {
       console.warn('[scanner] pocket', pocket.index, 'recognition failed:', e);
     }
-    const candidates = scanLines(lines, index);
+    const candidates = matcher.scanLines(lines);
     // A pocket holds one card: keep the strongest candidate, demote the rest
     // to alternatives so the user can correct a wrong pick in place.
     const best = candidates[0];

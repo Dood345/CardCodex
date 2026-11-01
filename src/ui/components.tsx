@@ -8,7 +8,8 @@ import type { CatalogIndex } from '@/data/catalog';
 import { formatCardNumber } from '@/data/catalog';
 import type { CollectionEntry } from '@/data/db';
 import { adjustQty } from '@/data/collection';
-import { BackIcon, EnergyIcon, GAME_TYPE_COLORS, HeartIcon, MinusIcon, PlusIcon } from './icons';
+import { cachedImageUrl, isCacheableImage, resolveImage } from '@/data/imageCache';
+import { AttributeIcon, BackIcon, EnergyIcon, GAME_TYPE_COLORS, HeartIcon, MinusIcon, PlusIcon } from './icons';
 import { href, back } from './router';
 
 /* ---------- layout ---------- */
@@ -98,6 +99,61 @@ export function Chip({
 
 /* ---------- images ---------- */
 
+/**
+ * Source to hand to an <img>: the URL itself, or for hosts whose images must
+ * be stored rather than hotlinked (see data/imageCache.ts) the cached copy,
+ * fetched once. Undefined while that lookup is in flight.
+ */
+function useCachedSrc(src: string | undefined, wanted: boolean): string | undefined {
+  const cacheable = isCacheableImage(src);
+  const [resolved, setResolved] = useState<string | undefined>(() => (cacheable ? cachedImageUrl(src) : src));
+  useEffect(() => {
+    if (!cacheable) {
+      setResolved(src);
+      return;
+    }
+    const hit = cachedImageUrl(src);
+    if (hit) {
+      setResolved(hit);
+      return;
+    }
+    setResolved(undefined);
+    if (!wanted) return;
+    let live = true;
+    void resolveImage(src).then((u) => {
+      if (live) setResolved(u);
+    });
+    return () => {
+      live = false;
+    };
+  }, [src, cacheable, wanted]);
+  return resolved;
+}
+
+/**
+ * True once `el` has come within `margin` of the viewport (or at once when
+ * `eager`). Stored images are only fetched for tiles the user is about to
+ * see, not for every tile of a 600-row grid.
+ */
+function useNearViewport(el: HTMLElement | null, eager: boolean | undefined, margin = '300px'): boolean {
+  const [near, setNear] = useState(!!eager || typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    if (near || !el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          setNear(true);
+          io.disconnect();
+        }
+      },
+      { rootMargin: margin },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [el, near, margin]);
+  return near;
+}
+
 /** Image with skeleton while loading and a text fallback on error. */
 export function Img({
   src,
@@ -112,33 +168,45 @@ export function Img({
   fallback?: ReactNode;
   eager?: boolean;
 }) {
+  const [sentinel, setSentinel] = useState<HTMLElement | null>(null);
+  const near = useNearViewport(sentinel, eager);
+  const cached = useCachedSrc(src, near);
+  // A stored copy that fails to decode (evicted object URL) falls back to the plain URL once.
+  const [direct, setDirect] = useState(false);
+  const effective = direct ? src : cached;
   const [state, setState] = useState<'loading' | 'ok' | 'error'>(src ? 'loading' : 'error');
   const ref = useRef<HTMLImageElement>(null);
   useEffect(() => {
     setState(src ? 'loading' : 'error');
+    setDirect(false);
   }, [src]);
   useEffect(() => {
     // Cached images may already be complete before onLoad is attached.
     const img = ref.current;
     if (img && img.complete && img.naturalWidth > 0) setState('ok');
-  }, [src]);
+  }, [effective]);
   if (!src || state === 'error') {
     return <div className={`img-fallback ${className ?? ''}`}>{fallback ?? alt}</div>;
   }
   return (
     <>
-      {state === 'loading' && <div className={`img-skeleton ${className ?? ''}`} />}
-      <img
-        ref={ref}
-        src={src}
-        alt={alt}
-        className={`${className ?? ''}${state === 'loading' ? ' img-hidden' : ''}`}
-        loading={eager ? 'eager' : 'lazy'}
-        decoding="async"
-        onLoad={() => setState('ok')}
-        onError={() => setState('error')}
-        draggable={false}
-      />
+      {state === 'loading' && <div ref={setSentinel} className={`img-skeleton ${className ?? ''}`} />}
+      {effective && (
+        <img
+          ref={ref}
+          src={effective}
+          alt={alt}
+          className={`${className ?? ''}${state === 'loading' ? ' img-hidden' : ''}`}
+          loading={eager ? 'eager' : 'lazy'}
+          decoding="async"
+          onLoad={() => setState('ok')}
+          onError={() => {
+            if (!direct && effective !== src) setDirect(true);
+            else setState('error');
+          }}
+          draggable={false}
+        />
+      )}
     </>
   );
 }
@@ -151,6 +219,7 @@ export function CardTile({
   entry,
   dim,
   showSet,
+  sub,
   onClick,
 }: {
   card: CatalogCard;
@@ -159,6 +228,8 @@ export function CardTile({
   /** Dim cards that are not owned (set binder view). */
   dim?: boolean;
   showSet?: boolean;
+  /** Replaces the "set · number" caption line. */
+  sub?: ReactNode;
   onClick?: () => void;
 }) {
   const owned = !!entry && entry.qty > 0;
@@ -179,8 +250,12 @@ export function CardTile({
           {card.name}
         </div>
         <div className="card-sub">
-          {showSet && set ? `${set.name} · ` : ''}
-          {formatCardNumber(card, set)}
+          {sub ?? (
+            <>
+              {showSet && set ? `${set.name} · ` : ''}
+              {formatCardNumber(card, set)}
+            </>
+          )}
         </div>
       </div>
     </>
@@ -203,7 +278,7 @@ export function CardPlaceholder({ card }: { card: CatalogCard }) {
   const type = card.types?.[0];
   return (
     <div className="card-placeholder">
-      {type && <EnergyIcon type={type} size={28} />}
+      {type && (card.pc !== undefined ? <AttributeIcon type={type} size={28} /> : <EnergyIcon type={type} size={28} />)}
       <span>{card.name}</span>
     </div>
   );
@@ -311,9 +386,10 @@ export function SetRow({
 
 export function SetBadge({ set, size = 44 }: { set: CatalogSet; size?: number }) {
   const symbol = set.symbol ? `https://assets.tcgdex.net/en/${set.series}/${set.id}/symbol.webp` : undefined;
+  const text = set.abbr || set.id.slice(0, 4).toUpperCase();
   return (
     <div className="set-badge" style={{ width: size, height: size }}>
-      <Img src={symbol} alt={set.name} className="set-symbol" fallback={<span>{set.abbr || set.id.slice(0, 4).toUpperCase()}</span>} />
+      <Img src={symbol} alt={set.name} className="set-symbol" fallback={<span className={text.length > 3 ? 'long' : ''}>{text}</span>} />
     </div>
   );
 }

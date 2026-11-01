@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useCatalog } from '@/app/context';
+import { useCatalog, useGame } from '@/app/context';
 import { computeStats, useCollection } from '@/data/collection';
 import { setRecency } from '@/data/catalog';
 import type { CatalogCard, CatalogSet } from '@/data/types';
 import { CardGrid, CardTile, Chip, EmptyState, SetBadge, TopBar } from '@/ui/components';
+import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 
@@ -17,6 +18,7 @@ interface Group {
 
 export default function CollectionPage() {
   const index = useCatalog();
+  const game = useGame();
   const collection = useCollection();
   const [tab, setTab] = useState<Tab>('owned');
   const [open, setOpen] = useState<Set<string>>(() => new Set());
@@ -59,15 +61,18 @@ export default function CollectionPage() {
         title="Collection"
         subtitle={`${stats.totalCopies} ${stats.totalCopies === 1 ? 'card' : 'cards'} · ${stats.uniqueCards} unique`}
         actions={
-          <a className="icon-btn" href={href('/settings')} aria-label="Settings">
-            <GearIcon />
-          </a>
+          <>
+            <GameSwitch compact />
+            <a className="icon-btn" href={href('/settings')} aria-label="Settings">
+              <GearIcon />
+            </a>
+          </>
         }
       >
         <div className="stat-row">
           <Stat value={stats.totalCopies} label="cards" />
           <Stat value={stats.uniqueCards} label="unique" />
-          <Stat value={stats.speciesOwned} label="species" />
+          <Stat value={stats.groupsOwned} label={game.groupLabel} />
           <Stat value={stats.setsTouched} label="sets" />
           <Stat value={stats.wanted} label="wanted" />
         </div>

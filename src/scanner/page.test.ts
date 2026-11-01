@@ -55,6 +55,12 @@ describe('pocketBoxes', () => {
     expect(inset[0].box.x).toBeCloseTo(tight[0].box.x + tight[0].box.w * 0.1, 6);
   });
 
+  it('takes the card aspect from cardMm', () => {
+    const layout = pageLayout('3x3');
+    const ygo = pocketBoxes(1200, 1600, layout, { cardMm: { w: 59, h: 86 } });
+    expect(ygo[0].box.w / ygo[0].box.h).toBeCloseTo(59 / 86, 3);
+  });
+
   it('falls back to 3x3 for unknown layout ids', () => {
     expect(pageLayout('nope').id).toBe('3x3');
   });

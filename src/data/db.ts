@@ -2,8 +2,10 @@
  * Local persistence (IndexedDB via Dexie).
  *
  * The user's collection is the only mutable data in the app. Each entry is
- * keyed by catalog card id. `qty` is always the total owned; `variants`
- * optionally breaks it down (normal / holo / reverse / other).
+ * keyed by catalog card id (global across games, see src/games/ids.ts).
+ * `qty` is always the total owned; `variants` optionally breaks it down
+ * (normal / holo / reverse / other). `images` holds card images that must be
+ * fetched once and kept on the device (src/data/imageCache.ts).
  */
 import Dexie, { type EntityTable } from 'dexie';
 
@@ -36,12 +38,26 @@ export interface ScanLogEntry {
   engine: string;
 }
 
+export interface CachedImage {
+  url: string;
+  blob: Blob;
+  size: number;
+  /** Last use, ms since epoch (for eviction). */
+  at: number;
+}
+
 export const db = new Dexie('cardcodex') as Dexie & {
   collection: EntityTable<CollectionEntry, 'cardId'>;
   scanLog: EntityTable<ScanLogEntry, 'id'>;
+  images: EntityTable<CachedImage, 'url'>;
 };
 
 db.version(1).stores({
   collection: 'cardId, qty, wanted, updatedAt',
   scanLog: '++id, cardId, at',
+});
+db.version(2).stores({
+  collection: 'cardId, qty, wanted, updatedAt',
+  scanLog: '++id, cardId, at',
+  images: 'url, at',
 });

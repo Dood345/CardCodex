@@ -32,6 +32,7 @@ import type {
   RecognizedLine,
   ScanAlternative,
   ScanCandidate,
+  ScanMatcher,
   SetCodeObservation,
 } from './types';
 import {
@@ -80,8 +81,17 @@ export interface ScanIndex {
   parseContext: ParseContext;
 }
 
+export interface ScanIndexOptions {
+  /**
+   * Longest name (in words) the fuzzy lookup tries per line. Default 6: long
+   * Pokémon names ("thought wave machine rocket s secret machine") are rare
+   * and never OCR'd intact. Yu-Gi-Oh! uses 8 (names run to 11 words).
+   */
+  maxNameWords?: number;
+}
+
 /** Build the scan index. O(cards); ~100 ms for the full 21k-card catalog. */
-export function buildScanIndex(catalog: Catalog): ScanIndex {
+export function buildScanIndex(catalog: Catalog, opts: ScanIndexOptions = {}): ScanIndex {
   const setById = new Map<string, CatalogSet>();
   for (const s of catalog.sets) setById.set(s.id, s);
 
@@ -139,9 +149,7 @@ export function buildScanIndex(catalog: Catalog): ScanIndex {
     namesByBase,
     trigramIndex,
     setRecency,
-    // Long names ("thought wave machine rocket s secret machine") are rare
-    // and never OCR'd intact; 6 words bounds the work per line.
-    maxNameWords: Math.min(maxNameWords, 6),
+    maxNameWords: Math.min(maxNameWords, opts.maxNameWords ?? 6),
     parseContext: {
       abbrs: new Set(setsByAbbr.keys()),
       knownTotals: new Set(setsByOfficial.keys()),
@@ -298,7 +306,7 @@ interface NameLineInfo {
  * the line (rules text such as "Evolves from Charmeleon") and when the text is
  * not larger than the frame's typical line (names are printed ~2× body size).
  */
-function nameStrength(hit: NameHit, lineH: number, medianH: number): number {
+export function nameStrength(hit: NameHit, lineH: number, medianH: number): number {
   const size = medianH > 0 ? Math.min(1, Math.max(0.6, lineH / medianH / 1.5)) : 1;
   return hit.sim * (0.55 + 0.45 * hit.coverage) * size;
 }
@@ -754,4 +762,10 @@ export function matchObservations(obs: FrameObservations, index: ScanIndex): Sca
 /** parseLines + matchObservations in one call. */
 export function scanLines(lines: readonly RecognizedLine[], index: ScanIndex): ScanCandidate[] {
   return matchObservations(parseLines(lines, index.parseContext), index);
+}
+
+/** The Pokémon TCG matcher: this file's pipeline over an index built once. */
+export function createPokemonMatcher(catalog: Catalog): ScanMatcher {
+  const index = buildScanIndex(catalog);
+  return { game: 'pokemon', scanLines: (lines) => scanLines(lines, index) };
 }
