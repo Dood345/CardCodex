@@ -8,6 +8,7 @@
  * fetched once and kept on the device (src/data/imageCache.ts).
  */
 import Dexie, { type EntityTable } from 'dexie';
+import type { GameId } from '@/games/ids';
 
 export type VariantKey = 'normal' | 'holo' | 'reverse' | 'other';
 export const VARIANT_KEYS: VariantKey[] = ['normal', 'holo', 'reverse', 'other'];
@@ -53,11 +54,31 @@ export interface KvEntry {
   at: number;
 }
 
+/** One line of a deck list. */
+export interface DeckCard {
+  cardId: string;
+  qty: number;
+}
+
+/**
+ * A deck: a named list of cards and counts, owned or not, for one game.
+ * Built in the app or imported from a friend's share text (src/data/deck-code.ts).
+ */
+export interface Deck {
+  id: string;
+  game: GameId;
+  name: string;
+  cards: DeckCard[];
+  createdAt: number;
+  updatedAt: number;
+}
+
 export const db = new Dexie('cardcodex') as Dexie & {
   collection: EntityTable<CollectionEntry, 'cardId'>;
   scanLog: EntityTable<ScanLogEntry, 'id'>;
   images: EntityTable<CachedImage, 'url'>;
   kv: EntityTable<KvEntry, 'key'>;
+  decks: EntityTable<Deck, 'id'>;
 };
 
 db.version(1).stores({
@@ -74,4 +95,11 @@ db.version(3).stores({
   scanLog: '++id, cardId, at',
   images: 'url, at',
   kv: 'key',
+});
+db.version(4).stores({
+  collection: 'cardId, qty, wanted, updatedAt',
+  scanLog: '++id, cardId, at',
+  images: 'url, at',
+  kv: 'key',
+  decks: 'id, game, updatedAt',
 });

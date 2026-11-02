@@ -98,6 +98,12 @@ export function toggleWanted(cardId: string): Promise<CollectionEntry | undefine
   });
 }
 
+export function setWanted(cardId: string, wanted: boolean): Promise<CollectionEntry | undefined> {
+  return upsert(cardId, (e) => {
+    e.wanted = wanted ? 1 : 0;
+  });
+}
+
 export function setNote(cardId: string, note: string): Promise<CollectionEntry | undefined> {
   return upsert(cardId, (e) => {
     const trimmed = note.trim();

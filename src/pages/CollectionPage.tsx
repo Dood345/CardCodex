@@ -10,8 +10,9 @@ import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
 import { Binder } from './collection/Binder';
 import type { PageSize, Pocket } from './collection/binder-pages';
+import { DecksTab } from './collection/DecksTab';
 
-type Tab = 'owned' | 'wanted';
+type Tab = 'owned' | 'wanted' | 'decks';
 type View = 'sets' | 'binder';
 
 interface Group {
@@ -92,17 +93,26 @@ export default function CollectionPage() {
           <Chip active={tab === 'wanted'} onClick={() => setTab('wanted')}>
             Wishlist
           </Chip>
-          <span className="chip-sep" />
-          <Chip active={view === 'sets'} onClick={() => setView('sets')}>
-            By set
+          <Chip active={tab === 'decks'} onClick={() => setTab('decks')}>
+            Decks
           </Chip>
-          <Chip active={view === 'binder'} onClick={() => setView('binder')}>
-            Binder
-          </Chip>
+          {tab !== 'decks' && (
+            <>
+              <span className="chip-sep" />
+              <Chip active={view === 'sets'} onClick={() => setView('sets')}>
+                By set
+              </Chip>
+              <Chip active={view === 'binder'} onClick={() => setView('binder')}>
+                Binder
+              </Chip>
+            </>
+          )}
         </div>
       </TopBar>
 
-      {groups.length === 0 ? (
+      {tab === 'decks' ? (
+        <DecksTab />
+      ) : groups.length === 0 ? (
         <EmptyState
           title={tab === 'owned' ? 'Your collection is empty' : 'Your wishlist is empty'}
           hint={

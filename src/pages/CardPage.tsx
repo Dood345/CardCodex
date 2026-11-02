@@ -5,6 +5,7 @@ import { VARIANT_KEYS, VARIANT_LABELS } from '@/data/db';
 import { formatCardNumber } from '@/data/catalog';
 import { cardImageUrl } from '@/data/types';
 import { normalizeText } from '@/data/normalize';
+import { AddToDeckButton } from '@/ui/AddToDeck';
 import { CardGrid, CardTile, EmptyState, Img, QtyStepper, SetBadge, TopBar, CardPlaceholder } from '@/ui/components';
 import { HeartIcon, MinusIcon, PlusIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
@@ -75,6 +76,7 @@ export default function CardPage({ id }: { id: string }) {
               <button type="button" className="btn ghost" onClick={() => setShowVariants((v) => !v)}>
                 {showVariants ? 'Hide variants' : 'Track variants'}
               </button>
+              <AddToDeckButton card={card} />
             </div>
             {showVariants && (
               <div className="variants">
