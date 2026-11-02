@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CardLookup } from './artwork';
 import { fixtureCatalog } from './fixtures.test-util';
 import { hashCardIn, hashTableFrom, lumaImage, windowOf, type LumaImage } from './hash';
-import { LIVE_MAX_CARDS, LIVE_MIN_CARD_PX, addLiveArtwork, liveArtworkRegion } from './live-artwork';
+import { LIVE_MAX_CARDS, LIVE_MIN_CARD_PX, addLiveArtwork, liveArtworkRegion, matchStillCard } from './live-artwork';
 import type { Box, ScanCandidate } from './types';
 
 const frame = { w: 1280, h: 960 };
@@ -119,6 +119,30 @@ describe('addLiveArtwork', () => {
     // A candidate the picture did not confirm keeps its estimate.
     const elsewhere = cand('base1-4', { x: 40, y: 480, w: 300, h: 420 });
     expect(addLiveArtwork([elsewhere], frame, table, lookup, sample)[0].cardBox).toEqual(elsewhere.cardBox);
+  });
+
+  it('matchStillCard: the picture alone names the card when the text gave nothing', () => {
+    // The guide is where the user framed the card: a little bigger than the card and slightly off.
+    const guide = { x: middle.x - 20, y: middle.y - 30, w: middle.w * 1.1, h: middle.h * 1.1 };
+    const out = matchStillCard([], guide, frame, table, lookup, sample);
+    expect(out).toHaveLength(1);
+    expect(out[0].card.id).toBe('sv01-057');
+    expect(out[0].confident).toBe(false);
+    expect(out[0].evidence).toEqual([expect.stringMatching(/^artwork \d+$/)]);
+    expect(out[0].score).toBeGreaterThanOrEqual(0.55);
+    expect(Math.abs(out[0].cardBox.x - middle.x)).toBeLessThan(middle.w * 0.04);
+    expect(Math.abs(out[0].cardBox.w - middle.w)).toBeLessThan(middle.w * 0.04);
+  });
+
+  it('matchStillCard: merges into the candidate framed by the guide and leaves the others', () => {
+    const guide = { x: middle.x - 20, y: middle.y - 30, w: middle.w * 1.1, h: middle.h * 1.1 };
+    const framed = cand('base1-4', middle, ['sv01-057']);
+    const edge = cand('base1-4', { x: 40, y: 480, w: 300, h: 420 });
+    const out = matchStillCard([edge, framed], guide, frame, table, lookup, sample);
+    expect(out.map((c) => c.card.id)).toEqual(['sv01-057', 'base1-4']);
+    expect(out[0].key).toBe(framed.key);
+    expect(out[0].bbox).toEqual(framed.bbox);
+    expect(out[1]).toBe(edge);
   });
 
   it('skips outlines it cannot hash', () => {

@@ -352,6 +352,21 @@ scale) is pulled back onto the card within a probe step. Outlines narrower than 
 same-art printings tied) to confident with `artwork 10`, the same-picture printings staying as
 alternatives; the half-visible card below was left alone.
 
+**Snap mode** (`src/pages/scan/SnapScan.tsx`, `matchStillCard`): the default single-card flow since
+1.2.4 works like a binder page: the camera shows a card-shaped guide (80% of the visible height,
+the game's card aspect) and a shutter; a tap takes a full-resolution photo through the still
+pipeline (`photo.ts`, preview copy as the fallback), the guide plus a 25% margin is cropped to
+1,200–1,600 px and read like a gallery photo, and the still lists the best match with up to three
+alternatives, each with its own Add. The still reader uses the picture too: `matchStillCard` hashes
+the guide region (plus 15%) with the wide live probes and merges the hits into the OCR candidate
+whose outline centre lies in the guide, or, with no such candidate, makes the matched card the
+candidate on its own (unsure, that picture's printings as alternatives), which is how a foil or a
+stylised name gets identified at all; gallery photos (no guide) hash around what the text found
+(`addLiveArtwork`). Measured on a 1600 px crop of the Pixel binder photo with a guide 15% larger
+than the card: picture alone → the right card at 15 bits with its box snapped to the card,
+0.7 s cold / 0.17 s warm in software Chrome; Tesseract read 99 lines of that crop and no usable
+name, so without the picture the still would have offered a wrong card.
+
 ## Artwork matching (`hash.ts`, `scripts/build-hashes.mjs`)
 
 Commercial scanners identify a card by its picture, not its text. `hash.ts` adds that as a second,

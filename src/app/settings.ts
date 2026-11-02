@@ -20,6 +20,8 @@ export interface Settings {
   scanEngine: 'auto' | 'tesseract';
   /** Scanner mode the Scan tab opens in. */
   scanMode: 'cards' | 'page';
+  /** Single-card mode: 'snap' takes one photo and lists the matches; 'live' reads cards as they are held up. */
+  cardMode: 'snap' | 'live';
   /** Binder page layout id (see PAGE_LAYOUTS in src/scanner/page.ts). */
   pageLayout: string;
   /**
@@ -44,6 +46,7 @@ const DEFAULTS: Settings = {
   dimMissing: true,
   scanEngine: 'auto',
   scanMode: 'cards',
+  cardMode: 'snap',
   pageLayout: '3x3',
   pageFrames: {},
   autoCapture: true,
