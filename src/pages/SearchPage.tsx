@@ -5,6 +5,7 @@ import { searchCards, type OwnedFilter, type SearchFilters } from '@/data/search
 import type { CardCategory } from '@/data/types';
 import { CardGrid, CardTile, Chip, EmptyState, TopBar } from '@/ui/components';
 import { href, useQueryParam, type Route } from '@/ui/router';
+import { useSticky } from '@/ui/sticky';
 
 const PAGE = 120;
 
@@ -14,13 +15,15 @@ export default function SearchPage({ route }: { route: Route }) {
   const collection = useCollection();
   const [q, setQ] = useQueryParam(route, 'q');
   const [text, setText] = useState(q);
-  const [owned, setOwned] = useState<OwnedFilter>('any');
-  const [cat, setCat] = useState<CardCategory | ''>('');
-  const [type, setType] = useState('');
-  const [rarity, setRarity] = useState('');
-  const [series, setSeries] = useState('');
-  const [limit, setLimit] = useState(PAGE);
-  const [showFilters, setShowFilters] = useState(false);
+  // Filters and the "show more" depth outlive the page, so coming back from a card shows the same results.
+  const [owned, setOwned] = useSticky<OwnedFilter>(`${game.id}:search:owned`, 'any');
+  const [cat, setCat] = useSticky<CardCategory | ''>(`${game.id}:search:cat`, '');
+  const [type, setType] = useSticky(`${game.id}:search:type`, '');
+  const [rarity, setRarity] = useSticky(`${game.id}:search:rarity`, '');
+  const [series, setSeries] = useSticky(`${game.id}:search:series`, '');
+  const [showFilters, setShowFilters] = useSticky(`${game.id}:search:showFilters`, false);
+  // How many results are shown, for the query and filters they were shown for; any other search starts at one page.
+  const [more, setMore] = useSticky<{ of: string; limit: number }>(`${game.id}:search:more`, { of: '', limit: PAGE });
 
   // Debounce typing into the URL (so back/forward and sharing keep the query).
   useEffect(() => {
@@ -29,9 +32,10 @@ export default function SearchPage({ route }: { route: Route }) {
     }, 200);
     return () => window.clearTimeout(t);
   }, [text, q, setQ]);
-  useEffect(() => setLimit(PAGE), [q, owned, cat, type, rarity, series]);
 
   const filters: SearchFilters = useMemo(() => ({ owned, cat, type, rarity, series }), [owned, cat, type, rarity, series]);
+  const resultKey = JSON.stringify([q, owned, cat, type, rarity, series]);
+  const limit = more.of === resultKey ? more.limit : PAGE;
   const hasFilter = owned !== 'any' || !!cat || !!type || !!rarity || !!series;
   const result = useMemo(
     () => (q.trim() || hasFilter ? searchCards(index, q, filters, collection, limit) : { cards: [], total: 0 }),
@@ -131,7 +135,7 @@ export default function SearchPage({ route }: { route: Route }) {
           </CardGrid>
           {result.total > result.cards.length && (
             <div className="load-more">
-              <button type="button" className="btn" onClick={() => setLimit((l) => l + PAGE)}>
+              <button type="button" className="btn" onClick={() => setMore({ of: resultKey, limit: limit + PAGE })}>
                 Show more ({result.total - result.cards.length} left)
               </button>
             </div>

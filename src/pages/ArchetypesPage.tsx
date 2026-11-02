@@ -2,7 +2,7 @@
  * Yu-Gi-Oh! browse tab: every archetype with how many of its distinct cards
  * you own. The Pokédex equivalent for a game without species.
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { useCatalog } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
@@ -11,17 +11,24 @@ import { archetypeCover } from '@/games/ygo';
 import { Chip, EmptyState, Img, TopBar } from '@/ui/components';
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
+import { QUICK_SCROLL_MIN, QuickScroll } from '@/ui/QuickScroll';
+import { initialOf, sectionsBy, type Section } from '@/ui/quick-scroll';
 import { href } from '@/ui/router';
+import { useSticky } from '@/ui/sticky';
 
 type OwnedFilter = 'all' | 'owned' | 'missing';
 type Sort = 'name' | 'size';
 
+const NO_SECTIONS: Section[] = [];
+
 export default function ArchetypesPage() {
   const index = useCatalog();
   const collection = useCollection();
-  const [query, setQuery] = useState('');
-  const [owned, setOwned] = useState<OwnedFilter>('all');
-  const [sort, setSort] = useState<Sort>('name');
+  // Filters outlive the page, so coming back from an archetype shows the same list.
+  const [query, setQuery] = useSticky('arch:query', '');
+  const [owned, setOwned] = useSticky<OwnedFilter>('arch:owned', 'all');
+  const [sort, setSort] = useSticky<Sort>('arch:sort', 'name');
+  const gridRef = useRef<HTMLDivElement>(null);
 
   // Distinct owned cards (passcodes) per archetype.
   const progress = useMemo(() => {
@@ -47,6 +54,10 @@ export default function ArchetypesPage() {
     });
     return sort === 'size' ? [...list].sort((a, b) => b.unique - a.unique || a.name.localeCompare(b.name)) : list;
   }, [index, query, owned, sort, progress]);
+
+  // Quick scroll zone: letters when the list is alphabetical, a plain thumb when sorted by size.
+  const quick = visible.length >= QUICK_SCROLL_MIN;
+  const sections = useMemo(() => (sort === 'name' ? sectionsBy(visible, (a) => initialOf(a.name)) : NO_SECTIONS), [visible, sort]);
 
   return (
     <>
@@ -91,7 +102,7 @@ export default function ArchetypesPage() {
           </Chip>
         </div>
       </TopBar>
-      <div className="arch-grid">
+      <div ref={gridRef} className={`arch-grid${quick ? ' with-quick-scroll' : ''}`}>
         {visible.map((a) => {
           const got = progress.get(a.name)?.size ?? 0;
           const cover = archetypeCover(index, a.name);
@@ -112,6 +123,7 @@ export default function ArchetypesPage() {
         })}
       </div>
       {visible.length === 0 && <EmptyState title="No archetypes match" hint="Cards outside any archetype are on the Search tab." />}
+      {quick && <QuickScroll gridRef={gridRef} count={visible.length} sections={sections} labelAt={(i) => visible[i].name} />}
     </>
   );
 }

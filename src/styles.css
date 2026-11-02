@@ -2182,3 +2182,69 @@ textarea:focus {
   font-size: 8px;
   letter-spacing: -0.02em;
 }
+
+/* ===== Quick scroll zone (src/ui/QuickScroll.tsx) ===== */
+/* A strip down the right edge of a long list: section labels, a thumb for where the list is, a bubble while dragging. */
+.quick-scroll {
+  position: fixed;
+  right: 4px;
+  width: 22px;
+  z-index: 9; /* under the sticky top bar */
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--bg-elev) 85%, transparent);
+  border: 1px solid var(--border);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+/* The touch target reaches the screen edge and a little into the list. */
+.quick-scroll::before {
+  content: '';
+  position: absolute;
+  inset: -8px -4px -8px -8px;
+}
+.qs-label {
+  position: absolute;
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: center;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.qs-thumb {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+  pointer-events: none;
+}
+.quick-scroll.dragging .qs-thumb {
+  background: var(--accent);
+}
+.qs-bubble {
+  position: absolute;
+  right: calc(100% + 14px);
+  transform: translateY(-50%);
+  padding: 9px 16px;
+  border-radius: 24px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: var(--shadow);
+  pointer-events: none;
+}
+/* Room for the zone beside the last column. */
+.with-quick-scroll {
+  padding-right: 28px;
+}

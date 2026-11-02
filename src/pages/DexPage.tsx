@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef } from 'react';
 import { useCatalog } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
-import { Chip, SpeciesTile, TopBar } from '@/ui/components';
+import { Chip, SpeciesTile, TopBar, dexNumber } from '@/ui/components';
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
+import { QUICK_SCROLL_MIN, QuickScroll } from '@/ui/QuickScroll';
+import { hundredOf, sectionsBy } from '@/ui/quick-scroll';
 import { href } from '@/ui/router';
+import { useSticky } from '@/ui/sticky';
 
 type OwnedFilter = 'all' | 'owned' | 'missing';
 
@@ -14,9 +17,11 @@ const GENERATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 export default function DexPage() {
   const index = useCatalog();
   const collection = useCollection();
-  const [query, setQuery] = useState('');
-  const [gen, setGen] = useState<number>(0);
-  const [owned, setOwned] = useState<OwnedFilter>('all');
+  // Filters outlive the page, so coming back from a Pokémon shows the same list.
+  const [query, setQuery] = useSticky('dex:query', '');
+  const [gen, setGen] = useSticky<number>('dex:gen', 0);
+  const [owned, setOwned] = useSticky<OwnedFilter>('dex:owned', 'all');
+  const gridRef = useRef<HTMLDivElement>(null);
 
   // Distinct owned cards per species. O(entries), cheap on every change.
   const progress = useMemo(() => {
@@ -48,6 +53,10 @@ export default function DexPage() {
       return true;
     });
   }, [index, query, gen, owned, progress]);
+
+  // Quick scroll zone by hundreds of Pokédex numbers, once the list is long enough to need one.
+  const quick = visible.length >= QUICK_SCROLL_MIN;
+  const sections = useMemo(() => sectionsBy(visible, (s) => hundredOf(s.id)), [visible]);
 
   return (
     <>
@@ -94,7 +103,7 @@ export default function DexPage() {
           ))}
         </div>
       </TopBar>
-      <div className="species-grid">
+      <div ref={gridRef} className={`species-grid${quick ? ' with-quick-scroll' : ''}`}>
         {visible.map((s) => (
           <SpeciesTile
             key={s.id}
@@ -105,6 +114,14 @@ export default function DexPage() {
         ))}
       </div>
       {visible.length === 0 && <div className="empty">No species match.</div>}
+      {quick && (
+        <QuickScroll
+          gridRef={gridRef}
+          count={visible.length}
+          sections={sections}
+          labelAt={(i) => `${dexNumber(visible[i].id)} ${visible[i].name}`}
+        />
+      )}
     </>
   );
 }

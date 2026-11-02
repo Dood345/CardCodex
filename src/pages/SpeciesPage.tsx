@@ -1,17 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useCatalog } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { speciesArtworkUrl } from '@/data/types';
 import { CardGrid, CardTile, Chip, EmptyState, Img, ProgressBar, TopBar, TypePill, dexNumber } from '@/ui/components';
 import { GAME_TYPE_COLORS } from '@/ui/icons';
 import { href } from '@/ui/router';
+import { useSticky } from '@/ui/sticky';
 
 type Filter = 'all' | 'owned' | 'missing';
 
 export default function SpeciesPage({ id }: { id: number }) {
   const index = useCatalog();
   const collection = useCollection();
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useSticky<Filter>('species:filter', 'all');
   const species = index.speciesById.get(id);
   const cards = useMemo(() => index.cardsByDex.get(id) ?? [], [index, id]);
 
