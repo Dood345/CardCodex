@@ -8,8 +8,11 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import type { EngineName, ScanCandidate, ScanMatcher } from './types';
 import type { TextRecognizer } from './recognizer';
+import { loadHashTable } from './artwork';
 import { CameraError, grabFrame, startCamera, stopCamera } from './camera';
 import { getRecognizer } from './engine';
+import { samplePocketLuma, type HashTable } from './hash';
+import { addLiveArtwork } from './live-artwork';
 import { updateTracks, type Track } from './tracker';
 
 export type ScannerStatus = 'idle' | 'starting' | 'scanning' | 'error';
@@ -34,6 +37,12 @@ export interface UseCardScannerOptions {
   holdMs?: number;
   /** Override the recognizer (tests, custom engines). Default: getRecognizer(). */
   recognizer?: TextRecognizer;
+  /**
+   * Merge artwork-hash evidence into the candidates nearest the middle of the
+   * frame (live-artwork.ts). Default true; needs the game's hash table and a
+   * matcher with `lookup`, otherwise the loop runs on OCR alone.
+   */
+  artwork?: boolean;
 }
 
 export interface CardScanner {
@@ -50,6 +59,8 @@ export interface CardScanner {
   engine: EngineName | null;
   /** True while paused by pause() or because the page is hidden. */
   paused: boolean;
+  /** Moving average of the time spent hashing artwork per frame, ms (0 when artwork evidence is off or unavailable). */
+  artworkMs: number;
   start(): void;
   stop(): void;
   pause(): void;
@@ -58,13 +69,14 @@ export interface CardScanner {
 
 /** See CardScanner. Never runs two recognitions at once; frames are skipped while one is in flight. */
 export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
-  const { matcher, enabled = true, intervalMs = 900, maxWidth = 1280, holdMs = 2000 } = opts;
+  const { matcher, enabled = true, intervalMs = 900, maxWidth = 1280, holdMs = 2000, artwork = true } = opts;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [status, setStatus] = useState<ScannerStatus>('idle');
   const [error, setError] = useState<string | undefined>();
   const [results, setResults] = useState<ScanCandidate[]>([]);
   const [frameSize, setFrameSize] = useState({ w: 0, h: 0 });
   const [engine, setEngine] = useState<EngineName | null>(null);
+  const [artworkMs, setArtworkMs] = useState(0);
   const [userPaused, setUserPaused] = useState(false);
   const [hidden, setHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
 
@@ -81,6 +93,24 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
   const cfgRef = useRef({ matcher, intervalMs, maxWidth, holdMs, recognizer: opts.recognizer });
   cfgRef.current = { matcher, intervalMs, maxWidth, holdMs, recognizer: opts.recognizer };
   pausedRef.current = userPaused || hidden;
+  /** The game's artwork hash table once loaded (null: none, or artwork evidence off). */
+  const tableRef = useRef<HashTable | null>(null);
+  const avgArtMsRef = useRef(0);
+
+  // The hash table is fetched once per game (artwork.ts caches the promise); until it is here frames run on OCR alone.
+  useEffect(() => {
+    tableRef.current = null;
+    avgArtMsRef.current = 0;
+    setArtworkMs(0);
+    if (!artwork || !matcher?.lookup) return;
+    let cancelled = false;
+    loadHashTable(matcher.game).then((t) => {
+      if (!cancelled) tableRef.current = t;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [artwork, matcher]);
 
   const clearTimer = () => {
     if (timerRef.current !== null) clearTimeout(timerRef.current);
@@ -110,7 +140,19 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
       if (gen !== genRef.current) return;
       const took = performance.now() - t0;
       avgFrameMsRef.current = avgFrameMsRef.current ? avgFrameMsRef.current * 0.7 + took * 0.3 : took;
-      const found = cfg.matcher.scanLines(lines);
+      let found = cfg.matcher.scanLines(lines);
+      // The picture of the card(s) nearest the middle, merged in before
+      // tracking: two cards of one name stop trading identities, and a read
+      // number plus a matching picture is confident on the first frame.
+      const table = tableRef.current;
+      const lookup = cfg.matcher.lookup?.bind(cfg.matcher);
+      if (table && lookup && found.length) {
+        const ta = performance.now();
+        found = addLiveArtwork(found, { w, h }, table, lookup, (region) => samplePocketLuma(frame, region));
+        const ms = performance.now() - ta;
+        avgArtMsRef.current = avgArtMsRef.current ? avgArtMsRef.current * 0.7 + ms * 0.3 : ms;
+        setArtworkMs(avgArtMsRef.current);
+      }
       // With Tesseract a frame can take 1.5–3 s, longer than holdMs: a track
       // must survive at least ~2.5 recognition cycles or every chip would be
       // re-created (new key, votes lost) on every frame.
@@ -199,6 +241,7 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
     frameSize,
     engine,
     paused: userPaused || hidden,
+    artworkMs,
     start,
     stop,
     pause,

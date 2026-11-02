@@ -19,6 +19,9 @@ device except the one-time Tesseract language-model download (see Engines).
 | `photo.ts` | full-resolution stills from the camera stream through ImageCapture (`takePhoto`, `probePhotoSize`), null when the API is missing |
 | `hash.ts` | artwork matching: perceptual card hash (`hashCard`), the hash table (`public/data/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
 | `artwork.ts` | loads the hash table (`loadHashTable`) and merges a pocket's nearest hashes into the OCR candidates (`mergeArtworkEvidence`, pure) |
+| `live-artwork.ts` | the same artwork evidence for the live single-card loop: hashes the card(s) nearest the middle of the frame around the matcher's outline estimate (`addLiveArtwork`, pure given a sampler) |
+| `focus.ts` | which of a frame's cards single-card mode shows: the one under the middle of the frame, else the largest nearest it (`focusTracks`, pure) |
+| `autocapture.ts` | binder-page auto-capture: when a run of steady, confident fits may press the shutter, and where to look for the grid on the photo (pure) |
 | `tracker.ts` | cross-frame merge, 2 s hold, candidate pool with decaying weights, hysteresis, `stability` (pure) |
 | `camera.ts` | `startCamera`, `stopCamera`, `grabFrame`, `coverTransform`, `mapBox`, `unmapBox`, `visibleRegion`, `previewToPhoto` |
 | `engine.ts` | `getRecognizer()` — ML Kit on native, Tesseract otherwise, with fallback |
@@ -55,6 +58,11 @@ const scanner = useCardScanner({ matcher, enabled: isScanTabActive });
   ~2 frames.
 - Boxes are in **frame pixels** (`frameSize`, the downscaled OCR canvas), so
   always pass `frameSize` (not `video.videoWidth`) to `coverTransform`.
+- With `artwork` (default true) and a matcher that has `lookup`, the card(s)
+  nearest the middle of each frame are also matched by picture
+  (`live-artwork.ts`) before tracking; `artworkMs` is the running cost.
+- `focusTracks(results, frameSize)` (`focus.ts`) picks what single-card mode
+  shows: only the card under the middle of the frame while there is one.
 - `status`: `idle → starting → scanning`, or `error` (camera denied/missing,
   `error` holds a user-facing message). Recognition errors set `error` but keep
   scanning. `pause()`/`resume()` stop OCR but keep the camera on (use it while
@@ -231,8 +239,21 @@ Columns and rows must agree with the card aspect within 20%. Confidence is the m
 energy at the fitted edges (1 = average): below 0.4 the fit is dropped. Measured on the two real
 9-pocket photos in `scripts/fixtures/binder-pages/` (Pixel 11 Pro XL, Z Fold 8): both boxes within a pocket gap of the cards,
 confidence 0.59–0.62, 10–15 ms per fit; two single-card photos: 0.27 and no fit. The capture UI
-runs it 3×/s, eases the guide towards each fit, and calls the page "found" after three fits within
-1.5% of each other; a capture before that is shown as a still with the guide for a check.
+runs it 3×/s, eases the guide towards each fit, and calls the page "found" after two fits within
+3% of each other.
+
+**The shutter** (`autocapture.ts`): a hand-held phone rarely holds a lock, so the live fit is
+not what a capture depends on. The captured frame is fitted itself (`fitGridOnSource` over the
+guide's box grown by 12%, 400 px sample) and that fit places the pockets; the live guide is only
+the fallback. Measured on the Pixel photo from a guide placed 8–12% off: the grid is found at
+confidence 0.56–0.71 in 17–78 ms. A capture is read at once when the frame shows the grid, when
+the guide was locked, or when the user placed it by hand; only a capture with none of those is
+shown as a still with the guide for a check. With *Auto capture* on (default, `settings.autoCapture`)
+the shutter also fires by itself: two consecutive fits at confidence ≥ 0.5 within 3% of each other
+with no capture advice pending, and at least 0.7 s after the preview came up, so nobody has to
+tap at the right instant; the guide turns solid green with "Hold still…" first. Why a capture
+used to fail: the lock needed three fits within 1.5% (about a second of holding still) and dropped
+on the first drift, so the tap usually landed after it, and the user was sent to the check screen.
 
 **Capturing at full resolution** (`photo.ts`): the preview stream is at most ~1920 px on its long
 side, which on a 9-pocket page leaves ~600 px cards and a ~13 px collector-number line, the low end
@@ -299,12 +320,30 @@ The three states were checked through the photo path with fixture variants (a 90
 
 **Live tracking** (`tracker.ts`): each track keeps a pool of cards with decaying weights (×0.7 per
 frame); the frame's read adds its score (×1.5 when the matcher called it confident), each
-alternative adds half of its score. The chip shows the pool leader and only switches when a
+alternative adds half of its score, scaled down the further it trails the read and nothing from
+0.3 below it (a name-only read's dozen printings all count, the same printings under a card the
+picture or the number lifted to ~1 do not). The chip shows the pool leader and only switches when a
 challenger leads by 1.5×, so two cards the OCR flips between do not flip the chip; a confident read
 of a card sharing nothing with the pool retires the track at once (the user swapped cards).
 `ScanCandidate.stability` is the leader's share of the pool ramped in over three frames, drawn as
 the chip's confidence bar; the pool (as shares) is exposed through `alternatives` and listed as
 runners-up under the row.
+
+**One card at a time** (`focus.ts`, `live-artwork.ts`): single-card mode in front of a binder
+page sees the card above and below the one aimed at, and two Pikachu of different printings read
+by name alone traded identities between their chips every frame (Pixel 11 Pro XL, 1.2.0). Two
+fixes. `focusTracks` shows only the card whose outline covers the middle of the frame while there
+is one (else the old rule: the largest nearest the middle, a second only when nearly as big). And
+the live loop merges artwork evidence like page mode does: for the one or two candidates nearest
+the middle, the matcher's outline estimate plus a 12% margin is sampled 272 px wide and searched
+with wider alignment probes than a pocket (±8% / four scales coarse, ±10% / nine scales fine,
+since the outline comes from text lines, not fitted edges), the hits go through
+`mergeArtworkEvidence`, and the candidate keeps its key and geometry. Outlines narrower than 60 px
+or less than 90% inside the frame are skipped. Measured in software-rendered Chrome on a
+1080×1920 frame cut from the Pixel binder photo: 72 ms for the centre card; its read went from
+`number 3/108; name; HP` at 1.00 but unsure (Evolutions reprints the Base Set picture, so three
+same-art printings tied) to confident with `artwork 10`, the same-picture printings staying as
+alternatives; the half-visible card below was left alone.
 
 ## Artwork matching (`hash.ts`, `scripts/build-hashes.mjs`)
 

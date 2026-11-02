@@ -22,6 +22,7 @@ import {
   type ScanCandidate,
   type ScanMatcher,
 } from '@/scanner';
+import { focusTracks } from '@/scanner/focus';
 import type { PocketEntry } from '@/scanner/page';
 import { Toast, useToast } from '@/ui/components';
 import { CameraIcon, CheckIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
@@ -58,35 +59,6 @@ const RUNNER_UPS = 2;
 const LAST_ADDED_MS = 6000;
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-
-/** Live single-card mode shows at most this many cards at once. */
-const MAX_LIVE_CARDS = 2;
-/** A second card must be at least this share of the first by (area × centrality) to be shown too. */
-const SECOND_CARD_SHARE = 0.45;
-
-/**
- * Single-card mode is for one card at a time: when the camera also sees a
- * binder page or the next card in the pile, keep the largest card nearest
- * the middle of the frame (and a second one only if it is nearly as big)
- * instead of covering the view with chips.
- */
-export function focusTracks(results: ScanCandidate[], frame: { w: number; h: number }): ScanCandidate[] {
-  if (results.length <= 1 || !frame.w || !frame.h) return results;
-  const cx = frame.w / 2;
-  const cy = frame.h / 2;
-  const diag = Math.hypot(frame.w, frame.h) / 2;
-  const ranked = results
-    .map((r) => {
-      const b = r.cardBox ?? r.bbox;
-      const d = Math.hypot(b.x + b.w / 2 - cx, b.y + b.h / 2 - cy) / diag;
-      return { r, score: Math.max(1, b.w * b.h) * (1 - 0.6 * Math.min(1, d)) };
-    })
-    .sort((a, b) => b.score - a.score);
-  const top = ranked[0].score;
-  return ranked
-    .filter((x, i) => i === 0 || (i < MAX_LIVE_CARDS && x.score >= top * SECOND_CARD_SHARE))
-    .map((x) => x.r);
-}
 
 export default function ScanPage() {
   const index = useCatalog();

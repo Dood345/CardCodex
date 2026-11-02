@@ -7,8 +7,8 @@
  *   the same physical card moved a little or was re-read differently).
  * - Each track keeps a POOL of cards with decaying weights. Every frame adds
  *   the read's score to its card and a share of each alternative's score to
- *   that alternative, so a card the matcher keeps listing second still
- *   accumulates weight. The chip shows the pool leader, and the leader only
+ *   that alternative (less the further it trails the read), so a card the
+ *   matcher keeps listing a close second still accumulates weight. The chip shows the pool leader, and the leader only
  *   changes when a challenger is clearly ahead (SWITCH_RATIO), so two cards
  *   the OCR keeps flipping between cannot make the chip flip with them.
  * - `stability` (0..1) is the leader's share of the pool, ramped in over the
@@ -50,6 +50,14 @@ export interface Track {
 const VOTE_DECAY = 0.7;
 /** Share of an alternative's score that goes into the pool. */
 const ALT_WEIGHT = 0.5;
+/**
+ * An alternative counts in full only when its score is close to the read's;
+ * its share fades to nothing ALT_GAP below it. A name-only read (0.45) lists
+ * a dozen printings at 0.45 and they all count (the read IS ambiguous), but
+ * once the picture or the number lifts one card to ~1 the same printings at
+ * 0.45 no longer dilute its stability.
+ */
+const ALT_GAP = 0.3;
 /** A read the matcher itself calls confident (number + set agree) weighs this much more. */
 const CONFIDENT_BOOST = 1.5;
 /** A challenger must lead the shown card by this factor before the chip switches. */
@@ -114,7 +122,10 @@ export function updateTracks(
     touched.add(t);
     for (const e of t.pool.values()) e.weight *= VOTE_DECAY;
     addWeight(t, r.card, r.set, r.score * (r.confident ? CONFIDENT_BOOST : 1), r.score, r.evidence);
-    for (const a of r.alternatives) addWeight(t, a.card, a.set, a.score * ALT_WEIGHT, a.score, a.evidence);
+    for (const a of r.alternatives) {
+      const rel = Math.max(0, 1 - (r.score - a.score) / ALT_GAP);
+      if (rel > 0) addWeight(t, a.card, a.set, a.score * ALT_WEIGHT * rel, a.score, a.evidence);
+    }
     for (const [id, e] of t.pool) if (e.weight < PRUNE_WEIGHT) t.pool.delete(id);
     t.byCard.set(r.card.id, r);
     t.lastSeen = now;

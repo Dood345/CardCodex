@@ -62,6 +62,10 @@ export interface CaptureInfo {
   guidance: GuidanceMetrics | null;
   /** Advice that was showing at the shutter, if any. */
   advice: AdviceKind | null;
+  /** What pressed the shutter: a tap, the auto-capture (src/scanner/autocapture.ts), or a file from the gallery. */
+  trigger: 'tap' | 'auto' | 'file';
+  /** Confidence of the grid fitted on the captured frame itself (grid.ts), null when no grid was found there. */
+  gridFit: number | null;
 }
 
 /** A still image in page mode: a photo, or the frame just captured from the camera. */

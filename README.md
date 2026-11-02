@@ -34,7 +34,10 @@ with Capacitor. Your collection lives only on your device.
   wishlist tab. Export / import a JSON backup from Settings.
 - **Scan** – point the camera at one or more cards. On-device text recognition reads the card name,
   HP and the printed number/set code, matches them against the catalog, and draws a tappable chip over
-  each detected card: tap to add it, or open the alternatives to correct a wrong guess. "Scan a photo"
+  each detected card: tap to add it, or open the alternatives to correct a wrong guess. In front of a
+  binder or a pile only the card under the middle of the frame gets a chip, and its picture is
+  matched against the artwork table as well as its text, so two printings of one name do not trade
+  places. "Scan a photo"
   runs the same pipeline on a picture from the camera app or gallery. Nothing is uploaded. On Android
   the scanner uses Google ML Kit on-device text recognition; in the browser (and as a fallback) it uses
   Tesseract.js with the English model bundled in `public/tessdata/`, so it works offline. The card
@@ -42,8 +45,11 @@ with Capacitor. Your collection lives only on your device.
   a name alone lists every printing in the alternatives.
 - **Binder page mode** – switch the scanner to *Binder page*, pick the page layout (9-, 4-, 12- or
   16-pocket) and point the camera at the page: the grid finds the cards by itself (it turns green
-  once it has locked on) and can be dragged or resized if it hasn't. Capture, or scan a photo of the
-  page, which is shown with the fitted grid for a check first. Every pocket is cropped at full
+  once it has locked on) and can be dragged or resized if it hasn't. The page is captured by itself
+  once the grid holds steady for a moment (*Auto capture*, which can be turned off) or on a tap, and
+  the grid is fitted again on the captured frame, so a hand that moved after the last fit costs
+  nothing; a photo of the page from the gallery is shown with the fitted grid for a check first.
+  Every pocket is cropped at full
   resolution and read on its own; the review grid then shows each pocket's crop beside its card with
   a copy counter, so pockets holding several copies in one sleeve get the right count, wrong guesses
   can be swapped from the alternatives (or any card searched for), and empty pockets are skipped.
