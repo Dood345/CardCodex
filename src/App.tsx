@@ -8,7 +8,7 @@ import { configureYgoImages } from '@/data/types';
 import { gameById } from '@/games';
 import { installBackButton } from '@/ui/back';
 import { BackpackIcon, BinderIcon, CameraIcon, SearchIcon } from '@/ui/icons';
-import { href, navigate, useRoute, useScrollTopOnRoute } from '@/ui/router';
+import { href, navigate, usePaneScroll, useRoute } from '@/ui/router';
 import DexPage from '@/pages/DexPage';
 import SpeciesPage from '@/pages/SpeciesPage';
 import ArchetypesPage from '@/pages/ArchetypesPage';
@@ -89,7 +89,7 @@ function Shell() {
   const route = useRoute();
   const game = useGame();
   const [section, arg] = route.segments;
-  useScrollTopOnRoute(route.path);
+  usePaneScroll(route);
   const isScan = section === 'scan';
   const tourOpen = useTourOpen();
   const [settings] = useSettings();

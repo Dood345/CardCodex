@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { computeStats, useCollection } from '@/data/collection';
 import { setRecency } from '@/data/catalog';
@@ -7,6 +7,7 @@ import { CardGrid, CardTile, Chip, EmptyState, SetBadge, TopBar } from '@/ui/com
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
+import { useSticky } from '@/ui/sticky';
 
 type Tab = 'owned' | 'wanted';
 
@@ -20,8 +21,8 @@ export default function CollectionPage() {
   const index = useCatalog();
   const game = useGame();
   const collection = useCollection();
-  const [tab, setTab] = useState<Tab>('owned');
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  const [tab, setTab] = useSticky<Tab>(`${game.id}:collection:tab`, 'owned');
+  const [open, setOpen] = useSticky<Set<string>>(`${game.id}:collection:open`, () => new Set());
 
   const stats = useMemo(() => computeStats(collection, index), [collection, index]);
 

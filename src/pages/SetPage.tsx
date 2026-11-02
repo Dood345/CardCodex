@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useCatalog } from '@/app/context';
 import { useSettings } from '@/app/settings';
 import { adjustQty, useCollection, progressOf } from '@/data/collection';
 import { setLogoUrl } from '@/data/types';
 import { CardGrid, CardTile, Chip, EmptyState, Img, ProgressBar, SetBadge, Toast, TopBar, useToast } from '@/ui/components';
 import { navigate } from '@/ui/router';
+import { useSticky } from '@/ui/sticky';
 
 type Filter = 'all' | 'owned' | 'missing' | 'wanted';
 
@@ -12,8 +13,8 @@ export default function SetPage({ id }: { id: string }) {
   const index = useCatalog();
   const collection = useCollection();
   const [settings] = useSettings();
-  const [filter, setFilter] = useState<Filter>('all');
-  const [quickAdd, setQuickAdd] = useState(false);
+  const [filter, setFilter] = useSticky<Filter>('set:filter', 'all');
+  const [quickAdd, setQuickAdd] = useSticky('set:quickAdd', false);
   const [toast, showToast] = useToast();
   const set = index.setsById.get(id);
   const cards = useMemo(() => index.cardsBySet.get(id) ?? [], [index, id]);

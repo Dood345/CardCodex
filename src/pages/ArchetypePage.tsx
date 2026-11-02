@@ -2,13 +2,14 @@
  * One archetype: its distinct cards (newest printing shown, copies summed
  * over all printings) or every printing, with owned/missing filters.
  */
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useCatalog } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import type { CollectionEntry } from '@/data/db';
 import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { archetypeCover } from '@/games/ygo';
 import { CardGrid, CardTile, Chip, EmptyState, Img, ProgressBar, TopBar } from '@/ui/components';
+import { useSticky } from '@/ui/sticky';
 
 type Filter = 'all' | 'owned' | 'missing';
 
@@ -22,8 +23,8 @@ interface Unique {
 export default function ArchetypePage({ name }: { name: string }) {
   const index = useCatalog();
   const collection = useCollection();
-  const [filter, setFilter] = useState<Filter>('all');
-  const [allPrintings, setAllPrintings] = useState(false);
+  const [filter, setFilter] = useSticky<Filter>('arch:filter', 'all');
+  const [allPrintings, setAllPrintings] = useSticky('arch:printings', false);
   const printings = useMemo(() => index.cardsByArchetype.get(name) ?? [], [index, name]);
 
   const unique = useMemo(() => {

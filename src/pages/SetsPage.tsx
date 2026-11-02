@@ -1,14 +1,16 @@
-import { useMemo, useState } from 'react';
-import { useCatalog } from '@/app/context';
+import { useMemo } from 'react';
+import { useCatalog, useGame } from '@/app/context';
 import { useCollection, progressOf } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
 import { SetRow, TopBar } from '@/ui/components';
+import { useSticky } from '@/ui/sticky';
 
 export default function SetsPage() {
   const index = useCatalog();
+  const game = useGame();
   const collection = useCollection();
-  const [query, setQuery] = useState('');
-  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
+  const [query, setQuery] = useSticky(`${game.id}:sets:query`, '');
+  const [collapsed, setCollapsed] = useSticky<Set<string>>(`${game.id}:sets:collapsed`, () => new Set());
 
   const q = normalizeText(query);
   const groups = useMemo(

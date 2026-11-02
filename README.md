@@ -80,6 +80,12 @@ with Capacitor. Your collection lives only on your device.
   scanned, then the live camera (back to the mode choice), then a binder-page review (it stays
   resumable); only with nothing open does it go back a page, and at the first page it sends the app
   to the background instead of quitting.
+- **Back lands where you were** – coming back to a list (Android back or the browser's) puts the
+  tile you left at the top of the screen again, with the filters you had on; only a page reached
+  afresh starts at the top.
+- **Quick scroll** – long lists (the Pokédex, the archetypes) have a strip down the right edge:
+  drag it to move through the whole list, with Pokédex hundreds or archetype letters along it and a
+  bubble naming what is under your finger.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 

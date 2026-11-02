@@ -12,8 +12,14 @@
  *   #/collection          Collection + wishlist
  *   #/scan                Camera scanner
  *   #/settings            Settings / data
+ *
+ * The main pane's scroll position is remembered per history entry
+ * (src/ui/scroll-memory.ts): a fresh page starts at the top, a page the
+ * user comes back to is where they left it.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { mainPane } from './pane';
+import { noteNavigation, primeScrollMemory, settlePane } from './scroll-memory';
 
 export interface Route {
   path: string;
@@ -32,17 +38,39 @@ function parseHash(hash: string): Route {
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parseHash(window.location.hash));
   useEffect(() => {
-    const onChange = () => setRoute(parseHash(window.location.hash));
+    primeScrollMemory();
+    const onChange = () => {
+      // Before the re-render, while the old page is still on screen.
+      noteNavigation(mainPane());
+      setRoute(parseHash(window.location.hash));
+    };
     window.addEventListener('hashchange', onChange);
     return () => window.removeEventListener('hashchange', onChange);
   }, []);
   return route;
 }
 
+/**
+ * Go to `path`. With `replace` the current history entry is rewritten in
+ * place (its state, and so its scroll-memory key, kept) and the router is
+ * told at once, since replaceState fires no event of its own.
+ */
 export function navigate(path: string, replace = false): void {
-  const hash = `#${path.startsWith('/') ? path : `/${path}`}`;
-  if (replace) window.location.replace(hash);
-  else window.location.hash = hash;
+  const hash = href(path);
+  if (window.location.hash === hash) return;
+  if (!replace) {
+    window.location.hash = hash;
+    return;
+  }
+  const oldURL = window.location.href;
+  try {
+    window.history.replaceState(window.history.state, '', hash);
+  } catch {
+    window.location.replace(hash);
+    return;
+  }
+  const detail = { oldURL, newURL: window.location.href };
+  window.dispatchEvent(typeof HashChangeEvent === 'function' ? new HashChangeEvent('hashchange', detail) : new Event('hashchange'));
 }
 
 export function back(fallback = '/dex'): void {
@@ -54,11 +82,16 @@ export function href(path: string): string {
   return `#${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-/** Scrolls the main pane to the top when the route changes. */
-export function useScrollTopOnRoute(key: string): void {
-  useEffect(() => {
-    const main = document.getElementById('main');
-    if (main) main.scrollTo({ top: 0 });
+/**
+ * Settles the main pane after each route change, before paint: a fresh
+ * page at the top, a revisited page where the user left it, the same page
+ * (a rewritten query) untouched.
+ */
+export function usePaneScroll(route: Route): void {
+  const key = `${route.path}?${route.query.toString()}`;
+  useLayoutEffect(() => {
+    const main = mainPane();
+    if (main) settlePane(main);
   }, [key]);
 }
 
