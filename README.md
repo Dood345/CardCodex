@@ -37,7 +37,9 @@ with Capacitor. Your collection lives only on your device.
   each detected card: tap to add it, or open the alternatives to correct a wrong guess. In front of a
   binder or a pile only the card under the middle of the frame gets a chip, and its picture is
   matched against the artwork table as well as its text, so two printings of one name do not trade
-  places. "Scan a photo"
+  places, and the box drawn around it follows the matched picture. A bar under the camera counts the
+  cards added this session; tap it or pull it up for the list, with the copies added and the owned
+  count to fix on the spot. "Scan a photo"
   runs the same pipeline on a picture from the camera app or gallery. Nothing is uploaded. On Android
   the scanner uses Google ML Kit on-device text recognition; in the browser (and as a fallback) it uses
   Tesseract.js with the English model bundled in `public/tessdata/`, so it works offline. The card
@@ -71,6 +73,10 @@ with Capacitor. Your collection lives only on your device.
   survives the app being killed. Live scanning shows a confidence bar that fills while successive
   frames agree on a card, lists the runners-up it is torn between so the right one is one tap away,
   and does not flip the chip on a single contrary frame.
+- **Android back button** – closes whatever is on top first: a sheet or menu, then a photo being
+  scanned, then the live camera (back to the mode choice), then a binder-page review (it stays
+  resumable); only with nothing open does it go back a page, and at the first page it sends the app
+  to the background instead of quitting.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 

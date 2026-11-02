@@ -1527,6 +1527,46 @@ textarea:focus {
   overflow-x: auto;
   scrollbar-width: none;
 }
+/* Pull-up bar: this session's adds (SessionSheet.tsx). Sticky at the bottom of the panel it sits in. */
+.scan-session-bar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px 14px 8px;
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--bg-elev);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: none;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+}
+.scan-session-bar .session-handle {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: 2px;
+  background: var(--fg-muted);
+  opacity: 0.6;
+}
+.scan-session-bar .session-chevron {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.session-list .scan-candidate a {
+  display: contents;
+}
 .scan-recent-item {
   flex: none;
   width: 56px;

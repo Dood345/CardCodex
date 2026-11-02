@@ -26,12 +26,16 @@ import { focusTracks } from '@/scanner/focus';
 import type { PocketEntry } from '@/scanner/page';
 import { Toast, useToast } from '@/ui/components';
 import { CameraIcon, CheckIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
+import { useBackHandler } from '@/ui/back';
 import { href } from '@/ui/router';
 import { PageScan, openPagePhoto } from './scan/PageScan';
+import { SessionBar, SessionSheet } from './scan/SessionSheet';
 import {
+  clearAdded,
   getScanSession,
   hasSavedReview,
   patchScanSession,
+  recordAdded,
   resetScanSession,
   useScanSession,
   type Recent,
@@ -76,11 +80,13 @@ export default function ScanPage() {
   const armed = current && session.armed;
   const still = current ? session.still : null;
   const recent = current ? session.recent : [];
+  const added = current ? session.added : [];
   const setArmed = (v: boolean) => patchScanSession({ armed: v });
   const [toast, showToast] = useToast();
   const [correcting, setCorrecting] = useState<ScanCandidate | null>(null);
   const [justAdded, setJustAdded] = useState<Map<string, number>>(() => new Map());
   const [savedReview, setSavedReview] = useState(false);
+  const [sessionOpen, setSessionOpen] = useState(false);
   /** The card added last, with a stepper to fix its count (hidden after a few seconds). */
   const [lastAdded, setLastAdded] = useState<{ card: CatalogCard; set: CatalogSet } | null>(null);
   const lastTimer = useRef<number | undefined>(undefined);
@@ -101,6 +107,12 @@ export default function ScanPage() {
   const scanner = useCardScanner({ matcher, enabled: armed && !still && !pageMode, recognizer });
   const engineName = scanner.engine === 'mlkit' ? 'ML Kit' : scanner.engine === 'tesseract' ? 'Tesseract' : 'on-device OCR';
   const cameraLive = scanner.status === 'scanning';
+
+  // Android back in single-card mode: a photo closes; the live camera returns to the mode choice. Page mode handles its own.
+  useBackHandler(!!still || (armed && !pageMode), () => {
+    if (getScanSession().still) closeStill();
+    else setArmed(false);
+  });
 
   // First visit: the strip of recent scans comes from the scan log.
   useEffect(() => {
@@ -169,6 +181,7 @@ export default function ScanPage() {
     async (card: CatalogCard, set: CatalogSet, trackKey?: string) => {
       await recordScan(card, 1, scanner.engine ?? 'manual');
       pushRecent(card, set, 1);
+      recordAdded(card, set, 1);
       if (trackKey) {
         setJustAdded((m) => new Map(m).set(trackKey, Date.now()));
         window.setTimeout(
@@ -228,6 +241,7 @@ export default function ScanPage() {
         className="btn ghost small"
         onClick={() => {
           void adjustQty(lastAdded.card.id, -1);
+          recordAdded(lastAdded.card, lastAdded.set, -1);
           setLastAdded(null);
         }}
       >
@@ -242,6 +256,7 @@ export default function ScanPage() {
       for (const e of entries) {
         await recordScan(e.card, e.qty, 'page');
         pushRecent(e.card, e.set, e.qty);
+        recordAdded(e.card, e.set, e.qty);
         total += e.qty;
       }
       showToast(`Added ${total} ${total === 1 ? 'card' : 'cards'} from this page`);
@@ -322,6 +337,19 @@ export default function ScanPage() {
     ? [{ card: correcting.card, set: correcting.set, score: correcting.score, evidence: correcting.evidence }, ...correcting.alternatives]
     : [];
 
+  const sessionSheet = (
+    <SessionSheet
+      open={sessionOpen}
+      added={added}
+      collection={collection}
+      onClose={() => setSessionOpen(false)}
+      onClear={() => {
+        clearAdded();
+        setSessionOpen(false);
+      }}
+    />
+  );
+
   if (pageMode && armed) {
     return (
       <>
@@ -335,6 +363,7 @@ export default function ScanPage() {
           onExit={() => setArmed(false)}
         />
         <Toast message={toast} />
+        {sessionSheet}
       </>
     );
   }
@@ -381,9 +410,11 @@ export default function ScanPage() {
             </button>
           )}
           {recent.length > 0 && <RecentStrip recent={recent} />}
+          {added.length > 0 && <SessionBar added={added} onOpen={() => setSessionOpen(true)} />}
         </div>
         {fileInput}
         <Toast message={toast} />
+        {sessionSheet}
       </div>
     );
   }
@@ -541,6 +572,7 @@ export default function ScanPage() {
           cameraLive && <div className="hint">{game.text.scanHint}</div>
         )}
         {recent.length > 0 && <RecentStrip recent={recent} />}
+        {added.length > 0 && <SessionBar added={added} onOpen={() => setSessionOpen(true)} />}
       </div>
 
       <CorrectionSheet
@@ -556,6 +588,7 @@ export default function ScanPage() {
         }}
       />
       <Toast message={toast} />
+      {sessionSheet}
       {fileInput}
     </div>
   );

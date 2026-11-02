@@ -6,6 +6,7 @@ import { Tour } from '@/ui/Tour';
 import type { CatalogIndex } from '@/data/catalog';
 import { configureYgoImages } from '@/data/types';
 import { gameById } from '@/games';
+import { installBackButton } from '@/ui/back';
 import { BackpackIcon, BinderIcon, CameraIcon, SearchIcon } from '@/ui/icons';
 import { href, navigate, useRoute, useScrollTopOnRoute } from '@/ui/router';
 import DexPage from '@/pages/DexPage';
@@ -32,6 +33,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => configureYgoImages(settings.ygoImageBase), [settings.ygoImageBase]);
+  // Android's back button closes what is on top before it leaves a page (src/ui/back.ts).
+  useEffect(() => installBackButton(), []);
 
   useEffect(() => {
     let cancelled = false;

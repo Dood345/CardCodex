@@ -50,6 +50,7 @@ import {
   type PocketEntry,
 } from '@/scanner/page';
 import { probePhotoSize, takePhoto } from '@/scanner/photo';
+import { useBackHandler } from '@/ui/back';
 import { Chip } from '@/ui/components';
 import { CameraIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
 import { PageGuide, type GuideState } from './PageGuide';
@@ -233,6 +234,13 @@ export function PageScan({
   /** When the preview last came up, for AUTO_ARM_DELAY_MS. */
   const liveSinceRef = useRef(0);
   const cameraWanted = phase === 'capture' && !still && !scanning && !restoring;
+
+  // Android back: a still being checked goes back to the camera; the camera or a review leaves page mode (a review stays resumable).
+  useBackHandler(true, () => {
+    const p = getScanSession().page;
+    if (p?.phase === 'capture' && p.still) retake();
+    else exit();
+  });
 
   // A review interrupted by the app being killed: restore it.
   useEffect(() => {

@@ -341,8 +341,12 @@ the live loop merges artwork evidence like page mode does: for the one or two ca
 the middle, the matcher's outline estimate plus a 12% margin is sampled 272 px wide and searched
 with wider alignment probes than a pocket (±8% / four scales coarse, ±10% / nine scales fine,
 since the outline comes from text lines, not fitted edges), the hits go through
-`mergeArtworkEvidence`, and the candidate keeps its key and geometry. Outlines narrower than 60 px
-or less than 90% inside the frame are skipped. Measured in software-rendered Chrome on a
+`mergeArtworkEvidence`, and the candidate keeps its key and text box. Its outline snaps onto the
+picture: `matchPocket` now reports, per hit, the alignment window that gave its distance, and when
+the merged card's hit is a real match (≤ 24 bits) that window becomes the card box (`snapToArtwork`),
+so an outline inferred from text lines that ran long at the bottom and right (an overestimated text
+scale) is pulled back onto the card within a probe step. Outlines narrower than 60 px or less than
+90% inside the frame are skipped. Measured in software-rendered Chrome on a
 1080×1920 frame cut from the Pixel binder photo: 72 ms for the centre card; its read went from
 `number 3/108; name; HP` at 1.00 but unsure (Evolutions reprints the Base Set picture, so three
 same-art printings tied) to confident with `artwork 10`, the same-picture printings staying as
