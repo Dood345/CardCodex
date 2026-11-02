@@ -35,6 +35,8 @@ export interface Still {
   ms?: number;
   /** Text lines the OCR engine read (to tell "no text" from "no match"). */
   lineCount?: number;
+  /** 'photo': snapped in the camera view (one card: adding it returns to the camera); 'file': from the gallery. */
+  source?: 'photo' | 'file';
 }
 
 export interface PocketState {

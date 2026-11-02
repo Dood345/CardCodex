@@ -14,15 +14,19 @@ import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import {
   coverTransform,
   getRecognizer,
+  loadHashTable,
   mapBox,
   useCardScanner,
   type Box,
+  type HashTable,
   type CoverTransform,
   type ScanAlternative,
   type ScanCandidate,
   type ScanMatcher,
 } from '@/scanner';
 import { focusTracks } from '@/scanner/focus';
+import { samplePocketLuma } from '@/scanner/hash';
+import { addLiveArtwork, matchStillCard } from '@/scanner/live-artwork';
 import type { PocketEntry } from '@/scanner/page';
 import { Toast, useToast } from '@/ui/components';
 import { CameraIcon, CheckIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
@@ -30,6 +34,7 @@ import { useBackHandler } from '@/ui/back';
 import { href } from '@/ui/router';
 import { PageScan, openPagePhoto } from './scan/PageScan';
 import { SessionBar, SessionSheet } from './scan/SessionSheet';
+import { SnapScan, cropToGuide, type SnapCapture } from './scan/SnapScan';
 import {
   clearAdded,
   getScanSession,
@@ -59,6 +64,10 @@ const STILL_MIN_WIDTH = 1200;
 /** Runner-up candidates listed under a live chip's row need at least this share of its pool. */
 const RUNNER_UP_MIN = 0.12;
 const RUNNER_UPS = 2;
+/** Alternatives listed under a still's candidate: the photo flow's match options. */
+const STILL_RUNNER_UPS = 3;
+/** Margin around the card guide kept in a snapped photo's crop (share of the guide). */
+const SNAP_CROP_PAD = 0.25;
 /** How long the "last added" stepper stays after the last interaction. */
 const LAST_ADDED_MS = 6000;
 
@@ -71,6 +80,7 @@ export default function ScanPage() {
   const [settings, update] = useSettings();
   const mode = settings.scanMode;
   const pageMode = mode === 'page';
+  const snapMode = !pageMode && settings.cardMode === 'snap';
   const session = useScanSession();
   // A session from the other game holds that catalog's cards: start over.
   useEffect(() => {
@@ -103,8 +113,21 @@ export default function ScanPage() {
   // Built once per catalog (~21k Pokémon cards / 38k Yu-Gi-Oh! printings → ~100 ms).
   const matcher: ScanMatcher = useMemo(() => game.createMatcher(index), [game, index]);
   const recognizer = recognizerFor(settings);
+  // The artwork table for stills (the live hook loads the same cached promise for itself).
+  const [table, setTable] = useState<HashTable | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setTable(null);
+    if (!matcher.lookup) return;
+    loadHashTable(matcher.game).then((t) => {
+      if (!cancelled) setTable(t);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [matcher]);
 
-  const scanner = useCardScanner({ matcher, enabled: armed && !still && !pageMode, recognizer });
+  const scanner = useCardScanner({ matcher, enabled: armed && !still && !pageMode && !snapMode, recognizer });
   const engineName = scanner.engine === 'mlkit' ? 'ML Kit' : scanner.engine === 'tesseract' ? 'Tesseract' : 'on-device OCR';
   const cameraLive = scanner.status === 'scanning';
 
@@ -179,9 +202,11 @@ export default function ScanPage() {
 
   const addCard = useCallback(
     async (card: CatalogCard, set: CatalogSet, trackKey?: string) => {
-      await recordScan(card, 1, scanner.engine ?? 'manual');
+      await recordScan(card, 1, scanner.engine ?? (recognizer ?? getRecognizer()).engine ?? 'photo');
       pushRecent(card, set, 1);
       recordAdded(card, set, 1);
+      // A snapped photo is one card: once it is added, back to the camera for the next.
+      if (getScanSession().still?.source === 'photo') closeStill();
       if (trackKey) {
         setJustAdded((m) => new Map(m).set(trackKey, Date.now()));
         window.setTimeout(
@@ -197,7 +222,8 @@ export default function ScanPage() {
       showLast(card, set);
       if ('vibrate' in navigator) navigator.vibrate?.(30);
     },
-    [scanner.engine, pushRecent, showLast],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [scanner.engine, recognizer, pushRecent, showLast],
   );
 
   /** The "last added" bar: name, new total, −/+ and undo. */
@@ -265,28 +291,67 @@ export default function ScanPage() {
     [pushRecent, showToast],
   );
 
-  /** Run the recognizer + matcher on a still image (camera app or gallery). */
-  const scanPhoto = useCallback(
-    async (file: File) => {
-      const url = URL.createObjectURL(file);
-      const prev = getScanSession().still;
-      if (prev) URL.revokeObjectURL(prev.url);
-      patchScanSession({ still: { url, w: 0, h: 0, results: [], busy: true } });
+  /**
+   * Read a still: OCR, the matcher, and the picture. A snapped photo comes
+   * with the card guide, so the guide region is hashed and merged into the
+   * candidate framed by it, or stands in for one when the text gave nothing;
+   * a gallery photo is hashed around whatever the text found.
+   */
+  const scanStill = useCallback(
+    async (canvas: HTMLCanvasElement, url: string, source: 'photo' | 'file', guide?: Box) => {
       const started = performance.now();
       try {
-        const canvas = await fileToCanvas(file, STILL_MAX_WIDTH, STILL_MIN_WIDTH);
         const lines = await (recognizer ?? getRecognizer()).recognize(canvas);
-        const results = matcher.scanLines(lines);
+        let results = matcher.scanLines(lines);
+        const lookup = matcher.lookup?.bind(matcher);
+        if (table && lookup) {
+          const frame = { w: canvas.width, h: canvas.height };
+          const sample = (region: Box) => samplePocketLuma(canvas, region);
+          results = guide ? matchStillCard(results, guide, frame, table, lookup, sample) : addLiveArtwork(results, frame, table, lookup, sample);
+        }
         if (getScanSession().still?.url !== url) return;
         patchScanSession({
-          still: { url, w: canvas.width, h: canvas.height, results, busy: false, ms: performance.now() - started, lineCount: lines.length },
+          still: { url, w: canvas.width, h: canvas.height, results, busy: false, ms: performance.now() - started, lineCount: lines.length, source },
         });
       } catch (e) {
         const s = getScanSession().still;
         if (s && s.url === url) patchScanSession({ still: { ...s, busy: false, error: e instanceof Error ? e.message : String(e) } });
       }
     },
-    [recognizer, matcher],
+    [recognizer, matcher, table],
+  );
+
+  /** A picture from the camera app or the gallery. */
+  const scanPhoto = useCallback(
+    async (file: File) => {
+      const url = URL.createObjectURL(file);
+      const prev = getScanSession().still;
+      if (prev) URL.revokeObjectURL(prev.url);
+      patchScanSession({ still: { url, w: 0, h: 0, results: [], busy: true, source: 'file' } });
+      try {
+        const canvas = await fileToCanvas(file, STILL_MAX_WIDTH, STILL_MIN_WIDTH);
+        await scanStill(canvas, url, 'file');
+      } catch (e) {
+        const s = getScanSession().still;
+        if (s && s.url === url) patchScanSession({ still: { ...s, busy: false, error: e instanceof Error ? e.message : String(e) } });
+      }
+    },
+    [scanStill],
+  );
+
+  /** A photo snapped in the camera view: the card guide plus a margin, read like a gallery photo. */
+  const scanSnap = useCallback(
+    async (cap: SnapCapture) => {
+      const { canvas, guide } = cropToGuide(cap.source, cap.guide, SNAP_CROP_PAD, STILL_MAX_WIDTH, STILL_MIN_WIDTH, { w: cap.w, h: cap.h });
+      (cap.source as { close?: () => void }).close?.();
+      const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, 'image/jpeg', 0.9));
+      const url = blob ? URL.createObjectURL(blob) : canvas.toDataURL('image/jpeg', 0.9);
+      const prev = getScanSession().still;
+      if (prev) URL.revokeObjectURL(prev.url);
+      patchScanSession({ still: { url, w: canvas.width, h: canvas.height, results: [], busy: true, source: 'photo' } });
+      await scanStill(canvas, url, 'photo', guide);
+    },
+    [scanStill],
   );
 
   const closeStill = () => {
@@ -350,6 +415,17 @@ export default function ScanPage() {
     />
   );
 
+  const modeToggle = !pageMode && (
+    <div className="segmented small" role="tablist" aria-label="Single-card mode">
+      <button type="button" role="tab" aria-selected={snapMode} className={snapMode ? 'active' : ''} onClick={() => update({ cardMode: 'snap' })}>
+        Snap a photo
+      </button>
+      <button type="button" role="tab" aria-selected={!snapMode} className={!snapMode ? 'active' : ''} onClick={() => update({ cardMode: 'live' })}>
+        Live
+      </button>
+    </div>
+  );
+
   if (pageMode && armed) {
     return (
       <>
@@ -368,6 +444,27 @@ export default function ScanPage() {
     );
   }
 
+  if (snapMode && armed && !still) {
+    return (
+      <>
+        <SnapScan
+          cardAspect={game.cardMm.w / game.cardMm.h}
+          Icon={game.Icon}
+          onCaptured={(cap) => void scanSnap(cap)}
+          onFile={() => fileRef.current?.click()}
+          onExit={() => setArmed(false)}
+          overlay={lastAddedBar}
+        >
+          {modeToggle}
+          {added.length > 0 && <SessionBar added={added} onOpen={() => setSessionOpen(true)} />}
+        </SnapScan>
+        {fileInput}
+        <Toast message={toast} />
+        {sessionSheet}
+      </>
+    );
+  }
+
   if (!armed && !still) {
     return (
       <div className="scan-page">
@@ -380,6 +477,7 @@ export default function ScanPage() {
               Binder page
             </button>
           </div>
+          {modeToggle && <div className="scan-submode">{modeToggle}</div>}
           <ScanArt Icon={game.Icon} />
           {pageMode ? (
             <>
@@ -392,7 +490,11 @@ export default function ScanPage() {
           ) : (
             <>
               <h2>Scan your cards</h2>
-              <p>{game.text.scanIntro}</p>
+              <p>
+                {snapMode
+                  ? 'Frame one card, tap the shutter and pick the match from the list. Switch to Live to read cards as you hold them up.'
+                  : game.text.scanIntro}
+              </p>
             </>
           )}
           <p>Everything runs on this device; no images are uploaded.</p>
@@ -409,7 +511,12 @@ export default function ScanPage() {
               Resume the page you were reviewing
             </button>
           )}
-          {recent.length > 0 && <RecentStrip recent={recent} />}
+          {recent.length > 0 && (
+            <>
+              <div className="scan-recent-label">Recently scanned</div>
+              <RecentStrip recent={recent} />
+            </>
+          )}
           {added.length > 0 && <SessionBar added={added} onOpen={() => setSessionOpen(true)} />}
         </div>
         {fileInput}
@@ -498,7 +605,7 @@ export default function ScanPage() {
               type="button"
               className="icon-btn"
               style={{ color: '#fff' }}
-              aria-label={still ? 'Close photo' : 'Stop scanning'}
+              aria-label={still ? (still.source === 'photo' ? 'Retake' : 'Close photo') : 'Stop scanning'}
               onClick={() => (still ? closeStill() : setArmed(false))}
             >
               <CloseIcon />
@@ -509,6 +616,14 @@ export default function ScanPage() {
       </div>
 
       <div className="scan-bottom">
+        {!still && modeToggle}
+        {still?.source === 'photo' && !still.busy && (
+          <div className="btn-row">
+            <button type="button" className="btn ghost" onClick={closeStill}>
+              Retake
+            </button>
+          </div>
+        )}
         {!still && scanner.status === 'error' && (
           <div className="hint">
             {scanner.error}. Try{' '}
@@ -522,7 +637,7 @@ export default function ScanPage() {
         {results.length > 0 ? (
           <div className="scan-candidates">
             {results.map((r) => {
-              const runners = still ? [] : r.alternatives.filter((a) => a.score >= RUNNER_UP_MIN).slice(0, RUNNER_UPS);
+              const runners = still ? r.alternatives.slice(0, STILL_RUNNER_UPS) : r.alternatives.filter((a) => a.score >= RUNNER_UP_MIN).slice(0, RUNNER_UPS);
               return (
                 <div key={r.key} className="scan-track">
                   <CandidateRow
@@ -571,7 +686,6 @@ export default function ScanPage() {
         ) : (
           cameraLive && <div className="hint">{game.text.scanHint}</div>
         )}
-        {recent.length > 0 && <RecentStrip recent={recent} />}
         {added.length > 0 && <SessionBar added={added} onOpen={() => setSessionOpen(true)} />}
       </div>
 

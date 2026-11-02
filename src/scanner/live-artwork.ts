@@ -76,6 +76,49 @@ export function snapToArtwork(cardBox: Box, cardId: string, hits: readonly HashH
   return { x: region.x + w.x * region.w, y: region.y + w.y * region.h, w: w.w * region.w, h: w.h * region.h };
 }
 
+/** Margin around a snapped photo's card guide that is sampled (the guide is where the card should be, not where it is). */
+export const STILL_GUIDE_PAD = 0.15;
+
+/**
+ * A still of one card framed by `guide` (frame px): the guide region is
+ * hashed once with the wide probes and merged into the OCR candidate framed
+ * by the guide (its outline centre inside it, nearest the guide's centre). With
+ * no such candidate the picture stands alone: the matched card becomes the
+ * candidate, unsure, with that picture's printings as alternatives, which is
+ * how a foil or a card with a stylised name gets identified at all. Other
+ * candidates (another card at the edge of the photo) follow unchanged.
+ */
+export function matchStillCard(
+  cands: readonly ScanCandidate[],
+  guide: Box,
+  frame: { w: number; h: number },
+  table: HashTable,
+  lookup: CardLookup,
+  sample: (region: Box) => LumaImage,
+  pad = STILL_GUIDE_PAD,
+): ScanCandidate[] {
+  const region = liveArtworkRegion(guide, frame, pad);
+  if (!region) return [...cands];
+  const { hits } = matchPocket(table, sample(region), windowOf(guide, region), { coarse: LIVE_COARSE, fine: LIVE_FINE, k: 12 });
+  const gx = guide.x + guide.w / 2;
+  const gy = guide.y + guide.h / 2;
+  const framed = cands
+    .map((c) => ({ c, cx: c.cardBox.x + c.cardBox.w / 2, cy: c.cardBox.y + c.cardBox.h / 2 }))
+    .filter(({ cx, cy }) => cx >= guide.x && cx <= guide.x + guide.w && cy >= guide.y && cy <= guide.y + guide.h)
+    .sort((a, b) => Math.hypot(a.cx - gx, a.cy - gy) - Math.hypot(b.cx - gx, b.cy - gy))
+    .map(({ c }) => c);
+  const primary: ScanCandidate | undefined = framed[0];
+  const merged = mergeArtworkEvidence(primary ? [primary] : [], hits, lookup, region)[0];
+  if (!merged) return [...cands];
+  const first: ScanCandidate = {
+    ...merged,
+    key: primary?.key ?? merged.key,
+    bbox: primary?.bbox ?? snapToArtwork(guide, merged.card.id, hits, region),
+    cardBox: snapToArtwork(primary?.cardBox ?? guide, merged.card.id, hits, region),
+  };
+  return [first, ...cands.filter((c) => c !== primary)];
+}
+
 /**
  * Merge artwork evidence into up to `max` of a frame's candidates (the ones
  * nearest the middle of the frame). Each keeps its key and text box; its

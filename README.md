@@ -32,9 +32,11 @@ with Capacitor. Your collection lives only on your device.
   flag, free-text note, and every other printing of the same card.
 - **Collection** – totals (cards, unique, species, sets, wanted), owned cards grouped by set, and a
   wishlist tab. Export / import a JSON backup from Settings.
-- **Scan** – point the camera at one or more cards. On-device text recognition reads the card name,
-  HP and the printed number/set code, matches them against the catalog, and draws a tappable chip over
-  each detected card: tap to add it, or open the alternatives to correct a wrong guess. In front of a
+- **Scan** – frame one card and tap the shutter: a full-resolution photo is read on the device (the
+  card name, HP and the printed number/set code against the catalog, and the picture against the
+  artwork table) and the best match is listed with its alternatives, each one tap to add; the next
+  card is one shutter away. *Live* mode instead reads cards as you hold them up and draws a tappable
+  chip over each one: tap to add it, or open the alternatives to correct a wrong guess. In front of a
   binder or a pile only the card under the middle of the frame gets a chip, and its picture is
   matched against the artwork table as well as its text, so two printings of one name do not trade
   places, and the box drawn around it follows the matched picture. A bar under the camera counts the
