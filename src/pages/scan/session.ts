@@ -17,13 +17,6 @@ import type { AdviceKind, GuidanceMetrics } from '@/scanner/guidance';
 import type { FracBox, PageSource, PocketScan } from '@/scanner/page';
 import { addToSession, type SessionAdd } from './session-list';
 
-export interface Recent {
-  card: CatalogCard;
-  set: CatalogSet;
-  qty: number;
-  at: number;
-}
-
 /** A photo scanned in single-card mode. */
 export interface Still {
   url: string;
@@ -104,7 +97,8 @@ export interface ScanSession {
   game: string;
   /** Camera view open (either mode). */
   armed: boolean;
-  recent: Recent[];
+  /** Cards the scanner added before this session, from the scan log (newest first), for the start screen. */
+  logAdds: SessionAdd[];
   /** Cards added through the scanner this session (session-list.ts), newest first. */
   added: SessionAdd[];
   still: Still | null;
@@ -122,7 +116,7 @@ export const EMPTY_PAGE: PageSession = {
   frameFrac: null,
 };
 
-let state: ScanSession = { game: '', armed: false, recent: [], added: [], still: null, page: null };
+let state: ScanSession = { game: '', armed: false, logAdds: [], added: [], still: null, page: null };
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -168,7 +162,7 @@ export function resetScanSession(game: string): void {
   if (state.still) URL.revokeObjectURL(state.still.url);
   disposeStill(state.page?.still);
   if (state.page?.frame !== state.page?.still) disposeStill(state.page?.frame);
-  state = { game, armed: false, recent: [], added: [], still: null, page: null };
+  state = { game, armed: false, logAdds: [], added: [], still: null, page: null };
   emit();
 }
 

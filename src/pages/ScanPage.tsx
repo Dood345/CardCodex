@@ -33,7 +33,7 @@ import { CameraIcon, CheckIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icon
 import { useBackHandler } from '@/ui/back';
 import { href } from '@/ui/router';
 import { PageScan, openPagePhoto } from './scan/PageScan';
-import { SessionBar, SessionSheet } from './scan/SessionSheet';
+import { SessionBar, SessionList, SessionSheet } from './scan/SessionSheet';
 import { SnapScan, cropToGuide, type SnapCapture } from './scan/SnapScan';
 import {
   clearAdded,
@@ -43,14 +43,13 @@ import {
   recordAdded,
   resetScanSession,
   useScanSession,
-  type Recent,
 } from './scan/session';
+import { aggregateLog } from './scan/session-list';
 import {
   BLANK_POSTER,
   CameraPlaceholder,
   CandidateRow,
   CorrectionSheet,
-  RecentStrip,
   ScanArt,
   containTransform,
   fileToCanvas,
@@ -89,7 +88,7 @@ export default function ScanPage() {
   const current = session.game === game.id;
   const armed = current && session.armed;
   const still = current ? session.still : null;
-  const recent = current ? session.recent : [];
+  const logAdds = current ? session.logAdds : [];
   const added = current ? session.added : [];
   const setArmed = (v: boolean) => patchScanSession({ armed: v });
   const [toast, showToast] = useToast();
@@ -137,35 +136,29 @@ export default function ScanPage() {
     else setArmed(false);
   });
 
-  // First visit: the strip of recent scans comes from the scan log.
+  // First visit: what the scanner added before this session, from the scan log.
   useEffect(() => {
-    if (!current || recent.length) return;
+    if (!current || logAdds.length) return;
     let cancelled = false;
     db.scanLog
       .orderBy('at')
       .reverse()
-      .limit(40)
+      .limit(60)
       .toArray()
       .then((rows) => {
-        if (cancelled || getScanSession().recent.length) return;
-        const seen = new Set<string>();
-        const list: Recent[] = [];
-        for (const r of rows) {
-          if (seen.has(r.cardId)) continue;
-          const card = index.cardsById.get(r.cardId);
+        if (cancelled || getScanSession().logAdds.length) return;
+        const list = aggregateLog(rows, (id) => {
+          const card = index.cardsById.get(id);
           const set = card && index.setsById.get(card.set);
-          if (!card || !set) continue;
-          seen.add(r.cardId);
-          list.push({ card, set, qty: 1, at: r.at });
-          if (list.length >= 12) break;
-        }
-        if (list.length) patchScanSession({ recent: list });
+          return card && set ? { card, set } : undefined;
+        });
+        if (list.length) patchScanSession({ logAdds: list });
       })
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [current, recent.length, index]);
+  }, [current, logAdds.length, index]);
 
   // Intro screen: offer to resume a page review the app was killed in the middle of.
   useEffect(() => {
@@ -196,14 +189,9 @@ export default function ScanPage() {
     [still, scanner.frameSize, viewSize],
   );
 
-  const pushRecent = useCallback((card: CatalogCard, set: CatalogSet, qty: number) => {
-    patchScanSession({ recent: [{ card, set, qty, at: Date.now() }, ...getScanSession().recent].slice(0, 12) });
-  }, []);
-
   const addCard = useCallback(
     async (card: CatalogCard, set: CatalogSet, trackKey?: string) => {
       await recordScan(card, 1, scanner.engine ?? (recognizer ?? getRecognizer()).engine ?? 'photo');
-      pushRecent(card, set, 1);
       recordAdded(card, set, 1);
       // A snapped photo is one card: once it is added, back to the camera for the next.
       if (getScanSession().still?.source === 'photo') closeStill();
@@ -223,7 +211,7 @@ export default function ScanPage() {
       if ('vibrate' in navigator) navigator.vibrate?.(30);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [scanner.engine, recognizer, pushRecent, showLast],
+    [scanner.engine, recognizer, showLast],
   );
 
   /** The "last added" bar: name, new total, −/+ and undo. */
@@ -281,14 +269,13 @@ export default function ScanPage() {
       let total = 0;
       for (const e of entries) {
         await recordScan(e.card, e.qty, 'page');
-        pushRecent(e.card, e.set, e.qty);
         recordAdded(e.card, e.set, e.qty);
         total += e.qty;
       }
       showToast(`Added ${total} ${total === 1 ? 'card' : 'cards'} from this page`);
       if ('vibrate' in navigator) navigator.vibrate?.([30, 40, 30]);
     },
-    [pushRecent, showToast],
+    [showToast],
   );
 
   /**
@@ -511,13 +498,12 @@ export default function ScanPage() {
               Resume the page you were reviewing
             </button>
           )}
-          {recent.length > 0 && (
-            <>
-              <div className="scan-recent-label">Recently scanned</div>
-              <RecentStrip recent={recent} />
-            </>
+          {(added.length > 0 || logAdds.length > 0) && (
+            <div className="scan-added">
+              <div className="scan-section-label">{added.length ? 'Added this session' : 'Recently added with the scanner'}</div>
+              <SessionList added={added.length ? added : logAdds} collection={collection} mode={added.length ? 'session' : 'log'} />
+            </div>
           )}
-          {added.length > 0 && <SessionBar added={added} onOpen={() => setSessionOpen(true)} />}
         </div>
         {fileInput}
         <Toast message={toast} />

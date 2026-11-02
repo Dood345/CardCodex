@@ -1521,12 +1521,6 @@ textarea:focus {
   max-height: 42%;
   overflow-y: auto;
 }
-.scan-recent {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
 /* Pull-up bar: this session's adds (SessionSheet.tsx). Sticky at the bottom of the panel it sits in. */
 .scan-session-bar {
   position: sticky;
@@ -1566,19 +1560,6 @@ textarea:focus {
 }
 .session-list .scan-candidate a {
   display: contents;
-}
-.scan-recent-item {
-  flex: none;
-  width: 56px;
-  text-align: center;
-  font-size: 10px;
-  color: var(--fg-muted);
-}
-.scan-recent-item img {
-  width: 56px;
-  height: 78px;
-  object-fit: cover;
-  border-radius: 4px;
 }
 .scan-candidates {
   display: flex;
@@ -1641,6 +1622,14 @@ textarea:focus {
 .scan-intro h2 {
   color: var(--fg);
 }
+.scan-added {
+  width: 100%;
+  max-width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
 /* Snap mode: the card guide, the shutter and the small mode toggle (SnapScan.tsx). */
 .snap-guide {
   position: absolute;
@@ -1679,7 +1668,8 @@ textarea:focus {
   display: flex;
   justify-content: center;
 }
-.scan-recent-label {
+.scan-section-label {
+  align-self: flex-start;
   font-size: 12px;
   font-weight: 600;
   color: var(--fg-muted);

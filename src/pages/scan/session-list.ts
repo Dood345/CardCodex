@@ -27,3 +27,31 @@ export function addToSession(list: readonly SessionAdd[], card: CatalogCard, set
 export function sessionTotal(list: readonly SessionAdd[]): number {
   return list.reduce((n, e) => n + e.qty, 0);
 }
+
+/**
+ * What the scanner added before this session, from the scan log (one row per
+ * add, newest first): one entry per card with the number of adds as `qty`,
+ * cards the catalog no longer has skipped, at most `limit` cards.
+ */
+export function aggregateLog(
+  rows: readonly { cardId: string; at: number }[],
+  lookup: (cardId: string) => { card: CatalogCard; set: CatalogSet } | undefined,
+  limit = 12,
+): SessionAdd[] {
+  const out: SessionAdd[] = [];
+  const byId = new Map<string, SessionAdd>();
+  for (const r of rows) {
+    const e = byId.get(r.cardId);
+    if (e) {
+      e.qty++;
+      continue;
+    }
+    if (out.length >= limit) continue;
+    const found = lookup(r.cardId);
+    if (!found) continue;
+    const entry = { card: found.card, set: found.set, qty: 1, at: r.at };
+    byId.set(r.cardId, entry);
+    out.push(entry);
+  }
+  return out;
+}
