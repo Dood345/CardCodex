@@ -34,7 +34,8 @@ import {
   type Size,
   type TextRecognizer,
 } from '@/scanner';
-import { GRID_SAMPLE_WIDTH, fitGrid, sampleBoxToRegion, sampleRgba } from '@/scanner/grid';
+import { AUTO_IDLE, autoReady, autoStep, searchRegion, type AutoState } from '@/scanner/autocapture';
+import { GRID_SAMPLE_WIDTH, fitGrid, fitGridOnSource, sampleBoxToRegion, sampleRgba } from '@/scanner/grid';
 import { adviseCapture, measureGuidance, type CaptureAdvice, type GuidanceMetrics } from '@/scanner/guidance';
 import {
   PAGE_LAYOUTS,
@@ -75,8 +76,10 @@ const PAGE_CAMERA = { facingMode: 'environment' as const, width: 2560, height: 1
 /** Live grid fits per second (each ~10–15 ms on a 320 px sample, plus ~15 ms of guidance when the grid is found). */
 const FIT_INTERVAL_MS = 300;
 /** Consecutive fits within LOCK_TOLERANCE (fractions of the view) before the guide reads "Page found". */
-const LOCK_FITS = 3;
-const LOCK_TOLERANCE = 0.015;
+const LOCK_FITS = 2;
+const LOCK_TOLERANCE = 0.03;
+/** No auto-capture this soon after the camera comes up: the user is still aiming. */
+const AUTO_ARM_DELAY_MS = 700;
 /** Missed fits before a locked guide goes back to searching. */
 const UNLOCK_MISSES = 4;
 /** Consecutive fits that must agree on a piece of advice before it is shown (a single soft frame is not "hold still"). */
@@ -105,7 +108,7 @@ export async function openPagePhoto(file: File): Promise<void> {
       w: bitmap.width,
       h: bitmap.height,
       blob: file,
-      capture: { source: 'file', preview: null, ms: 0, photoMs: [], frames: 1, extraFrom: null, guidance: null, advice: null },
+      capture: { source: 'file', preview: null, ms: 0, photoMs: [], frames: 1, extraFrom: null, guidance: null, advice: null, trigger: 'file', gridFit: null },
     },
     frac: null,
     auto: true,
@@ -133,6 +136,8 @@ interface FitState {
   metrics: GuidanceMetrics | null;
   /** Advice confirmed over ADVICE_FITS fits (null: the shot should read). */
   advice: CaptureAdvice | null;
+  /** The fit has held steady with no advice pending: the shutter may fire by itself (autocapture.ts). */
+  ready: boolean;
 }
 
 /** Tooltip for the review header's size readout: how the frame was captured. */
@@ -147,7 +152,9 @@ function captureTitle(frame: PageStill): string {
         : 'photo from the gallery';
   const prev = c.preview ? `, preview ${c.preview.w}×${c.preview.h}` : '';
   const extra = c.frames > 1 ? `, second frame from the ${c.extraFrom}` : '';
-  return `Size of the captured frame: ${how}${prev}${extra}`;
+  const by = c.trigger === 'auto' ? ', auto-captured' : c.trigger === 'tap' ? ', captured by tap' : '';
+  const grid = c.gridFit !== null ? `, grid fitted on the frame (${Math.round(c.gridFit * 100)}%)` : c.source === 'file' ? '' : ', grid from the live guide';
+  return `Size of the captured frame: ${how}${prev}${extra}${by}${grid}`;
 }
 
 function canvasUrl(canvas: HTMLCanvasElement): Promise<string> {
@@ -208,16 +215,23 @@ export function PageScan({
   const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const fitRef = useRef<{ last: FracBox | null; stable: number; misses: number; adviceKind: string | null; adviceFits: number }>({
+  const fitRef = useRef<{ last: FracBox | null; stable: number; misses: number; adviceKind: string | null; adviceFits: number; auto: AutoState }>({
     last: null,
     stable: 0,
     misses: 0,
     adviceKind: null,
     adviceFits: 0,
+    auto: AUTO_IDLE,
   });
   const resetFit = () => {
-    fitRef.current = { last: null, stable: 0, misses: 0, adviceKind: null, adviceFits: 0 };
+    fitRef.current = { last: null, stable: 0, misses: 0, adviceKind: null, adviceFits: 0, auto: AUTO_IDLE };
   };
+  /** Synchronous guard for capture(): a tap and the auto-capture must not both fire. */
+  const capturingRef = useRef(false);
+  /** Latest capture() for the auto-capture timer (the function closes over the current render). */
+  const captureRef = useRef<(trigger: 'tap' | 'auto') => Promise<void>>(async () => undefined);
+  /** When the preview last came up, for AUTO_ARM_DELAY_MS. */
+  const liveSinceRef = useRef(0);
   const cameraWanted = phase === 'capture' && !still && !scanning && !restoring;
 
   // A review interrupted by the app being killed: restore it.
@@ -367,9 +381,10 @@ export function PageScan({
         const advice = adviseCapture(metrics, !still);
         if (still) {
           patchPageSession({ frac: nf });
-          setFit({ confidence: raw.confidence, locked: true, metrics, advice });
+          setFit({ confidence: raw.confidence, locked: true, metrics, advice, ready: false });
           return;
         }
+        st.auto = autoStep(st.auto, { confidence: raw.confidence, frac: nf });
         st.stable = st.last && near(nf, st.last, LOCK_TOLERANCE) ? st.stable + 1 : 1;
         st.misses = 0;
         st.last = st.last ? lerp(st.last, nf, 0.5) : nf;
@@ -379,14 +394,23 @@ export function PageScan({
         st.adviceKind = kind;
         const confirmed = kind === null ? null : st.adviceFits >= ADVICE_FITS ? advice : undefined;
         patchPageSession({ frac: st.last });
-        setFit((p) => ({ confidence: raw.confidence, locked: st.stable >= LOCK_FITS, metrics, advice: confirmed === undefined ? (p?.advice ?? null) : confirmed }));
+        setFit((p) => {
+          const adv = confirmed === undefined ? (p?.advice ?? null) : confirmed;
+          return { confidence: raw.confidence, locked: st.stable >= LOCK_FITS, metrics, advice: adv, ready: autoReady(st.auto, adv === null) };
+        });
       } else if (still) {
         setFit(null);
-      } else if (++st.misses >= UNLOCK_MISSES) {
-        st.stable = 0;
-        st.adviceKind = null;
-        st.adviceFits = 0;
-        setFit((p) => (p && (p.locked || p.advice) ? { ...p, locked: false, advice: null } : p));
+      } else {
+        // One missed fit ends an auto-capture run; the lock survives a few.
+        st.auto = AUTO_IDLE;
+        if (++st.misses >= UNLOCK_MISSES) {
+          st.stable = 0;
+          st.adviceKind = null;
+          st.adviceFits = 0;
+          setFit((p) => (p && (p.locked || p.advice || p.ready) ? { ...p, locked: false, advice: null, ready: false } : p));
+        } else {
+          setFit((p) => (p?.ready ? { ...p, ready: false } : p));
+        }
       }
     };
     if (still) {
@@ -401,6 +425,20 @@ export function PageScan({
       window.clearInterval(id);
     };
   }, [phase, auto, scanning, still, live, visible, layout, cardMm, captureScale]);
+
+  /* ---------- auto-capture ---------- */
+
+  useEffect(() => {
+    if (live) liveSinceRef.current = performance.now();
+  }, [live]);
+  // The fit has held steady with nothing to fix: press the shutter, unless the preview only just came up.
+  const autoFire = settings.autoCapture && phase === 'capture' && !still && live && auto && !scanning && !capturing && !!fit?.ready;
+  useEffect(() => {
+    if (!autoFire) return;
+    const wait = Math.max(0, AUTO_ARM_DELAY_MS - (performance.now() - liveSinceRef.current));
+    const id = window.setTimeout(() => void captureRef.current('auto'), wait);
+    return () => window.clearTimeout(id);
+  }, [autoFire]);
 
   /* ---------- scanning ---------- */
 
@@ -540,14 +578,15 @@ export function PageScan({
    * this frame and (on Android) a second one; otherwise the frame is shown
    * with the guide for a check first.
    */
-  async function capture() {
+  async function capture(trigger: 'tap' | 'auto' = 'tap') {
     const video = videoRef.current;
-    if (!video || !video.videoWidth || !visible || !pageBox || capturing) return;
+    if (!video || !video.videoWidth || !visible || !pageBox || capturingRef.current) return;
+    capturingRef.current = true;
     setCapturing(true);
     const t0 = performance.now();
     const preview: Size = { w: video.videoWidth, h: video.videoHeight };
     const wasLocked = !!fit?.locked;
-    const wantExtra = wasLocked && frames > 1;
+    const wantExtra = frames > 1;
     // Remember where the page was, for the next scan from the same spot.
     update({ pageFrames: { ...settings.pageFrames, [layout.id]: boxToFrac(pageBox, visible) } });
     const photoMs: number[] = [];
@@ -599,8 +638,19 @@ export function PageScan({
         captured = { source: canvas, url: await canvasUrl(canvas), w: canvas.width, h: canvas.height };
       }
     } finally {
+      capturingRef.current = false;
       setCapturing(false);
     }
+    // The grid is fitted on the captured frame itself: the live guide says
+    // where the page was a moment ago, the frame says where it is now, so a
+    // hand that drifted between the last fit and the shutter costs nothing.
+    const t1 = performance.now();
+    const photoFit = fitGridOnSource(captured.source, searchRegion(box, captured.w, captured.h), layout, {
+      cardAspect: cardMm.w / cardMm.h,
+      sampleWidth: STILL_SAMPLE_WIDTH,
+    });
+    const fitMs = performance.now() - t1;
+    if (photoFit) box = photoFit.box;
     captured.capture = {
       source: captured.blob ? 'photo' : 'preview',
       preview,
@@ -610,21 +660,28 @@ export function PageScan({
       extraFrom,
       guidance: fit?.metrics ?? null,
       advice: fit?.advice?.kind ?? null,
+      trigger,
+      gridFit: photoFit?.confidence ?? null,
     };
     const c = captured.capture;
     console.info(
-      `[page] capture ${c.source} ${captured.w}×${captured.h} from preview ${preview.w}×${preview.h} in ${Math.round(c.ms)} ms` +
-        ` (photos ${photoMs.map((m) => Math.round(m)).join('/') || '-'} ms, extra frame: ${extraFrom ?? 'none'})`,
+      `[page] ${trigger} capture ${c.source} ${captured.w}×${captured.h} from preview ${preview.w}×${preview.h} in ${Math.round(c.ms)} ms` +
+        ` (photos ${photoMs.map((m) => Math.round(m)).join('/') || '-'} ms, extra frame: ${extraFrom ?? 'none'},` +
+        ` grid on the frame: ${photoFit ? `${Math.round(photoFit.confidence * 100)}% in ${Math.round(fitMs)} ms` : 'not found'})`,
     );
-    if (wasLocked) {
+    // Read at once when the frame itself shows the grid, when the live guide
+    // was locked on it, or when the user placed the guide by hand; otherwise
+    // show the frame with the guide for a check.
+    if (photoFit || wasLocked || !auto) {
       void runScan(captured, box, extra);
     } else {
-      // Not sure where the page is: show the frame with the guide for a check.
+      for (const f of extra) (f as { close?: () => void }).close?.();
       resetFit();
       patchPageSession({ still: captured, frac: boxToFrac(box, { x: 0, y: 0, w: captured.w, h: captured.h }), auto: true });
       setFit(null);
     }
   }
+  captureRef.current = capture;
 
   function scanStill() {
     if (!still || !pageBox) return;
@@ -832,7 +889,18 @@ export function PageScan({
     );
   }
 
-  const guideState: GuideState = still ? (auto ? 'still' : 'manual') : !auto ? 'manual' : fit?.locked ? 'locked' : 'searching';
+  const autoCapture = settings.autoCapture;
+  const guideState: GuideState = still
+    ? auto
+      ? 'still'
+      : 'manual'
+    : !auto
+      ? 'manual'
+      : fit?.ready && autoCapture
+        ? 'ready'
+        : fit?.locked
+          ? 'locked'
+          : 'searching';
   const advice = auto ? (fit?.advice ?? null) : null;
   const guideLabel = advice
     ? advice.label
@@ -844,18 +912,28 @@ export function PageScan({
         : 'Adjusted'
       : !auto
         ? 'Adjusted'
-        : fit?.locked
-          ? 'Page found'
-          : 'Finding page…';
+        : capturing
+          ? 'Capturing…'
+          : fit?.ready && autoCapture
+            ? 'Hold still…'
+            : fit?.locked
+              ? 'Page found'
+              : 'Finding page…';
   const hint = error
     ? null
     : advice
       ? advice.detail
       : still
         ? 'Check that every card sits in its cell. Drag the frame to move it or its corners to resize it, then scan.'
-        : fit?.locked
-          ? 'Page found. Hold still and capture.'
-          : 'Point the camera at the whole page. The grid snaps to the cards; drag it if it does not.';
+        : !auto
+          ? 'The frame stays where you put it. Capture when the cards sit in their cells.'
+          : fit?.locked
+            ? autoCapture
+              ? 'Page found. Hold still: it captures by itself.'
+              : 'Page found. Hold still and capture.'
+            : autoCapture
+              ? 'Point the camera at the whole page. It captures by itself once the grid holds steady, or tap Capture page any time.'
+              : 'Point the camera at the whole page. The grid snaps to the cards; drag it if it does not.';
 
   return (
     <div className="scan-page">
@@ -923,6 +1001,9 @@ export function PageScan({
               {l.label}
             </Chip>
           ))}
+          <Chip active={autoCapture} onClick={() => update({ autoCapture: !autoCapture })}>
+            Auto capture
+          </Chip>
         </div>
         {error ? (
           <div className="hint">

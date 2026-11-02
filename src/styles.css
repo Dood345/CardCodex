@@ -1658,11 +1658,18 @@ textarea:focus {
     width 0.2s ease-out,
     height 0.2s ease-out;
 }
-.page-guide-layer.locked .page-guide {
+.page-guide-layer.locked .page-guide,
+.page-guide-layer.ready .page-guide {
   border-color: var(--ok);
   box-shadow:
     0 0 0 9999px rgba(0, 0, 0, 0.35),
     0 0 0 3px rgba(74, 222, 128, 0.35);
+}
+.page-guide-layer.ready .page-guide {
+  border-width: 3px;
+  box-shadow:
+    0 0 0 9999px rgba(0, 0, 0, 0.35),
+    0 0 0 6px rgba(74, 222, 128, 0.5);
 }
 .page-guide-layer.manual .page-guide,
 .page-guide-layer.still .page-guide {
@@ -1713,7 +1720,8 @@ textarea:focus {
   white-space: nowrap;
   pointer-events: none;
 }
-.page-guide-layer.locked .guide-badge {
+.page-guide-layer.locked .guide-badge,
+.page-guide-layer.ready .guide-badge {
   background: rgba(22, 101, 52, 0.85);
 }
 .page-guide-layer .guide-badge.warn {

@@ -28,6 +28,8 @@ export interface Settings {
    * a binder photographed from the same spot needs no lining up.
    */
   pageFrames: Record<string, { x: number; y: number; w: number; h: number }>;
+  /** Binder-page mode presses the shutter by itself once the grid holds steady (src/scanner/autocapture.ts). */
+  autoCapture: boolean;
   /** The guided tour was completed or skipped. */
   tourDone: boolean;
   /** Self-hosted mirror of the YGOPRODeck image folders ("" = YGOPRODeck itself). */
@@ -44,6 +46,7 @@ const DEFAULTS: Settings = {
   scanMode: 'cards',
   pageLayout: '3x3',
   pageFrames: {},
+  autoCapture: true,
   tourDone: false,
   ygoImageBase: '',
 };

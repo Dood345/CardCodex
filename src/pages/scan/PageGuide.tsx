@@ -8,7 +8,8 @@ import type { Box } from '@/scanner';
 import type { PageLayout } from '@/scanner/page';
 import { pocketBoxesIn } from '@/scanner/page';
 
-export type GuideState = 'searching' | 'locked' | 'manual' | 'still';
+/** 'ready': the fit has held steady and the shutter is about to fire by itself. */
+export type GuideState = 'searching' | 'locked' | 'ready' | 'manual' | 'still';
 
 type Handle = 'move' | 'nw' | 'ne' | 'sw' | 'se';
 
