@@ -118,7 +118,7 @@ export function Binder({
               <CardTile key={card.id} card={card} set={set} entry={collection.get(card.id)} />
             ))}
             {Array.from({ length: perPage - pagePockets.length }, (_, k) => (
-              <div key={`empty-${k}`} className="pocket-empty" aria-hidden="true" />
+              <div key={`empty-${k}`} className="binder-empty" aria-hidden="true" />
             ))}
           </section>
         ))}

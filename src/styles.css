@@ -2300,12 +2300,14 @@ textarea:focus {
 .binder::-webkit-scrollbar {
   display: none;
 }
+/* minmax(0, 1fr), not 1fr: an empty pocket's aspect ratio would otherwise set a minimum column width from the row height, squeezing the first column of the last page. */
 .binder-page {
   flex: 0 0 100%;
   scroll-snap-align: start;
   scroll-snap-stop: always;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding: 10px;
   background: var(--bg-elev);
@@ -2315,13 +2317,13 @@ textarea:focus {
   contain-intrinsic-size: auto 600px;
 }
 .binder-page.cols-4 {
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
 }
 .binder-page .card-tile {
   content-visibility: visible;
 }
-.pocket-empty {
+.binder-empty {
   aspect-ratio: 63 / 88;
   border-radius: 8px;
   border: 1px dashed var(--border);
