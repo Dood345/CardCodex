@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
- * End-to-end binder-page benchmark: scanPage (OCR with Tesseract + artwork hashes + the matcher) on
- * the fixture photos in scripts/fixtures/binder-pages/, the way the app runs it (headless Chrome
- * through this repo's Vite dev server, like grid-bench and hash-bench). Per pocket: the candidate,
+ * End-to-end binder-page benchmark: scanPage (OCR with Tesseract + artwork hashes + the game's
+ * matcher) on binder pages, the way the app runs it (headless Chrome through this repo's Vite dev
+ * server, like grid-bench and hash-bench). Pokémon runs on the fixture photos in
+ * scripts/fixtures/binder-pages/; Yu-Gi-Oh! (no real photos yet) on the synthetic page
+ * scripts/synth-page.mjs composes from the cached YGOPRODeck renders. Per pocket: the candidate,
  * whether it is the expected card, whether it was called confident; per photo: exact, confident,
  * confident-and-wrong, expected among the alternatives, page time and the share spent on hashing.
  *
  *   node scripts/page-bench.mjs                   # OCR + artwork (the shipped pipeline)
+ *   node scripts/page-bench.mjs --game ygo        # Yu-Gi-Oh! on the synthetic page (expected = passcodes: any printing counts)
  *   node scripts/page-bench.mjs --no-hash         # OCR only (the baseline)
  *   node scripts/page-bench.mjs --no-strip        # without the magnified number-strip re-read
  *   node scripts/page-bench.mjs --json            # raw records
@@ -20,9 +23,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
+import { synthPage } from './synth-page.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = path.join(root, 'scripts', 'fixtures', 'binder-pages');
+const CACHE = path.resolve(process.env.CARDCODEX_CACHE_DIR || path.join(root, 'scripts', '.cache'));
 
 /** Row-major catalog ids per fixture photo (mirrors the fixtures README). */
 const EXPECTED = {
@@ -46,6 +51,7 @@ const flag = (name) => {
   return true;
 };
 const chromeOpt = opt('--chrome', process.env.CHROME_PATH);
+const game = opt('--game', 'pokemon');
 const layout = opt('--layout', '3x3');
 const jsonOnly = flag('--json');
 const noHash = flag('--no-hash');
@@ -54,15 +60,46 @@ if (flag('--help') || flag('-h')) {
   console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^\/\*\*\n|^ \* ?/gm, ''));
   process.exit(0);
 }
+if (game !== 'pokemon' && game !== 'ygo') {
+  console.error(`unknown game ${game}: --game pokemon | ygo`);
+  process.exit(2);
+}
+const hashesFile = path.join(root, 'public', 'data', game === 'ygo' ? path.join('ygo', 'hashes.json') : 'hashes.json');
+if (!noHash && !fs.existsSync(hashesFile)) {
+  console.error(`${path.relative(root, hashesFile)} missing: run \`npm run hashes${game === 'ygo' ? ':ygo' : ''}\` first (or pass --no-hash)`);
+  process.exit(2);
+}
 let photos = args.map((p) => path.resolve(root, p));
-if (!photos.length) photos = Object.keys(EXPECTED).map((f) => path.join(FIXTURES, f));
+if (!photos.length) {
+  if (game === 'ygo') {
+    // The synthetic page from the cached renders (scripts/synth-page.mjs), made on first use.
+    const page = path.join(CACHE, 'synth-pages', `ygo-${layout}.jpg`);
+    if (!fs.existsSync(page)) {
+      const [cols, rows] = layout.split('x').map(Number);
+      const { buffer, meta } = await synthPage({ game, cols, rows, cacheDir: CACHE });
+      fs.mkdirSync(path.dirname(page), { recursive: true });
+      fs.writeFileSync(page, buffer);
+      fs.writeFileSync(page.replace(/\.jpg$/, '.json'), JSON.stringify(meta, null, 2) + '\n');
+      if (!jsonOnly) console.log(`made ${path.relative(root, page)} (${meta.width}×${meta.height})`);
+    }
+    photos = [page];
+  } else {
+    photos = Object.keys(EXPECTED).map((f) => path.join(FIXTURES, f));
+  }
+}
 for (const p of photos) if (!fs.existsSync(p)) {
   console.error(`not found: ${p}`);
   process.exit(2);
 }
-if (!noHash && !fs.existsSync(path.join(root, 'public', 'data', 'hashes.json'))) {
-  console.error('public/data/hashes.json missing: run `npm run hashes` first (or pass --no-hash)');
-  process.exit(2);
+// Expected ids per photo: the fixtures' list, or a `<photo>.json` sidecar with `ids` (row-major), as synth-page.mjs writes.
+for (const p of photos) {
+  const name = path.basename(p);
+  if (EXPECTED[name]) continue;
+  const sidecar = p.replace(/\.[^.]+$/, '') + '.json';
+  if (fs.existsSync(sidecar)) {
+    const meta = JSON.parse(fs.readFileSync(sidecar, 'utf8'));
+    if (Array.isArray(meta.ids)) EXPECTED[name] = meta.ids.map(String);
+  }
 }
 
 function findChrome() {
@@ -126,6 +163,7 @@ const base = server.resolvedUrls.local[0];
 const query = new URLSearchParams({
   imgs: photos.map(servedPath).join(','),
   expected: JSON.stringify(EXPECTED),
+  game,
   layout,
   hash: noHash ? '0' : '1',
   strip: noStrip ? '0' : '1',
@@ -134,10 +172,10 @@ const query = new URLSearchParams({
 const url = `${base}scripts/page-bench.html?${query}`;
 
 const chrome = findChrome();
-// Own profile per mode so an OCR-only and a hash run can go in parallel.
-const profile = path.join(root, 'scripts', '.cache', `chrome-profile-page${noHash ? '-ocr' : ''}`);
+// Own profile per mode and game so an OCR-only and a hash run can go in parallel.
+const profile = path.join(root, 'scripts', '.cache', `chrome-profile-page${noHash ? '-ocr' : ''}${game === 'ygo' ? '-ygo' : ''}`);
 fs.mkdirSync(profile, { recursive: true });
-if (!jsonOnly) console.log(`vite ${base} · ${path.basename(chrome)} headless · ${photos.length} photo(s), layout ${layout}, hash ${noHash ? 'off' : 'on'}, strip ${noStrip ? 'off' : 'on'}`);
+if (!jsonOnly) console.log(`vite ${base} · ${path.basename(chrome)} headless · ${game} · ${photos.length} photo(s), layout ${layout}, hash ${noHash ? 'off' : 'on'}, strip ${noStrip ? 'off' : 'on'}`);
 const proc = spawn(
   chrome,
   ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-extensions', '--mute-audio', `--user-data-dir=${profile}`, '--window-size=1280,900', url],
@@ -160,7 +198,7 @@ if (jsonOnly) {
 }
 
 const kb = (b) => (b === null || b === undefined ? '?' : `${Math.round(b / 1024)} KB`);
-console.log(`matcher built in ${results.matcherMs} ms` + (results.table ? `; hash table: ${results.table.ids} ids, loaded in ${results.table.loadMs} ms, words ${kb(results.table.wordsBytes)}, heap +${kb(results.table.heapDeltaBytes)}` : '') + '\n');
+console.log(`${results.game} matcher built in ${results.matcherMs} ms` + (results.table ? `; hash table: ${results.table.ids} ids (${results.table.spec}), loaded in ${results.table.loadMs} ms, words ${kb(results.table.wordsBytes)}, heap +${kb(results.table.heapDeltaBytes)}` : '') + '\n');
 const totals = { n: 0, exact: 0, confident: 0, confidentRight: 0, confidentWrong: 0, inAlts: 0, pageMs: 0, hashMs: 0 };
 for (const img of results.images) {
   const name = path.basename(img.image);
@@ -184,7 +222,7 @@ for (const img of results.images) {
     t.confidentWrong += p.confident && !p.exact ? 1 : 0;
     t.inAlts += p.inAlternatives ? 1 : 0;
   }
-  console.log(`  exact ${t.exact}/9 · confident ${t.confident} (right ${t.confidentRight}, wrong ${t.confidentWrong}) · expected among alternatives ${t.inAlts}\n`);
+  console.log(`  exact ${t.exact}/${img.pockets.filter((p) => p.expected).length} · confident ${t.confident} (right ${t.confidentRight}, wrong ${t.confidentWrong}) · expected among alternatives ${t.inAlts}\n`);
   totals.n += img.pockets.filter((p) => p.expected).length;
   for (const k of ['exact', 'confident', 'confidentRight', 'confidentWrong', 'inAlts']) totals[k] += t[k];
   totals.pageMs += img.pageMs;
@@ -193,5 +231,5 @@ for (const img of results.images) {
 console.log(
   `all: exact ${totals.exact}/${totals.n} · confident ${totals.confident} (right ${totals.confidentRight}, wrong ${totals.confidentWrong}) · expected among alternatives ${totals.inAlts} · ${(totals.pageMs / 1000).toFixed(1)} s for ${results.images.length} pages (hash ${(totals.hashMs / 1000).toFixed(2)} s)`,
 );
-console.log('\nJSON: node scripts/page-bench.mjs --json; expected cards: scripts/fixtures/binder-pages/README.md');
+console.log(`\nJSON: node scripts/page-bench.mjs --game ${game} --json; expected cards: ${game === 'ygo' ? 'the .json sidecar of each page (scripts/synth-page.mjs); a passcode counts for any of its printings' : 'scripts/fixtures/binder-pages/README.md'}`);
 process.exit(results.images.some((r) => r.error) ? 1 : 0);

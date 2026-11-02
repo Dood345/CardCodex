@@ -3,11 +3,14 @@
  * nearest hashes of a pocket into the OCR candidates.
  *
  * The hash names the *picture*; printings that reuse it (Base Set / Base Set 2
- * / Legendary Collection, Evolutions reprints) sit a few bits apart, so the
- * printing has to come from the OCR'd collector number or set code. Hence the
- * merge (`mergeArtworkEvidence`): a hash match ranks that picture's printings
+ * / Legendary Collection, Evolutions reprints; every Yu-Gi-Oh! printing of a
+ * passcode) sit a few bits apart or are one entry, so the printing has to
+ * come from the OCR'd collector number or set code. Hence the merge
+ * (`mergeArtworkEvidence`): a hash match ranks that picture's printings
  * first; a number or set code read among them makes the pocket confident; a
- * match alone is an unsure candidate with the printings as alternatives.
+ * match alone is an unsure candidate with the printings as alternatives,
+ * newest first. The hits arrive keyed by card id (a Yu-Gi-Oh! passcode hit is
+ * expanded into its printings before the merge, see page.ts).
  *
  * Distances (Hamming, of 128 bits) measured on the fixture pages
  * (scripts/hash-bench.mjs): the right card at 5–14 bits (a textured holo at
@@ -61,8 +64,10 @@ interface Pooled {
   score: number;
 }
 
-const PRINTING_EVIDENCE = /^(number|set) /;
-const SPECIES_EVIDENCE = /^(name|dex) /;
+/** OCR evidence that names the printing: a Pokémon collector number or set code, a Yu-Gi-Oh! set code ("code LOB-EN005"). */
+const PRINTING_EVIDENCE = /^(number|set|code) /;
+/** OCR evidence that names the card but not its printing: a name, a Pokédex number, a Yu-Gi-Oh! passcode. */
+const SPECIES_EVIDENCE = /^(name|dex|passcode) /;
 
 /**
  * Merge a pocket's OCR candidates with the nearest artwork hashes (best
@@ -150,9 +155,11 @@ export function mergeArtworkEvidence(ocr: readonly ScanCandidate[], hits: readon
 
 /* ---------- loading the table ---------- */
 
-/** The data file holding a game's hashes, or null when the game has none (Yu-Gi-Oh! is not hashed yet). */
+/** The data file (under public/data) holding a game's hashes, or null when the game has none. */
 export function hashFileFor(game: string): string | null {
-  return game === 'pokemon' ? 'hashes.json' : null;
+  if (game === 'pokemon') return 'hashes.json';
+  if (game === 'ygo') return 'ygo/hashes.json';
+  return null;
 }
 
 const tables = new Map<string, Promise<HashTable | null>>();
@@ -165,7 +172,8 @@ const tables = new Map<string, Promise<HashTable | null>>();
  * The file is fetched like the catalogs (`fetchDataJson` in src/data/catalog.ts):
  * on the web as `hashes.json?v=<hash>` from public/data/manifest.json with
  * `force-cache`, so a 630 KB table that has not changed is never downloaded
- * twice and a rebuilt one is a new URL. `npm run hashes` rewrites the manifest.
+ * twice and a rebuilt one is a new URL. `npm run hashes` / `npm run hashes:ygo`
+ * rewrite the manifest.
  */
 export function loadHashTable(game: string): Promise<HashTable | null> {
   const file = hashFileFor(game);

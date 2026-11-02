@@ -165,9 +165,10 @@ export interface PocketScan {
   /** Frames the pocket was read from. */
   frames: number;
   /**
-   * Nearest catalog hashes to the pocket's picture, best first (Hamming
-   * distance of 128 bits; ≤ 24 is a match), best over the frames. Absent when
-   * the game has no hash table or `artwork` was false.
+   * Nearest hash-table entries to the pocket's picture, best first (Hamming
+   * distance of 128 bits; ≤ 24 is a match), best over the frames; ids as the
+   * table keys them (Pokémon card ids, Yu-Gi-Oh! passcodes). Absent when the
+   * game has no hash table or `artwork` was false.
    */
   artwork?: HashHit[];
   /** Time spent sampling and matching the picture, ms (included in `ms`). */
@@ -357,6 +358,26 @@ export function mergePocketCandidates(perFrame: readonly (readonly ScanCandidate
 }
 
 /**
+ * Hash-table hits as card hits, for `mergeArtworkEvidence`: a Pokémon entry is
+ * a card; a Yu-Gi-Oh! entry is a passcode whose picture every printing of the
+ * card shows, so it becomes one hit per printing (same distance, nearest
+ * first; the merge then ranks them by set recency). Pure.
+ */
+export function expandArtworkHits(hits: readonly HashHit[], matcher: Pick<ScanMatcher, 'artworkCards'>): HashHit[] {
+  if (!matcher.artworkCards) return [...hits];
+  const out: HashHit[] = [];
+  const seen = new Set<string>();
+  for (const h of hits) {
+    for (const id of matcher.artworkCards(h.id)) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      out.push({ ...h, id });
+    }
+  }
+  return out;
+}
+
+/**
  * Crop `box` from `source` into a new canvas, upscaled so its width is at least
  * `minWidth`. Crop straight from the full-resolution source (an ImageBitmap of
  * the photo): every intermediate resample blurs the tiny number line.
@@ -406,6 +427,10 @@ export async function scanPage(
   // Artwork evidence needs the table and a matcher that can name cards by id.
   const lookup = matcher.lookup?.bind(matcher);
   const table = opts.artwork === false || !lookup ? null : (opts.artwork ?? (await loadHashTable(matcher.game)));
+  if (table && table.spec.game !== matcher.game) {
+    console.warn(`[scanner] artwork table for ${table.spec.game} ignored by the ${matcher.game} matcher`);
+  }
+  const usable = table && table.spec.game === matcher.game ? table : null;
   for (const pocket of pockets) {
     if (opts.signal?.aborted) break;
     const started = performance.now();
@@ -424,14 +449,15 @@ export async function scanPage(
       // the cell, which the grid places within a pocket gap of it) and matched
       // before the OCR, so a hit can spare the magnified strip read.
       let hits: HashHit[] = [];
-      if (table && lookup) {
+      if (usable && lookup) {
         const t = performance.now();
-        hits = matchPocket(table, samplePocketLuma(src, padded), windowOf(pocket.box, padded), { k: 12 }).hits;
+        hits = matchPocket(usable, samplePocketLuma(src, padded), windowOf(pocket.box, padded), { k: 12 }).hits;
         hashMs += performance.now() - t;
         for (const h of hits) if (h.distance < (artwork.get(h.id)?.distance ?? Infinity)) artwork.set(h.id, h);
       }
       const region = { x: 0, y: 0, w: crop.width, h: crop.height };
-      const withArtwork = (cands: ScanCandidate[]) => (hits.length && lookup ? mergeArtworkEvidence(cands, hits, lookup, region) : cands);
+      const cardHits = expandArtworkHits(hits, matcher);
+      const withArtwork = (cands: ScanCandidate[]) => (cardHits.length && lookup ? mergeArtworkEvidence(cands, cardHits, lookup, region) : cands);
       let lines: RecognizedLine[] = [];
       let cands: ScanCandidate[] = [];
       try {
@@ -466,7 +492,7 @@ export async function scanPage(
       ms: performance.now() - started,
       cardBox,
       frames: perFrame.length,
-      ...(table ? { artwork: [...artwork.values()].sort((a, b) => a.distance - b.distance), hashMs } : {}),
+      ...(usable ? { artwork: [...artwork.values()].sort((a, b) => a.distance - b.distance), hashMs } : {}),
     });
     opts.onProgress?.(results.length, pockets.length);
   }

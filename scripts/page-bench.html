@@ -3,15 +3,15 @@
 <title>CardCodex page bench</title>
 <!--
   End-to-end binder-page benchmark: the real pipeline on the fixture photos — fitGridOnSource, then
-  scanPage with the Tesseract recognizer and the Pokémon matcher (OCR + artwork hashes) — and, per
+  scanPage with the Tesseract recognizer and the game's matcher (OCR + artwork hashes) — and, per
   pocket, whether the candidate is the expected card and whether it was called confident. Served by
   the Vite dev server, which compiles the TS:
 
     npm run dev
     http://localhost:5173/scripts/page-bench.html
       ?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg
-      &expected={"fold8-9pocket.jpg":["swsh10.5-016",…]}   (row-major catalog ids)
-      &hash=1  &strip=1  &layout=3x3  &report=/__page-bench     (all optional)
+      &expected={"fold8-9pocket.jpg":["swsh10.5-016",…]}   (row-major: catalog ids, or Yu-Gi-Oh! passcodes when the printing is unknown)
+      &game=pokemon  &hash=1  &strip=1  &layout=3x3  &report=/__page-bench     (all optional)
 
   `hash=0` runs scanPage with `artwork: false` (the OCR-only baseline). `report` POSTs the JSON
   there when done (scripts/page-bench.mjs); results are also in window.__pageBench.
@@ -24,28 +24,37 @@
 <pre id="out">running…</pre>
 <script type="module">
   import { fitGridOnSource } from '/src/scanner/grid.ts';
-  import { scanPage, pageLayout, DEFAULT_CARD_MM } from '/src/scanner/page.ts';
+  import { scanPage, pageLayout } from '/src/scanner/page.ts';
   import { createPokemonMatcher } from '/src/scanner/match.ts';
+  import { createYgoMatcher } from '/src/scanner/ygo/match.ts';
+  import { expandYgoCatalog } from '/src/games/ygo/catalog.ts';
   import { TesseractRecognizer } from '/src/scanner/tesseract.ts';
   import { loadHashTable } from '/src/scanner/artwork.ts';
 
   const q = new URLSearchParams(location.search);
+  const game = q.get('game') || 'pokemon';
   const DEFAULT_IMAGES = ['scripts/fixtures/binder-pages/fold8-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket-b.jpg'];
   const images = (q.get('imgs') || DEFAULT_IMAGES.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
   const expectedByImage = JSON.parse(q.get('expected') || '{}');
   const layout = pageLayout(q.get('layout') || '3x3');
   const useHash = q.get('hash') !== '0';
   const strip = q.get('strip') !== '0';
-  const aspect = DEFAULT_CARD_MM.w / DEFAULT_CARD_MM.h;
+  const cardMm = game === 'ygo' ? { w: 59, h: 86 } : { w: 63, h: 88 };
+  const aspect = cardMm.w / cardMm.h;
   const out = document.getElementById('out');
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const heap = () => performance.memory?.usedJSHeapSize ?? null;
 
-  const catalog = await fetch('/data/catalog.json', { cache: 'no-cache' }).then((r) => r.json());
+  const raw = await fetch(game === 'ygo' ? '/data/ygo/catalog.json' : '/data/catalog.json', { cache: 'no-cache' }).then((r) => r.json());
+  const catalog = game === 'ygo' ? expandYgoCatalog(raw) : raw;
   const t0 = performance.now();
-  const matcher = createPokemonMatcher(catalog);
+  const matcher = game === 'ygo' ? createYgoMatcher(catalog) : createPokemonMatcher(catalog);
   const matcherMs = Math.round(performance.now() - t0);
-  const nameOf = (id) => catalog.cards.find((c) => c.id === id)?.name ?? '?';
+  const cardsById = new Map(catalog.cards.map((c) => [c.id, c]));
+  const nameOf = (id) => cardsById.get(id)?.name ?? raw.cards?.find((c) => String(c.pc) === id)?.name ?? '?';
+  // An expected entry is a catalog id, or (Yu-Gi-Oh!, when the printing is unknown) a passcode: any printing of the
+  // card counts, also for an alternate artwork's passcode (the catalog does not say which printing carries which art).
+  const matches = (card, exp) => !!card && !!exp && (card.id === exp || (card.pc !== undefined && String(card.pc) === exp) || (card.alt ?? []).some((a) => String(a) === exp));
 
   // The table: loaded through the scanner's own loader, timed and sized.
   let table = false;
@@ -53,16 +62,16 @@
   if (useHash) {
     const h0 = heap();
     const t1 = performance.now();
-    table = await loadHashTable('pokemon');
+    table = await loadHashTable(game);
     const loadMs = Math.round(performance.now() - t1);
     const h1 = heap();
     tableInfo = table
-      ? { ids: table.ids.length, loadMs, heapDeltaBytes: h0 !== null && h1 !== null ? h1 - h0 : null, wordsBytes: table.words.byteLength }
+      ? { ids: table.ids.length, spec: table.spec.id, loadMs, heapDeltaBytes: h0 !== null && h1 !== null ? h1 - h0 : null, wordsBytes: table.words.byteLength }
       : { error: 'no table' };
   }
 
   const recognizer = new TesseractRecognizer({ langPath: '/tessdata' });
-  const results = { hash: useHash, strip, matcherMs, table: tableInfo, images: [] };
+  const results = { game, hash: useHash, strip, matcherMs, table: tableInfo, images: [] };
 
   for (const image of images) {
     const url = image.startsWith('/') || image.startsWith('http') ? image : '/' + image;
@@ -81,7 +90,7 @@
       rec.fit = { confidence: r3(fit.confidence) };
       const t2 = performance.now();
       const scans = await scanPage(bmp, layout, recognizer, matcher, {
-        geometry: { page: fit.box },
+        geometry: { page: fit.box, cardMm },
         artwork: useHash ? table : false,
         numberStrip: strip,
         onProgress: (done, total) => (out.textContent = `${name}: ${done}/${total}\n` + JSON.stringify(results, null, 1)),
@@ -91,15 +100,14 @@
       for (const p of scans) {
         const exp = expected[p.pocket.index];
         const got = p.candidate?.card.id;
-        const alts = p.alternatives.map((a) => a.card.id);
         rec.pockets.push({
           index: p.pocket.index,
           expected: exp,
           expectedName: exp ? nameOf(exp) : undefined,
           got,
           gotName: got ? nameOf(got) : undefined,
-          exact: !!exp && got === exp,
-          inAlternatives: !!exp && got !== exp && alts.includes(exp),
+          exact: matches(p.candidate?.card, exp),
+          inAlternatives: !!exp && !matches(p.candidate?.card, exp) && p.alternatives.some((a) => matches(a.card, exp)),
           confident: !!p.candidate?.confident,
           score: p.candidate ? r3(p.candidate.score) : null,
           margin: p.candidate ? r3(p.candidate.margin) : null,

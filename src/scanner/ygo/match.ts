@@ -413,8 +413,26 @@ export function scanYgoLines(lines: readonly RecognizedLine[], index: YgoScanInd
   return matchYgo(parseYgoLines(lines, index.parseContext), index);
 }
 
-/** The Yu-Gi-Oh! matcher over an index built once per catalog. */
+/**
+ * The Yu-Gi-Oh! matcher over an index built once per catalog. Artwork hashes
+ * (public/data/ygo/hashes.json) are keyed by passcode, the picture's own id:
+ * `artworkCards` turns a hit into every printing of the card (an alternate
+ * artwork's passcode resolves to the same printings; the catalog does not say
+ * which printing carries which art), and `lookup` takes a printing id or a
+ * passcode (→ its newest printing).
+ */
 export function createYgoMatcher(catalog: Catalog): ScanMatcher {
   const index = buildYgoScanIndex(catalog);
-  return { game: 'ygo', scanLines: (lines) => scanYgoLines(lines, index) };
+  const cardById = new Map(catalog.cards.map((c) => [c.id, c]));
+  const printings = (id: string) => (/^\d+$/.test(id) ? index.byPasscode.get(Number(id)) : undefined) ?? [];
+  return {
+    game: 'ygo',
+    scanLines: (lines) => scanYgoLines(lines, index),
+    lookup: (id) => {
+      const card = cardById.get(id) ?? printings(id)[0];
+      const set = card && index.base.setById.get(card.set);
+      return card && set ? { card, set } : undefined;
+    },
+    artworkCards: (id) => printings(id).map((c) => c.id),
+  };
 }
