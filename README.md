@@ -31,7 +31,8 @@ with Capacitor. Your collection lives only on your device.
   per-card copy count with optional variant breakdown (normal / holo / reverse / other), wishlist
   flag, free-text note, and every other printing of the same card.
 - **Collection** – totals (cards, unique, species, sets, wanted), owned cards grouped by set, and a
-  wishlist tab. Export / import a JSON backup from Settings.
+  wishlist tab. Export / import a JSON backup from Settings (on Android the export lands in the
+  Downloads folder).
 - **Scan** – frame one card and tap the shutter: a full-resolution photo is read on the device (the
   card name, HP and the printed number/set code against the catalog, and the picture against the
   artwork table) and the best match is listed with its alternatives, each one tap to add; the next
@@ -58,7 +59,7 @@ with Capacitor. Your collection lives only on your device.
   a copy counter, so pockets holding several copies in one sleeve get the right count, wrong guesses
   can be swapped from the alternatives (or any card searched for), and empty pockets are skipped.
   One tap adds the whole page; the grid can be adjusted and the same frame rescanned, and "Save
-  capture" shares the frame with a report of what was read, for pages that scan badly. Each pocket
+  capture" saves the frame and a report of what was read (to Downloads on Android), for pages that scan badly. Each pocket
   is read with a margin, tightened to the card, and its number line read again magnified; on
   Android two frames are captured and their reads merged. "Capture page" takes a full-resolution
   photo through the camera's still pipeline (4032×3024 on a 12 MP phone) rather than copying the

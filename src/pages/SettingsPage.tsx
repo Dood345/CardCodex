@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { saveFile, savedMessage } from '@/app/saveFile';
 import { useCatalog, useGame } from '@/app/context';
-import { isNative } from '@/app/platform';
 import { useSettings, type Theme, type TileSize } from '@/app/settings';
 import { openTour } from '@/app/tourState';
 import { PAGE_LAYOUTS } from '@/scanner/page';
@@ -41,25 +41,11 @@ export default function SettingsPage() {
     const json = JSON.stringify(data, null, 2);
     const name = `cardcodex-collection-${data.exportedAt.slice(0, 10)}.json`;
     try {
-      if (isNative() && 'share' in navigator && 'canShare' in navigator) {
-        const file = new File([json], name, { type: 'application/json' });
-        if ((navigator as Navigator & { canShare: (d: ShareData) => boolean }).canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: 'CardCodex collection' });
-          return;
-        }
-      }
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast(`Exported ${data.entries.length} entries`);
+      // Android: the public Downloads folder (src/app/saveFile.ts); browser: a download.
+      const saved = await saveFile(new Blob([json], { type: 'application/json' }), name);
+      showToast(`${savedMessage(saved, name)} · ${data.entries.length} entries`, 4000);
     } catch {
-      // Fallback for WebViews that block downloads: show the JSON to copy.
+      // Nowhere to write (a denied permission, an old WebView): show the JSON to copy.
       setExportText(json);
     }
   }

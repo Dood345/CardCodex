@@ -50,6 +50,7 @@ import {
   type PocketEntry,
 } from '@/scanner/page';
 import { probePhotoSize, takePhoto } from '@/scanner/photo';
+import { saveFile, savedMessage } from '@/app/saveFile';
 import { useBackHandler } from '@/ui/back';
 import { Chip } from '@/ui/components';
 import { CameraIcon, CloseIcon, MinusIcon, PlusIcon } from '@/ui/icons';
@@ -549,24 +550,15 @@ export function PageScan({
       `cardcodex-page-${stamp}.json`,
       { type: 'application/json' },
     );
-    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    // Android: the public Downloads folder (src/app/saveFile.ts); browser: two downloads.
     try {
-      if (isNative() && nav.share && nav.canShare?.({ files: [image, report] })) {
-        await nav.share({ files: [image, report], title: 'CardCodex page capture' });
-        setNotice('Capture shared.');
-        return;
-      }
+      const saved = await saveFile(image, image.name);
+      await saveFile(report, report.name);
+      setNotice(`${savedMessage(saved, image.name)} and its report.`);
     } catch (e) {
       if ((e as { name?: string })?.name === 'AbortError') return;
+      setNotice(`Could not save the capture: ${e instanceof Error ? e.message : String(e)}`);
     }
-    for (const f of [image, report]) {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(f);
-      a.download = f.name;
-      a.click();
-      window.setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    }
-    setNotice(`Saved ${image.name} and its report.`);
   }
 
   /** Copy of the current video frame (grabFrame reuses one canvas; the scan must own its pixels). */
