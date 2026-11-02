@@ -65,6 +65,8 @@ const RUNNER_UP_MIN = 0.12;
 const RUNNER_UPS = 2;
 /** Alternatives listed under a still's candidate: the photo flow's match options. */
 const STILL_RUNNER_UPS = 3;
+/** Rows the start screen lists of what the scanner added (this session, or earlier from the log); the sheet has the rest. */
+const START_LIST_MAX = 3;
 /** Margin around the card guide kept in a snapped photo's crop (share of the guide). */
 const SNAP_CROP_PAD = 0.25;
 /** How long the "last added" stepper stays after the last interaction. */
@@ -147,11 +149,15 @@ export default function ScanPage() {
       .toArray()
       .then((rows) => {
         if (cancelled || getScanSession().logAdds.length) return;
-        const list = aggregateLog(rows, (id) => {
-          const card = index.cardsById.get(id);
-          const set = card && index.setsById.get(card.set);
-          return card && set ? { card, set } : undefined;
-        });
+        const list = aggregateLog(
+          rows,
+          (id) => {
+            const card = index.cardsById.get(id);
+            const set = card && index.setsById.get(card.set);
+            return card && set ? { card, set } : undefined;
+          },
+          START_LIST_MAX,
+        );
         if (list.length) patchScanSession({ logAdds: list });
       })
       .catch(() => undefined);
@@ -501,7 +507,16 @@ export default function ScanPage() {
           {(added.length > 0 || logAdds.length > 0) && (
             <div className="scan-added">
               <div className="scan-section-label">{added.length ? 'Added this session' : 'Recently added with the scanner'}</div>
-              <SessionList added={added.length ? added : logAdds} collection={collection} mode={added.length ? 'session' : 'log'} />
+              <SessionList
+                added={(added.length ? added : logAdds).slice(0, START_LIST_MAX)}
+                collection={collection}
+                mode={added.length ? 'session' : 'log'}
+              />
+              {added.length > START_LIST_MAX && (
+                <button type="button" className="link-btn" onClick={() => setSessionOpen(true)}>
+                  All {added.length} cards added this session
+                </button>
+              )}
             </div>
           )}
         </div>
