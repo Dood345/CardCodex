@@ -15,6 +15,7 @@ import type { CatalogCard, CatalogSet } from '@/data/types';
 import type { ScanAlternative, ScanCandidate } from '@/scanner';
 import type { AdviceKind, GuidanceMetrics } from '@/scanner/guidance';
 import type { FracBox, PageSource, PocketScan } from '@/scanner/page';
+import { addToSession, type SessionAdd } from './session-list';
 
 export interface Recent {
   card: CatalogCard;
@@ -102,6 +103,8 @@ export interface ScanSession {
   /** Camera view open (either mode). */
   armed: boolean;
   recent: Recent[];
+  /** Cards added through the scanner this session (session-list.ts), newest first. */
+  added: SessionAdd[];
   still: Still | null;
   page: PageSession | null;
 }
@@ -117,7 +120,7 @@ export const EMPTY_PAGE: PageSession = {
   frameFrac: null,
 };
 
-let state: ScanSession = { game: '', armed: false, recent: [], still: null, page: null };
+let state: ScanSession = { game: '', armed: false, recent: [], added: [], still: null, page: null };
 const listeners = new Set<() => void>();
 
 function emit(): void {
@@ -138,6 +141,18 @@ export function patchPageSession(patch: Partial<PageSession>): void {
   emit();
 }
 
+/** Count `qty` more copies of `card` added this session (negative for an undo). */
+export function recordAdded(card: CatalogCard, set: CatalogSet, qty: number): void {
+  state = { ...state, added: addToSession(state.added, card, set, qty, Date.now()) };
+  emit();
+}
+
+/** Start the session list over (the collection is untouched). */
+export function clearAdded(): void {
+  state = { ...state, added: [] };
+  emit();
+}
+
 /** Release a still's object URL and bitmap. */
 export function disposeStill(s: PageStill | null | undefined): void {
   if (!s) return;
@@ -151,7 +166,7 @@ export function resetScanSession(game: string): void {
   if (state.still) URL.revokeObjectURL(state.still.url);
   disposeStill(state.page?.still);
   if (state.page?.frame !== state.page?.still) disposeStill(state.page?.frame);
-  state = { game, armed: false, recent: [], still: null, page: null };
+  state = { game, armed: false, recent: [], added: [], still: null, page: null };
   emit();
 }
 

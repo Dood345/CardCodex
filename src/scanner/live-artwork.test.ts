@@ -83,7 +83,11 @@ describe('addLiveArtwork', () => {
     const [out] = addLiveArtwork([ocr], frame, table, lookup, sample);
     expect(out.card.id).toBe('sv01-057');
     expect(out.key).toBe('t-base1-4');
-    expect(out.cardBox).toEqual(middle);
+    // The outline was right already: the snap onto the picture leaves it where it was.
+    expect(out.cardBox.x).toBeCloseTo(middle.x, 6);
+    expect(out.cardBox.y).toBeCloseTo(middle.y, 6);
+    expect(out.cardBox.w).toBeCloseTo(middle.w, 6);
+    expect(out.cardBox.h).toBeCloseTo(middle.h, 6);
     expect(out.bbox).toEqual(ocr.bbox);
     expect(out.evidence.some((e) => /^artwork \d+$/.test(e))).toBe(true);
     expect(out.score).toBeGreaterThan(0.9);
@@ -100,6 +104,21 @@ describe('addLiveArtwork', () => {
     expect(out[1].card.id).toBe('sv01-057');
     expect(out[2].card.id).toBe('base1-4');
     expect(out[2].evidence.some((e) => e.startsWith('artwork'))).toBe(false); // hashed, but nothing in the table shows that region
+  });
+
+  it('snaps an outline that runs long onto the matched picture', () => {
+    // The text-estimated outline is 8 % too big at the bottom and right; the real card is `middle`.
+    const long = { x: middle.x, y: middle.y, w: middle.w * 1.08, h: middle.h * 1.08 };
+    const [out] = addLiveArtwork([cand('base1-4', long, ['sv01-057'])], frame, table, lookup, sample);
+    expect(out.card.id).toBe('sv01-057');
+    expect(out.evidence.some((e) => e.startsWith('artwork'))).toBe(true);
+    expect(Math.abs(out.cardBox.w - middle.w)).toBeLessThan(middle.w * 0.03);
+    expect(Math.abs(out.cardBox.h - middle.h)).toBeLessThan(middle.h * 0.03);
+    expect(Math.abs(out.cardBox.x - middle.x)).toBeLessThan(middle.w * 0.03);
+    expect(Math.abs(out.cardBox.y - middle.y)).toBeLessThan(middle.h * 0.03);
+    // A candidate the picture did not confirm keeps its estimate.
+    const elsewhere = cand('base1-4', { x: 40, y: 480, w: 300, h: 420 });
+    expect(addLiveArtwork([elsewhere], frame, table, lookup, sample)[0].cardBox).toEqual(elsewhere.cardBox);
   });
 
   it('skips outlines it cannot hash', () => {

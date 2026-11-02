@@ -15,8 +15,8 @@
  * that turns a frame region into a luma integral (hash.ts samplePocketLuma
  * over the OCR frame canvas), so it can be tested without a DOM.
  */
-import { mergeArtworkEvidence, type CardLookup } from './artwork';
-import { matchPocket, windowOf, type HashTable, type LumaImage, type ProbeOptions } from './hash';
+import { ARTWORK_MATCH_BITS, mergeArtworkEvidence, type CardLookup } from './artwork';
+import { matchPocket, windowOf, type HashHit, type HashTable, type LumaImage, type ProbeOptions } from './hash';
 import type { Box, ScanCandidate } from './types';
 
 /** Margin around the estimated outline that is sampled, so the alignment search has room (fraction of the outline). */
@@ -63,10 +63,25 @@ export function liveArtworkRegion(cardBox: Box, frame: { w: number; h: number },
 }
 
 /**
+ * The outline moved onto the picture: when the merged card's hash hit is a
+ * real match, the alignment window that produced it says where the card is
+ * (within a probe step), which beats an outline inferred from text lines,
+ * which can run long at the bottom and right when the text scale was
+ * overestimated. Without a real match the estimate stays.
+ */
+export function snapToArtwork(cardBox: Box, cardId: string, hits: readonly HashHit[], region: Box): Box {
+  const hit = hits.find((h) => h.id === cardId);
+  if (!hit?.window || hit.distance > ARTWORK_MATCH_BITS) return cardBox;
+  const w = hit.window;
+  return { x: region.x + w.x * region.w, y: region.y + w.y * region.h, w: w.w * region.w, h: w.h * region.h };
+}
+
+/**
  * Merge artwork evidence into up to `max` of a frame's candidates (the ones
- * nearest the middle of the frame). Each keeps its key and geometry; its card,
- * score, evidence, confidence and alternatives come from the merge. The
- * others are returned untouched.
+ * nearest the middle of the frame). Each keeps its key and text box; its
+ * card, score, evidence, confidence and alternatives come from the merge, and
+ * its outline snaps onto the matched picture. The others are returned
+ * untouched.
  */
 export function addLiveArtwork(
   cands: readonly ScanCandidate[],
@@ -90,7 +105,7 @@ export function addLiveArtwork(
     if (!region) continue;
     const { hits } = matchPocket(table, sample(region), windowOf(c.cardBox, region), { coarse: LIVE_COARSE, fine: LIVE_FINE, k: 12 });
     const merged = mergeArtworkEvidence([c], hits, lookup, region)[0];
-    if (merged) out[i] = { ...merged, key: c.key, bbox: c.bbox, cardBox: c.cardBox };
+    if (merged) out[i] = { ...merged, key: c.key, bbox: c.bbox, cardBox: snapToArtwork(c.cardBox, merged.card.id, hits, region) };
   }
   return out;
 }

@@ -339,6 +339,8 @@ export interface HashHit {
   id: string;
   /** Hamming distance, 0..HASH_BITS (the best over the probes). */
   distance: number;
+  /** Where the card sat when this distance was measured (fractions of the probed image); set by `matchPocket`. */
+  window?: HashWindow;
 }
 
 /** The `k` nearest table entries to the probe(s), nearest first (ties in table order). */
@@ -435,23 +437,39 @@ export interface PocketMatch {
 export function matchPocket(table: HashTable, img: LumaImage, nominal: HashWindow, opts: MatchPocketOptions = {}): PocketMatch {
   const k = opts.k ?? 8;
   const art = table.spec.art;
-  const coarse = alignmentProbes(nominal, opts.coarse ?? COARSE_PROBES).map((w) => hashCardIn(img, w, art));
+  const coarseWindows = alignmentProbes(nominal, opts.coarse ?? COARSE_PROBES);
+  const coarse = coarseWindows.map((w) => hashCardIn(img, w, art));
   const distances = hashDistances(table, coarse);
   const shortlist = nearestByHash(table, coarse, opts.shortlist ?? SHORTLIST);
+  // Per shortlisted card: its best distance over every probe, and the probe that gave it (where the card is).
+  const windows = new Map<number, HashWindow>();
   if (shortlist.length) {
-    const fine = alignmentProbes(nominal, opts.fine ?? FINE_PROBES).map((w) => hashCardIn(img, w, art));
+    const fineWindows = alignmentProbes(nominal, opts.fine ?? FINE_PROBES);
+    const fine = fineWindows.map((w) => hashCardIn(img, w, art));
     for (const hit of shortlist) {
-      let best = hit.distance;
       const o = hit.index * HASH_WORDS;
-      for (const p of fine) {
-        const d = hammingDistance(table.words, p, o, 0);
-        if (d < best) best = d;
+      let best = Infinity;
+      let at = nominal;
+      for (let i = 0; i < coarse.length; i++) {
+        const d = hammingDistance(table.words, coarse[i], o, 0);
+        if (d < best) {
+          best = d;
+          at = coarseWindows[i];
+        }
+      }
+      for (let i = 0; i < fine.length; i++) {
+        const d = hammingDistance(table.words, fine[i], o, 0);
+        if (d < best) {
+          best = d;
+          at = fineWindows[i];
+        }
       }
       distances[hit.index] = best;
+      windows.set(hit.index, at);
     }
   }
   const hits: HashHit[] = shortlist
-    .map((h) => ({ ...h, distance: distances[h.index] }))
+    .map((h) => ({ ...h, distance: distances[h.index], window: windows.get(h.index) }))
     .sort((a, b) => a.distance - b.distance || a.index - b.index)
     .slice(0, k);
   return { hits, distances };

@@ -5,6 +5,7 @@
  * The wording comes from the active game's profile.
  */
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useBackHandler } from '@/ui/back';
 import { useGame } from '@/app/context';
 import { updateSettings } from '@/app/settings';
 import { closeTour } from '@/app/tourState';
@@ -68,6 +69,8 @@ export function Tour() {
   const steps = useMemo(() => tourSteps(game), [game]);
   const [i, setI] = useState(0);
   const [rect, setRect] = useState<Rect | null>(null);
+  // Android back skips the tour, like Escape.
+  useBackHandler(true, finish);
   const step = steps[Math.min(i, steps.length - 1)];
   const last = i >= steps.length - 1;
 

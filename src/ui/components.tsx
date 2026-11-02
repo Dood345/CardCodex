@@ -2,6 +2,7 @@
  * Shared presentational components.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useBackHandler } from './back';
 import type { CatalogCard, CatalogSet, Species } from '@/data/types';
 import { cardImageUrl, speciesSpriteUrl } from '@/data/types';
 import type { CatalogIndex } from '@/data/catalog';
@@ -407,6 +408,8 @@ export function Sheet({
   title?: ReactNode;
   children: ReactNode;
 }) {
+  // Android back and Escape both close the sheet.
+  useBackHandler(open, onClose);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
