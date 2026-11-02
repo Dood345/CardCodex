@@ -42,6 +42,26 @@ export function BinderIcon({ size = 24, className, style }: IconProps) {
   );
 }
 
+export function DeckIcon({ size = 24, className, style }: IconProps) {
+  return (
+    <svg {...base(size)} className={className} style={style}>
+      <rect x="8" y="3" width="12" height="16" rx="2" />
+      <path d="M4 7v12a2 2 0 0 0 2 2h11" />
+    </svg>
+  );
+}
+
+export function ShareIcon({ size = 24, className, style }: IconProps) {
+  return (
+    <svg {...base(size)} className={className} style={style}>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4" />
+    </svg>
+  );
+}
+
 export function SearchIcon({ size = 24, className, style }: IconProps) {
   return (
     <svg {...base(size)} className={className} style={style}>

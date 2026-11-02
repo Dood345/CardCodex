@@ -90,6 +90,13 @@ with Capacitor. Your collection lives only on your device.
   9 or 12 pockets, set by set in number order, turned with a swipe, the arrows, the slider or the
   arrow keys. Empty pockets on the last page show where the next cards go, and opening a card and
   coming back lands on the same page.
+- **Decks** – Collection → Decks holds deck lists for either game, made of cards you own and cards
+  you are still after. Add cards from a search box on the deck or from any card's "Add to deck";
+  every line shows how many copies you own and how many are missing, and one tap puts every missing
+  card on your wishlist. "Share" sends the deck as a plain message through the Android share sheet
+  (Messenger, Quick Share, mail…): the list in words plus a short `CCD1.` code and a
+  `cardcodex://deck/` link. A friend taps the link, or pastes the message into Decks → Import, and
+  gets the deck with their own owned/missing counts. No server is involved.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 

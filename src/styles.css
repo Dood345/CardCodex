@@ -2338,3 +2338,116 @@ textarea:focus {
   min-width: 0;
   accent-color: var(--accent);
 }
+
+/* ===== Decks (src/pages/collection/DecksTab.tsx, src/pages/DeckPage.tsx, src/ui/AddToDeck.tsx) ===== */
+.decks {
+  padding: 12px;
+}
+.deck-new {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.deck-new .search-input {
+  flex: 1;
+  min-width: 160px;
+}
+.deck-list,
+.deck-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.deck-row,
+.deck-pick {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+}
+.deck-row:active {
+  background: var(--bg-hover);
+}
+.deck-cover {
+  width: 40px;
+  height: 56px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--fg-muted);
+  flex: none;
+}
+.deck-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.deck-body {
+  flex: 1;
+  min-width: 0;
+}
+.deck-name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deck-sub {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.deck-pct {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.deck-pct.complete {
+  color: var(--ok);
+}
+.deck-paste {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--fg);
+  resize: vertical;
+}
+.deck-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 12px 0;
+}
+.deck-hint {
+  margin: 10px 12px 0;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.deck-section {
+  padding: 12px 12px 0;
+}
+.deck-section .section-title {
+  margin: 0 0 8px;
+}
+.deck-card > a {
+  display: contents;
+}
+.scan-candidate.deck-short {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+}
+.deck-pick .deck-body {
+  padding-left: 2px;
+}
+.sheet .deck-new {
+  margin: 12px 0 0;
+}

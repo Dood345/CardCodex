@@ -6,6 +6,7 @@ import { Tour } from '@/ui/Tour';
 import type { CatalogIndex } from '@/data/catalog';
 import { configureYgoImages } from '@/data/types';
 import { gameById } from '@/games';
+import { installDeepLinks } from '@/app/deepLinks';
 import { installBackButton } from '@/ui/back';
 import { BackpackIcon, BinderIcon, CameraIcon, SearchIcon } from '@/ui/icons';
 import { href, navigate, usePaneScroll, useRoute } from '@/ui/router';
@@ -18,6 +19,8 @@ import SetPage from '@/pages/SetPage';
 import CardPage from '@/pages/CardPage';
 import SearchPage from '@/pages/SearchPage';
 import CollectionPage from '@/pages/CollectionPage';
+import DeckPage from '@/pages/DeckPage';
+import DeckImportPage from '@/pages/DeckImportPage';
 import SettingsPage from '@/pages/SettingsPage';
 
 // The scanner pulls in OCR code; load it only when the user opens it.
@@ -35,6 +38,8 @@ export default function App() {
   useEffect(() => configureYgoImages(settings.ygoImageBase), [settings.ygoImageBase]);
   // Android's back button closes what is on top before it leaves a page (src/ui/back.ts).
   useEffect(() => installBackButton(), []);
+  // cardcodex://deck/<code> links open a shared deck (src/app/deepLinks.ts).
+  useEffect(() => installDeepLinks(), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,6 +139,9 @@ function Shell() {
     case 'collection':
       page = <CollectionPage />;
       break;
+    case 'decks':
+      page = arg === 'import' ? <DeckImportPage code={route.segments[2] ?? ''} /> : arg ? <DeckPage id={arg} /> : <CollectionPage />;
+      break;
     case 'settings':
       page = <SettingsPage />;
       break;
@@ -156,7 +164,10 @@ function Shell() {
       <nav className="bottom-nav" aria-label="Primary">
         {nav.map(({ key, path, label, Icon }) => {
           const active =
-            `/${section ?? browseKey}` === path || (path === game.browse.path && !section) || (path === '/sets' && section === 'card');
+            `/${section ?? browseKey}` === path ||
+            (path === game.browse.path && !section) ||
+            (path === '/sets' && section === 'card') ||
+            (path === '/collection' && section === 'decks');
           return (
             <a
               key={key}
