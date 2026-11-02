@@ -13,10 +13,7 @@ import type { Settings } from '@/app/settings';
 import type { IconProps } from '@/games/types';
 import { Sheet } from '@/ui/components';
 import { PlusIcon } from '@/ui/icons';
-import { href } from '@/ui/router';
-import type { Recent } from './session';
 
-export type { Recent } from './session';
 
 /**
  * The English OCR model ships with the app (public/tessdata/eng.traineddata.gz,
@@ -139,22 +136,6 @@ export function CameraPlaceholder({ Icon, text, live }: { Icon?: ComponentType<I
 
 /** Transparent poster: Android's WebView otherwise paints a play button on a <video> that has no frame yet. */
 export const BLANK_POSTER = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-
-export function RecentStrip({ recent }: { recent: Recent[] }) {
-  return (
-    <div className="scan-recent" aria-label="Recently added">
-      {recent.map((r) => (
-        <a key={`${r.card.id}-${r.at}`} className="scan-recent-item" href={href(`/card/${r.card.id}`)}>
-          <img src={cardImageUrl(r.card, r.set.series, 'low')} alt={r.card.name} loading="lazy" />
-          <div>
-            {r.qty > 1 ? `×${r.qty} ` : ''}
-            {r.card.name}
-          </div>
-        </a>
-      ))}
-    </div>
-  );
-}
 
 export function CandidateRow({
   card,
