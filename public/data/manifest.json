@@ -20,6 +20,11 @@
       "hash": "9236afb5e33a",
       "bytes": 629808,
       "builtAt": "2026-11-01T20:13:06.590Z"
+    },
+    "ygo/hashes.json": {
+      "hash": "d7988d3bfd91",
+      "bytes": 477965,
+      "builtAt": "2026-11-01T23:16:17.904Z"
     }
   }
 }

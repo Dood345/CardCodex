@@ -17,8 +17,8 @@ device except the one-time Tesseract language-model download (see Engines).
 | `grid.ts` | finds the card grid in a frame (colour edge profiles, pitch by autocorrelation, phase/width search), `perspectiveCheck` (pure) |
 | `guidance.ts` | binder-page capture guidance: `sharpness`, `measureGuidance`, `adviseCapture` ("Move closer", "Flatten the phone", "More light", "Hold still") |
 | `photo.ts` | full-resolution stills from the camera stream through ImageCapture (`takePhoto`, `probePhotoSize`), null when the API is missing |
-| `hash.ts` | artwork matching: perceptual card hash (`hashCard`), the hash table (`public/data/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
-| `artwork.ts` | loads the hash table (`loadHashTable`) and merges a pocket's nearest hashes into the OCR candidates (`mergeArtworkEvidence`, pure) |
+| `hash.ts` | artwork matching: perceptual card hash (`hashCard`) with one `HashSpec` per game (card aspect, artwork window), the hash tables (`public/data/hashes.json`, `public/data/ygo/hashes.json`), Hamming search and the pocket alignment search (`matchPocket`) (pure; DOM sampling helpers at the end) |
+| `artwork.ts` | loads a game's hash table (`loadHashTable`) and merges a pocket's nearest hashes into the OCR candidates (`mergeArtworkEvidence`, pure) |
 | `live-artwork.ts` | the same artwork evidence for the live single-card loop: hashes the card(s) nearest the middle of the frame around the matcher's outline estimate (`addLiveArtwork`, pure given a sampler) |
 | `focus.ts` | which of a frame's cards single-card mode shows: the one under the middle of the frame, else the largest nearest it (`focusTracks`, pure) |
 | `autocapture.ts` | binder-page auto-capture: when a run of steady, confident fits may press the shutter, and where to look for the grid on the photo (pure) |
@@ -175,6 +175,9 @@ index for names (8-word windows) plus passcode and printed-code lookups.
 - Geometry (fractions of H, 59×86 mm card): name 0.08, set code 0.725, type line 0.77, ATK/DEF 0.925,
   passcode 0.962. Anchors in order passcode → code → stats → strong name; binder pages use
   `cardMm: {59, 86}`.
+- **Artwork** (binder pages): the picture is hashed and matched against `public/data/ygo/hashes.json`,
+  one entry per passcode (see "Artwork matching" below). A hit names the card like a passcode read
+  does; the set code still picks the printing.
 
 Measured in the browser (Tesseract) on a YGOPRODeck render of Dark Magician with a code and passcode
 painted on (the renders are replicas without them): at 813 px wide the passcode was read and the card
@@ -353,10 +356,13 @@ perceptual hash (`npm run hashes` → `public/data/hashes.json`, 32 bytes per ca
 19.7k cards; 1.6k cards have no image on TCGdex), and a pocket crop is hashed the same way and
 compared with every entry by Hamming distance (a linear scan of 20k × 128 bits is ~1 ms).
 
-**The hash** (`HASH_SPEC`): two difference hashes of the luma, each on a 9×8 grid of cell means
-(8 rows × 8 "is the cell darker than its right neighbour" bits = 64 bits): one of the whole card,
-one of the artwork window (x 10–90 %, y 12–47 % of the card, inside the picture box of both modern
-and Base Set layouts). A dHash ignores brightness, contrast and smooth lighting gradients, which is
+**The hash** (one `HashSpec` per game; `HASH_SPEC` is the Pokémon id): two difference hashes of the
+luma, each on a 9×8 grid of cell means (8 rows × 8 "is the cell darker than its right neighbour"
+bits = 64 bits): one of the whole card, one of the game's artwork window (Pokémon: x 10–90 %,
+y 12–47 % of the card, inside the picture box of both modern and Base Set layouts; Yu-Gi-Oh!: see
+below). The spec id is written into the table file and a table whose spec this code does not know is
+not loaded; `matchPocket` probes a pocket with the table's own window, so a spec change is a new id
+and a rebuilt table. A dHash ignores brightness, contrast and smooth lighting gradients, which is
 what a photo through a binder sleeve adds. Transparent pixels (the reference scans' rounded corners)
 are composited over white. The build script decodes with `sharp` and calls the very same `hashCard`
 through Vite, and a reference image hashed in the browser (canvas → `getImageData`) matches its
@@ -405,12 +411,13 @@ scored `min(1, OCR score + artworkBonus)`, where the bonus is 0.9 for an identic
 the match limit of 24 bits and fades to 0 at 32, so a strong match outranks a name-only read (~0.45)
 on its own but not a clean number + total + name read (0.95–1). Hits within 6 bits of the best one are
 the same picture (reprints). The best card is confident when the picture matched (≤ 24) and the OCR
-read a number or set code for it — or its name, when the picture exists in one printing only — or
-when the OCR was already confident and the picture does not point at a different card. A match
-alone is an unsure candidate with the picture's printings as alternatives, newest first; a weak hit
-(25–32 bits) only adds alternatives. The hash evidence appears as `artwork N` (N = bits) in
-`evidence`. The table is loaded once per game by `loadHashTable` (Pokémon only; Yu-Gi-Oh! has none
-yet and runs on OCR alone) and the matcher resolves ids through `ScanMatcher.lookup`.
+read a number or set code for it (Yu-Gi-Oh!: the printed code) — or its name or passcode, when the
+picture exists in one printing only — or when the OCR was already confident and the picture does not
+point at a different card. A match alone is an unsure candidate with the picture's printings as
+alternatives, newest first; a weak hit (25–32 bits) only adds alternatives. The hash evidence appears
+as `artwork N` (N = bits) in `evidence`. The table is loaded once per game by `loadHashTable` and the
+matcher resolves ids through `ScanMatcher.lookup`; a Yu-Gi-Oh! hit names a passcode, which
+`ScanMatcher.artworkCards` turns into one hit per printing before the merge (`expandArtworkHits`).
 
 **End to end** (`node scripts/page-bench.mjs`, scanPage with Tesseract on the same 27 pockets, the
 printing must be exact):
@@ -432,10 +439,54 @@ loads in 40 ms and holds 307 KB of hash words plus the 19.7k id strings and thei
 1.7 MB of heap in all (the browser's `performance.memory` could not resolve the delta). Not yet
 timed on a phone.
 
-**Yu-Gi-Oh!** is not hashed yet. The same build-script shape works: YGOPRODeck allows each image to
-be downloaded once (`cards_small/<passcode>.jpg`, 168×245, 14.6k cards, ~25 min at 10 requests/s),
-the hash is per passcode (printings share the picture) with the 59×86 card aspect and an artwork
-window of x 10–90 %, y 18–55 %; `matchPocket` is already aspect-agnostic.
+**Yu-Gi-Oh!** (`npm run hashes:ygo` → `public/data/ygo/hashes.json`, spec `dhash-9x8-luma-card+art-ygo-v1`).
+The table is keyed by **passcode**, the picture's own id: every printing of a card shares it (2.74
+printings per card on average, 71 for Blue-Eyes White Dragon), and an alternate artwork is its own
+passcode and entry. 14,825 hashes = 14,653 cards + 172 alternate artworks, 100 % of the catalog (no
+render was missing), 478 KB raw (32.2 bytes per entry), 295 KB gzip; the cold build downloaded 14,622
+YGOPRODeck small renders (mostly 268×391; 272 come in other sizes, which the hash does not mind) in
+1,476 s at 10 requests/s, and a rebuild from the cache takes 32 s. The renders are replicas without
+set code or passcode printed, which the picture does not need. **Artwork window**, measured on the
+renders: standard frames (monster, spell, trap, link, xyz) print a square picture at x 11.9–88.1 %,
+y 18.2–70.6 % of the card; the `*_pendulum` frames (391 cards) a wider one at x 6.3–93.7 %,
+y 17–76 %, with the pendulum scale box drawn over its bottom from ≈ 63 %. The spec's window,
+x 13–87 %, y 20–69 % (`YGO_ART_WINDOW`), sits ≈ 1 % inside the standard box and inside the pendulum
+picture too, so one window hashes every frame and a pocket needs no second set of probes (a per-frame
+window would need a flag per entry and probes for both, and the pocket's frame is unknown before the
+match); on the pendulum cards its bottom rows cover the scale box, the same on the render and on the
+card. Window choice, on 3,000 renders (nearest different card, pairs within 24 bits): this window
+median 33 bits / 177 pairs; the rough x 10–90 %, y 18–55 % guess 32 / 198; a taller x 8–92 %,
+y 18–74 % 31 / 252; the Pokémon window 30 / 314 — and the same render shifted 1 % costs 6 bits
+(median), 2 % 13, blurred 1.5 px 1.
+
+**Separation of the Yu-Gi-Oh! table** (`node scripts/hash-separation.mjs --game ygo`, every entry
+against every other): nearest other entry median 30 bits (p10 25, p90 34, mean 29.3), second nearest
+median 31; 122 entries (0.8 %) have a neighbour within 8 bits, 248 (1.7 %) within 16, 1,356 (9.1 %)
+within the 24-bit match limit, in 3,175 pairs. Of those pairs 184 involve YGOPRODeck placeholder ids
+(≥ 100000000, cards without a real passcode that share a stock image; 103 of the 175 such ids), 12 are
+a card and its own alternate artwork (renders that are the same picture: Toon World, Winged Kuriboh,
+Crush Card Virus), 117 a token and the monster whose art it reuses (Ojama, Rockstone Warrior, Mithra),
+1,451 two spells or traps (same frame, dark pictures), 5 two pendulum cards. Counting only different
+cards with real passcodes, 60 entries have a neighbour within 8 bits, 153 within 16 and 1,208 (8.1 %)
+within 24. For comparison the Pokémon table has a median nearest neighbour of 32 bits with 13.7 % of
+its entries within 24 and 6.4 % within 8 (reprints of one picture and the energy cards).
+
+**Measured on a synthetic page** (`node scripts/hash-bench.mjs --game ygo`; there are no real
+Yu-Gi-Oh! binder photos yet, so `scripts/synth-page.mjs` pastes nine renders — effect, normal, link,
+xyz, spell, trap, two pendulums, an alternate-art fusion — on a page with ±2 % shifts, 94–100 % scale,
+0–1.2 px blur, ×0.9–1.05 brightness, a lighting gradient and JPEG 85): the coarse-to-fine search finds
+**9/9** at 2–9 bits (median 3) with 15–26 bits (median 19) to the next entry; the grid cell as is
+0/9, `refineCardBox` 7/9, the coarse pass alone 9/9 (median 13); 58 ms per pocket against the 14.8k
+table in headless Chrome. Browser hash versus the Node-built entry: 0 bits for all nine renders
+(the runtime's resampled path 0–4). Tolerance, from the renders shifted and scaled: 1 % costs 6–15
+bits and 2 % 17–28 with every card still at rank 1, 3 % 22–38 (6 of 9 at rank 1), 4 % 30–47 (5 of 9);
+a card 6 % too small 16–23 bits and 10 % 22–37, all at rank 1. End to end (`node scripts/page-bench.mjs
+--game ygo`, scanPage with Tesseract): 9/9 pockets identified by the picture (`artwork 2`–`9`; three
+also read the name and ATK/DEF), 0 confident — rightly, since a render carries no set code and a hit
+alone shows the newest printing with the others as alternatives; 11.5–12.8 s for the page, of which
+hashing 0.29–0.36 s (32–40 ms per pocket); the table holds 232 KB of hash words, ≈ 2.8 MB of heap
+with its ids, and loads in 1.6 s cold from the dev server (11 ms from the browser cache). A synthetic page says nothing about glare, foil or a phone's focus: real photos (a Pendulum card
+and a foil among them) are the next measurement.
 
 ## Pokédex line as a species cue (`parseDex`)
 

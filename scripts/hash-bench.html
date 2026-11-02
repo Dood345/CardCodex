@@ -3,23 +3,25 @@
 <title>CardCodex hash bench</title>
 <!--
   Artwork-hash benchmark on binder-page photos: fits the grid (src/scanner/grid.ts), hashes every
-  pocket (src/scanner/hash.ts) and ranks the catalog's hash table (public/data/hashes.json) for it.
-  Served by the Vite dev server, which compiles the TS:
+  pocket (src/scanner/hash.ts) and ranks the game's hash table (public/data/hashes.json or
+  public/data/ygo/hashes.json) for it. Served by the Vite dev server, which compiles the TS:
 
     npm run dev
     http://localhost:5173/scripts/hash-bench.html
       ?imgs=scripts/fixtures/binder-pages/fold8-9pocket.jpg
-      &expected={"fold8-9pocket.jpg":["swsh10.5-016",…]}   (row-major catalog ids, optional)
-      &layout=3x3  &refs=1  &report=/__hash-bench             (all optional)
+      &expected={"fold8-9pocket.jpg":["swsh10.5-016",…]}   (row-major table ids: card ids / passcodes, optional)
+      &game=pokemon  &layout=3x3  &refs=1  &refsBase=/@fs/D:/…/images/ygo  &report=/__hash-bench   (all optional)
 
   Per pocket five ways of placing the card are tried: the grid cell as is, the card box the
   fitter measured (cell minus the pocket gap), the padded crop tightened to the card's edges
   (refineCardBox), the coarse alignment search alone (75 shifts/scales of the cell hashed from one
-  luma integral of the padded crop), and the coarse-to-fine search the scanner uses (matchPocket). `refs=1`
-  also hashes the expected cards' reference images in the browser (TCGdex allows CORS) to check
-  that the browser's hash agrees with the Node-built table and how fast the distance grows when
-  the reference is shifted. `report` POSTs the JSON there when done (scripts/hash-bench.mjs);
-  results are also in window.__hashBench.
+  luma integral of the padded crop), and the coarse-to-fine search the scanner uses (matchPocket).
+  The card aspect and the artwork window come from the table's spec. `refs=1` also hashes the
+  expected cards' reference images in the browser (Pokémon: TCGdex, which allows CORS; Yu-Gi-Oh!:
+  the cached YGOPRODeck renders served by Vite from `refsBase`, as images.ygoprodeck.com sends no
+  CORS headers) to check that the browser's hash agrees with the Node-built table and how fast the
+  distance grows when the reference is shifted. `report` POSTs the JSON there when done
+  (scripts/hash-bench.mjs); results are also in window.__hashBench.
 -->
 <style>
   body { font: 13px/1.4 ui-monospace, Consolas, monospace; margin: 16px; }
@@ -29,30 +31,44 @@
 <pre id="out">running…</pre>
 <script type="module">
   import { fitGridOnSource, refineCardBox } from '/src/scanner/grid.ts';
-  import { pocketBoxesIn, padBox, DEFAULT_CARD_MM, pageLayout } from '/src/scanner/page.ts';
+  import { pocketBoxesIn, padBox, pageLayout } from '/src/scanner/page.ts';
   import { decodeHashFile, hashRegion, alignmentProbes, hashDistances, hashCard, HASH_BITS, HASH_SAMPLE_WIDTH, hashToHex, samplePocketLuma, windowOf, matchPocket, hashCardIn, COARSE_PROBES } from '/src/scanner/hash.ts';
 
   const q = new URLSearchParams(location.search);
+  const game = q.get('game') || 'pokemon';
   const DEFAULT_IMAGES = ['scripts/fixtures/binder-pages/fold8-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket.jpg', 'scripts/fixtures/binder-pages/pixel11-9pocket-b.jpg'];
   const images = (q.get('imgs') || DEFAULT_IMAGES.join(',')).split(',').map((s) => s.trim()).filter(Boolean);
   const expectedByImage = JSON.parse(q.get('expected') || '{}');
   const layout = pageLayout(q.get('layout') || '3x3');
   const doRefs = q.get('refs') !== '0';
+  const refsBase = q.get('refsBase') || '';
   const PAD = 0.06;
-  const aspect = DEFAULT_CARD_MM.w / DEFAULT_CARD_MM.h;
   const out = document.getElementById('out');
   const r3 = (v) => Math.round(v * 1000) / 1000;
 
+  const dataDir = game === 'ygo' ? '/data/ygo' : '/data';
   const [hashFile, catalog] = await Promise.all([
-    fetch('/data/hashes.json', { cache: 'no-cache' }).then((r) => r.json()),
-    fetch('/data/catalog.json', { cache: 'no-cache' }).then((r) => r.json()),
+    fetch(`${dataDir}/hashes.json`, { cache: 'no-cache' }).then((r) => r.json()),
+    fetch(`${dataDir}/catalog.json`, { cache: 'no-cache' }).then((r) => r.json()),
   ]);
   const table = decodeHashFile(hashFile);
-  const cardsById = new Map(catalog.cards.map((c) => [c.id, c]));
-  const setsById = new Map(catalog.sets.map((s) => [s.id, s]));
+  const aspect = table.spec.cardAspect;
+  const art = table.spec.art;
+  // Table id → catalog row: Pokémon card ids; Yu-Gi-Oh! passcodes (an alternate art's passcode → its card).
+  const cardsById = new Map();
+  if (game === 'ygo') {
+    for (const c of catalog.cards) {
+      cardsById.set(String(c.pc), c);
+      for (const a of c.alt ?? []) cardsById.set(String(a), c);
+    }
+  } else {
+    for (const c of catalog.cards) cardsById.set(c.id, c);
+  }
+  const setsById = new Map((catalog.sets ?? []).map((s) => [s.id, s]));
   // Same artwork ≈ same name; the catalog spells a few reprints differently ('Nidoran ♂' in Legendary Collection), so compare without spaces or case.
+  // (For Yu-Gi-Oh! a same-name entry at another passcode is an alternate artwork: a different picture of the same card.)
   const nameOf = (id) => (cardsById.get(id)?.name ?? '?').replace(/\s+/g, '').toLowerCase();
-  const results = { table: { ids: table.ids.length, builtAt: hashFile.builtAt, spec: hashFile.spec }, images: [] };
+  const results = { game, table: { ids: table.ids.length, builtAt: hashFile.builtAt, spec: hashFile.spec, aspect: r3(aspect), art }, images: [] };
 
   /** Rank the table for a set of probes: top hits, the expected card's place, and the margin to the next different artwork (≈ name). */
   function rank(probes, expected) {
@@ -103,14 +119,14 @@
         const padded = padBox(cell, PAD, bmp.width, bmp.height);
         const refined = refineCardBox(bmp, padded, aspect);
         const exp = expected[p.index];
-        const hCell = hashRegion(bmp, cell, aspect);
-        const hFit = hashRegion(bmp, fitBox, aspect);
-        const hRefined = refined ? hashRegion(bmp, refined, aspect) : null;
+        const hCell = hashRegion(bmp, cell, aspect, HASH_SAMPLE_WIDTH, art);
+        const hFit = hashRegion(bmp, fitBox, aspect, HASH_SAMPLE_WIDTH, art);
+        const hRefined = refined ? hashRegion(bmp, refined, aspect, HASH_SAMPLE_WIDTH, art) : null;
         // The scanner's path: one sample of the padded crop, probes hashed from its integral.
         const t2 = performance.now();
         const luma = samplePocketLuma(bmp, padded);
         const nominal = windowOf(cell, padded);
-        const coarse = alignmentProbes(nominal, COARSE_PROBES).map((w) => hashCardIn(luma, w));
+        const coarse = alignmentProbes(nominal, COARSE_PROBES).map((w) => hashCardIn(luma, w, art));
         const coarseRank = rank(coarse, exp);
         const t3 = performance.now();
         const fine = matchPocket(table, luma, nominal, { k: 6 });
@@ -147,11 +163,17 @@
     const ids = [...new Set(Object.values(expectedByImage).flat())].filter((id) => table.indexOf.has(id));
     for (const id of ids) {
       const card = cardsById.get(id);
-      const set = setsById.get(card.set);
-      const r = { id, name: card.name };
+      const r = { id, name: card?.name };
       try {
-        const url = `https://assets.tcgdex.net/en/${set.series}/${card.set}/${card.num}/low.webp`;
-        const bmp = await createImageBitmap(await (await fetch(url, { mode: 'cors' })).blob());
+        let url;
+        if (game === 'ygo') {
+          if (!refsBase) throw new Error('refsBase (the cached renders, served by Vite) not given');
+          url = `${refsBase}/${id}.jpg`;
+        } else {
+          const set = setsById.get(card.set);
+          url = `https://assets.tcgdex.net/en/${set.series}/${card.set}/${card.num}/low.webp`;
+        }
+        const bmp = await createImageBitmap(await (await fetch(url, url.startsWith('http') ? { mode: 'cors' } : {})).blob());
         const full = { x: 0, y: 0, w: bmp.width, h: bmp.height };
         const ti = table.indexOf.get(id);
         const tableHash = table.words.subarray(ti * 4, ti * 4 + 4);
@@ -163,15 +185,15 @@
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, c.width, c.height);
         ctx.drawImage(bmp, 0, 0);
-        const native = hashCard(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height);
+        const native = hashCard(ctx.getImageData(0, 0, c.width, c.height).data, c.width, c.height, art);
         r.native = { d: hashDistances(table, native)[ti], hex: hashToHex(native), table: hashToHex(tableHash) };
         // The runtime path: resampled to HASH_SAMPLE_WIDTH.
-        r.resampled = { d: hashDistances(table, hashRegion(bmp, full, aspect))[ti] };
+        r.resampled = { d: hashDistances(table, hashRegion(bmp, full, aspect, HASH_SAMPLE_WIDTH, art))[ti] };
         // Shift tolerance: the reference moved by s % of its size (both axes), distance to its own entry and its rank.
         r.shift = {};
         for (const s of [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08]) {
           const box = { x: s * bmp.width, y: s * bmp.height, w: bmp.width, h: bmp.height };
-          const dist = hashDistances(table, hashRegion(bmp, box, aspect));
+          const dist = hashDistances(table, hashRegion(bmp, box, aspect, HASH_SAMPLE_WIDTH, art));
           const d = dist[ti];
           let better = 0;
           for (let i = 0; i < dist.length; i++) if (dist[i] < d) better++;
@@ -181,7 +203,7 @@
         r.scale = {};
         for (const s of [1.03, 1.06, 1.1]) {
           const box = { x: -((s - 1) / 2) * bmp.width, y: -((s - 1) / 2) * bmp.height, w: s * bmp.width, h: s * bmp.height };
-          const dist = hashDistances(table, hashRegion(bmp, box, aspect));
+          const dist = hashDistances(table, hashRegion(bmp, box, aspect, HASH_SAMPLE_WIDTH, art));
           const d = dist[ti];
           let better = 0;
           for (let i = 0; i < dist.length; i++) if (dist[i] < d) better++;

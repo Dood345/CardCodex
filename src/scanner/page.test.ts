@@ -1,7 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { PAGE_LAYOUTS, mergePocketCandidates, padBox, pageLayout, pageRect, pocketBoxes, stripLines } from './page';
+import { PAGE_LAYOUTS, expandArtworkHits, mergePocketCandidates, padBox, pageLayout, pageRect, pocketBoxes, stripLines } from './page';
 import type { RecognizedLine, ScanCandidate } from './types';
 import { fixtureCatalog } from './fixtures.test-util';
+
+describe('expandArtworkHits', () => {
+  const hits = [
+    { index: 3, id: '89631139', distance: 8 },
+    { index: 7, id: '46986414', distance: 30 },
+  ];
+
+  it('passes Pokémon hits through untouched (the table is keyed by card id)', () => {
+    const out = expandArtworkHits(hits, {});
+    expect(out).toEqual(hits);
+    expect(out).not.toBe(hits);
+  });
+
+  it('turns a Yu-Gi-Oh! passcode hit into one hit per printing, nearest first, without repeats', () => {
+    const printings: Record<string, string[]> = { '89631139': ['ygo:SDK-001', 'ygo:LOB-001'], '46986414': ['ygo:LOB-005'] };
+    const out = expandArtworkHits(hits, { artworkCards: (id) => printings[id] ?? [] });
+    expect(out).toEqual([
+      { index: 3, id: 'ygo:SDK-001', distance: 8 },
+      { index: 3, id: 'ygo:LOB-001', distance: 8 },
+      { index: 7, id: 'ygo:LOB-005', distance: 30 },
+    ]);
+    // An alternate art (another passcode, same printings) a little further away adds nothing.
+    const alt = expandArtworkHits([...hits, { index: 9, id: '89631140', distance: 14 }], { artworkCards: (id) => printings[id] ?? printings['89631139'] });
+    expect(alt.map((h) => h.id)).toEqual(['ygo:SDK-001', 'ygo:LOB-001', 'ygo:LOB-005']);
+    expect(expandArtworkHits(hits, { artworkCards: () => [] })).toEqual([]);
+  });
+});
 
 describe('pageRect', () => {
   it('keeps the page aspect and fits inside the frame minus the margin', () => {

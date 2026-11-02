@@ -1,19 +1,28 @@
 #!/usr/bin/env node
 /**
- * Builds public/data/hashes.json: one perceptual hash per Pokémon card image,
- * the artwork-matching table the scanner uses beside OCR (src/scanner/hash.ts).
+ * Builds a game's artwork hash table, one perceptual hash per card image, the
+ * table the binder-page scanner uses beside OCR (src/scanner/hash.ts):
+ *   Pokémon   → public/data/hashes.json      (npm run hashes)
+ *   Yu-Gi-Oh! → public/data/ygo/hashes.json  (npm run hashes:ygo)
  *
- *   node scripts/build-hashes.mjs                 # download what is missing, hash everything
- *   node scripts/build-hashes.mjs --first sv03.5,xy12   # process these sets first (early checks)
+ *   node scripts/build-hashes.mjs                        # Pokémon: download what is missing, hash everything
+ *   node scripts/build-hashes.mjs --game ygo             # Yu-Gi-Oh!
+ *   node scripts/build-hashes.mjs --first sv03.5,xy12    # these sets first (early checks); for ygo: frames (effect_pendulum,…)
  *   options: --rate 10 (requests/s)  --concurrency 4  --limit N  --cache-dir DIR
  *
- * Every card with an image (`img`) has its low-resolution TCGdex image
+ * Pokémon: every card with an image (`img`) has its low-resolution TCGdex image
  * (~245×337 WebP, ~16 KB) downloaded once into scripts/.cache/images/pokemon/
- * (or $CARDCODEX_CACHE_DIR/images/pokemon/) and hashed with the very function
- * the app runs (loaded through Vite, no copy). Reruns skip cached images and
- * remembered 404s, so an interrupted build resumes; the output is rewritten
- * every 2,000 cards and at the end. Downloads are rate-limited (10/s) and
- * retried with backoff; `sharp` (dev-only) decodes the WebP.
+ * (or $CARDCODEX_CACHE_DIR/images/pokemon/). Yu-Gi-Oh!: every card (passcode)
+ * has its YGOPRODeck small render (`cards_small/<passcode>.jpg`, 268×391,
+ * ~28 KB) downloaded once into images/ygo/, as their guide asks (each image
+ * fetched once and stored, never hotlinked); the table is keyed by passcode,
+ * since every printing of a card shares the picture. Both are hashed with the
+ * very function the app runs (loaded through Vite, no copy) and the game's
+ * artwork window (`hashSpecFor`). Reruns skip cached images and remembered
+ * 404s, so an interrupted build resumes and a changed spec never re-downloads;
+ * the output is rewritten every 2,000 cards and at the end. Downloads are
+ * rate-limited (10/s) and retried with backoff; `sharp` (dev-only) decodes.
+ * 404s are remembered as `<id>.404` beside the images.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -32,18 +41,24 @@ const opt = (name, def) => {
   args.splice(i, 2);
   return v;
 };
+const GAME = opt('--game', 'pokemon');
 const RATE = Number(opt('--rate', '10'));
 const CONCURRENCY = Number(opt('--concurrency', '4'));
 const LIMIT = Number(opt('--limit', '0'));
 const FIRST = (opt('--first', '') || '').split(',').filter(Boolean);
 const CACHE = path.resolve(opt('--cache-dir', process.env.CARDCODEX_CACHE_DIR || path.join(root, 'scripts', '.cache')));
-const IMAGES = path.join(CACHE, 'images', 'pokemon');
-const OUT = path.join(root, 'public', 'data', 'hashes.json');
-const CATALOG = path.join(root, 'public', 'data', 'catalog.json');
 if (args.includes('--help') || args.includes('-h')) {
   console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('*/')[0].replace(/^\/\*\*\n|^ \* ?/gm, ''));
   process.exit(0);
 }
+if (GAME !== 'pokemon' && GAME !== 'ygo') {
+  console.error(`unknown game ${GAME}: --game pokemon | ygo`);
+  process.exit(2);
+}
+const IMAGES = path.join(CACHE, 'images', GAME);
+const OUT = path.join(root, 'public', 'data', GAME === 'ygo' ? path.join('ygo', 'hashes.json') : 'hashes.json');
+const OUT_REL = path.relative(path.join(root, 'public', 'data'), OUT).split(path.sep).join('/');
+const CATALOG = path.join(root, 'public', 'data', GAME === 'ygo' ? path.join('ygo', 'catalog.json') : 'catalog.json');
 fs.mkdirSync(IMAGES, { recursive: true });
 
 // The hash code is the app's own (src/scanner/hash.ts), loaded through Vite's SSR module loader.
@@ -56,18 +71,36 @@ const vite = await createServer({
   server: { middlewareMode: true, hmr: false },
   resolve: { alias: { '@': path.join(root, 'src') } },
 });
-const { hashCard, encodeHashes, HASH_SPEC, HASH_WORDS } = await vite.ssrLoadModule(path.join(root, 'src/scanner/hash.ts'));
-const { cardImageUrl } = await vite.ssrLoadModule(path.join(root, 'src/data/types.ts'));
+const { hashCard, encodeHashes, hashSpecFor, HASH_WORDS } = await vite.ssrLoadModule(path.join(root, 'src/scanner/hash.ts'));
+const { cardImageUrl, ygoImageUrl } = await vite.ssrLoadModule(path.join(root, 'src/data/types.ts'));
+const spec = hashSpecFor(GAME);
 
 const catalog = JSON.parse(fs.readFileSync(CATALOG, 'utf8'));
-const seriesOf = new Map(catalog.sets.map((s) => [s.id, s.series]));
-let cards = catalog.cards.filter((c) => c.img);
+
+/**
+ * The game's entries: `{ id, url, file, group }` per card with an image, in
+ * catalog order. Pokémon ids are catalog card ids and `group` the set;
+ * Yu-Gi-Oh! ids are passcodes (every printing shares the picture; an
+ * alternate artwork is its own passcode and picture, listed after the
+ * card's main one) and `group` the frame type.
+ */
+function entriesOf() {
+  if (GAME === 'ygo') {
+    return catalog.cards.flatMap((c) =>
+      [c.pc, ...(c.alt ?? [])].map((pc) => ({ id: String(pc), url: ygoImageUrl(pc, 'low'), file: path.join(IMAGES, `${pc}.jpg`), group: c.frame })),
+    );
+  }
+  const seriesOf = new Map(catalog.sets.map((s) => [s.id, s.series]));
+  return catalog.cards.filter((c) => c.img).map((c) => ({ id: c.id, url: cardImageUrl(c, seriesOf.get(c.set), 'low'), file: path.join(IMAGES, `${c.id}.webp`), group: c.set }));
+}
+const all = entriesOf();
+let cards = all;
 if (FIRST.length) {
   const rank = new Map(FIRST.map((s, i) => [s, i]));
-  cards = [...cards].sort((a, b) => (rank.get(a.set) ?? 1e9) - (rank.get(b.set) ?? 1e9));
+  cards = [...cards].sort((a, b) => (rank.get(a.group) ?? 1e9) - (rank.get(b.group) ?? 1e9));
 }
 if (LIMIT) cards = cards.slice(0, LIMIT);
-console.log(`${catalog.cards.length} cards, ${cards.length} with an image; cache ${path.relative(root, IMAGES) || IMAGES}`);
+console.log(`${GAME}: ${catalog.cards.length} cards, ${all.length} with an image, spec ${spec.id}; cache ${path.relative(root, IMAGES) || IMAGES}`);
 
 /** Token bucket: at most RATE requests per second across all workers. */
 let nextSlot = 0;
@@ -78,28 +111,26 @@ async function politely() {
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
 }
 
-const imagePath = (card) => path.join(IMAGES, `${card.id}.webp`);
-const missingPath = (card) => path.join(IMAGES, `${card.id}.404`);
+/** `<id>.404` beside where the image would be (the marker name the Pokémon cache has always used). */
+const missingPath = (card) => card.file.replace(/\.[a-z]+$/, '.404');
 
 /** The card's cached image bytes, downloading once; null when the server has none (remembered). */
 async function imageBytes(card, stats) {
-  const file = imagePath(card);
-  if (fs.existsSync(file)) {
+  if (fs.existsSync(card.file)) {
     stats.cached++;
-    return fs.readFileSync(file);
+    return fs.readFileSync(card.file);
   }
   if (fs.existsSync(missingPath(card))) {
     stats.missing++;
     return null;
   }
-  const url = cardImageUrl(card, seriesOf.get(card.set), 'low');
   let err;
   for (let attempt = 0; attempt < 5; attempt++) {
     await politely();
     try {
-      const res = await fetch(url, { headers: { 'user-agent': 'CardCodex build-hashes (github.com/Dood345/CardCodex)' } });
+      const res = await fetch(card.url, { headers: { 'user-agent': 'CardCodex build-hashes (github.com/Dood345/CardCodex)' } });
       if (res.status === 404) {
-        fs.writeFileSync(missingPath(card), url);
+        fs.writeFileSync(missingPath(card), card.url);
         stats.missing++;
         stats.newMissing++;
         return null;
@@ -107,7 +138,7 @@ async function imageBytes(card, stats) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
       if (!buf.length) throw new Error('empty body');
-      fs.writeFileSync(file, buf);
+      fs.writeFileSync(card.file, buf);
       stats.downloaded++;
       return buf;
     } catch (e) {
@@ -120,32 +151,33 @@ async function imageBytes(card, stats) {
   return null;
 }
 
-/** Decoded with sharp to RGBA, hashed with the app's own function. */
+/** Decoded with sharp to RGBA, hashed with the app's own function and the game's artwork window. */
 async function hashImage(buf, stats) {
   const { data, info } = await sharp(buf, { failOn: 'none' }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const key = `${info.width}×${info.height}`;
   stats.sizes.set(key, (stats.sizes.get(key) ?? 0) + 1);
-  return hashCard(new Uint8ClampedArray(data.buffer, data.byteOffset, data.length), info.width, info.height);
+  return hashCard(new Uint8ClampedArray(data.buffer, data.byteOffset, data.length), info.width, info.height, spec.art);
 }
 
-const hashes = new Map(); // card id → Uint32Array
+const hashes = new Map(); // entry id → Uint32Array
 const stats = { cached: 0, downloaded: 0, missing: 0, newMissing: 0, failed: 0, decodeFailed: 0, sizes: new Map() };
 const started = Date.now();
 
 function writeOutput(final) {
   // Table order = catalog order, cards without a hash absent.
-  const ids = catalog.cards.filter((c) => hashes.has(c.id)).map((c) => c.id);
+  const ids = all.filter((c) => hashes.has(c.id)).map((c) => c.id);
   const words = new Uint32Array(ids.length * HASH_WORDS);
   ids.forEach((id, i) => words.set(hashes.get(id), i * HASH_WORDS));
-  const file = { version: 1, builtAt: new Date().toISOString(), game: 'pokemon', spec: HASH_SPEC, ids, hashes: encodeHashes(words) };
+  const file = { version: 1, builtAt: new Date().toISOString(), game: GAME, spec: spec.id, ids, hashes: encodeHashes(words) };
   const text = JSON.stringify(file);
+  fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, text);
   if (final) {
     const gz = zlib.gzipSync(text).length;
     console.log(`\n${path.relative(root, OUT)}: ${ids.length} hashes, ${text.length} bytes raw (${(text.length / Math.max(1, ids.length)).toFixed(1)} per card), ${gz} gzip`);
     // Versions for the web app's cache busting (see scripts/data-manifest.mjs).
     const manifest = writeDataManifest();
-    console.log(`Wrote public/data/manifest.json (hashes.json v=${manifest.files['hashes.json'].hash})`);
+    console.log(`Wrote public/data/manifest.json (${OUT_REL} v=${manifest.files[OUT_REL].hash})`);
   }
 }
 
@@ -162,7 +194,7 @@ async function worker() {
         stats.decodeFailed++;
         console.warn(`  ${card.id}: decode failed (${e.message}); removing the cached file`);
         try {
-          fs.unlinkSync(imagePath(card));
+          fs.unlinkSync(card.file);
         } catch {}
       }
     }
@@ -180,9 +212,12 @@ await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 writeOutput(true);
 await vite.close();
 
-const withImg = catalog.cards.filter((c) => c.img).length;
 console.log('\n===== SUMMARY =====');
-console.log(`cards: ${catalog.cards.length}, with image: ${withImg}, hashed: ${hashes.size} (${((100 * hashes.size) / catalog.cards.length).toFixed(1)} % of the catalog, ${((100 * hashes.size) / withImg).toFixed(1)} % of the cards with an image)`);
+console.log(
+  GAME === 'ygo'
+    ? `ygo cards: ${catalog.cards.length}, pictures (cards + alternate artworks): ${all.length}, hashed: ${hashes.size} (${((100 * hashes.size) / all.length).toFixed(1)} % of the pictures)`
+    : `pokemon cards: ${catalog.cards.length}, with image: ${all.length}, hashed: ${hashes.size} (${((100 * hashes.size) / catalog.cards.length).toFixed(1)} % of the catalog, ${((100 * hashes.size) / all.length).toFixed(1)} % of the cards with an image)`,
+);
 console.log(`images: cached ${stats.cached}, downloaded ${stats.downloaded}, 404 ${stats.missing} (${stats.newMissing} new), failed ${stats.failed}, undecodable ${stats.decodeFailed}`);
 console.log('image sizes:', [...stats.sizes.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => `${k}×${n}`).join('  '));
 console.log(`elapsed ${Math.round((Date.now() - started) / 1000)} s`);
