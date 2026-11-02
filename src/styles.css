@@ -1609,12 +1609,16 @@ textarea:focus {
 }
 .scan-intro {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* Centred when it fits; scrolls from the top when the added-cards list makes it taller than the screen. */
+  justify-content: safe center;
   gap: 12px;
-  padding: 24px;
+  /* The scan page has no top bar, so it keeps clear of the status bar and camera cut-out itself. */
+  padding: calc(24px + var(--safe-t)) 24px 24px;
+  overflow-y: auto;
   text-align: center;
   color: var(--fg-muted);
   background: var(--bg);
@@ -2247,4 +2251,90 @@ textarea:focus {
 /* Room for the zone beside the last column. */
 .with-quick-scroll {
   padding-right: 28px;
+}
+
+/* ===== Binder view (src/pages/collection/Binder.tsx) ===== */
+/* One page of pockets on screen at a time; the pages sit side by side in a snapping horizontal scroller. */
+.binder-wrap {
+  padding: 8px 12px 0;
+}
+.binder-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 8px;
+}
+.binder-arrow {
+  width: 44px;
+  padding: 6px 0;
+  font-size: 22px;
+  line-height: 1;
+  flex: none;
+}
+.binder-status {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.binder-page-num {
+  font-weight: 700;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.binder-page-label {
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.binder {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  border-radius: var(--radius);
+}
+.binder::-webkit-scrollbar {
+  display: none;
+}
+.binder-page {
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 600px;
+}
+.binder-page.cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.binder-page .card-tile {
+  content-visibility: visible;
+}
+.pocket-empty {
+  aspect-ratio: 63 / 88;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bg-card) 55%, transparent);
+}
+.binder-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 2px 4px;
+}
+.binder-slider {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
 }

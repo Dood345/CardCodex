@@ -8,8 +8,11 @@ import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
+import { Binder } from './collection/Binder';
+import type { PageSize, Pocket } from './collection/binder-pages';
 
 type Tab = 'owned' | 'wanted';
+type View = 'sets' | 'binder';
 
 interface Group {
   set: CatalogSet;
@@ -22,6 +25,8 @@ export default function CollectionPage() {
   const game = useGame();
   const collection = useCollection();
   const [tab, setTab] = useSticky<Tab>(`${game.id}:collection:tab`, 'owned');
+  const [view, setView] = useSticky<View>(`${game.id}:collection:view`, 'sets');
+  const [perPage, setPerPage] = useSticky<PageSize>(`${game.id}:binder:perPage`, 9);
   const [open, setOpen] = useSticky<Set<string>>(`${game.id}:collection:open`, () => new Set());
 
   const stats = useMemo(() => computeStats(collection, index), [collection, index]);
@@ -47,6 +52,9 @@ export default function CollectionPage() {
     list.sort((a, b) => (setRecency(a.set) < setRecency(b.set) ? 1 : -1));
     return list;
   }, [collection, index, tab]);
+
+  // The binder holds the same cards in the same order, set by set.
+  const pockets = useMemo<Pocket[]>(() => groups.flatMap((g) => g.cards.map((card) => ({ card, set: g.set }))), [groups]);
 
   const toggle = (id: string) =>
     setOpen((prev) => {
@@ -84,6 +92,13 @@ export default function CollectionPage() {
           <Chip active={tab === 'wanted'} onClick={() => setTab('wanted')}>
             Wishlist
           </Chip>
+          <span className="chip-sep" />
+          <Chip active={view === 'sets'} onClick={() => setView('sets')}>
+            By set
+          </Chip>
+          <Chip active={view === 'binder'} onClick={() => setView('binder')}>
+            Binder
+          </Chip>
         </div>
       </TopBar>
 
@@ -106,6 +121,8 @@ export default function CollectionPage() {
             </div>
           }
         />
+      ) : view === 'binder' ? (
+        <Binder pockets={pockets} collection={collection} storageKey={`${game.id}:${tab}`} perPage={perPage} onPerPage={setPerPage} />
       ) : (
         groups.map((g) => {
           const expanded = open.has(g.set.id) || groups.length <= 3;

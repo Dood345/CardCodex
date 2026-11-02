@@ -86,6 +86,10 @@ with Capacitor. Your collection lives only on your device.
 - **Quick scroll** – long lists (the Pokédex, the archetypes) have a strip down the right edge:
   drag it to move through the whole list, with Pokédex hundreds or archetype letters along it and a
   bubble naming what is under your finger.
+- **Binder view** – the Collection tab can show your cards (or your wishlist) as a binder: pages of
+  9 or 12 pockets, set by set in number order, turned with a swipe, the arrows, the slider or the
+  arrow keys. Empty pockets on the last page show where the next cards go, and opening a card and
+  coming back lands on the same page.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
