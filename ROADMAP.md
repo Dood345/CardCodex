@@ -28,26 +28,32 @@ source whose terms allow it), real quantities, and the card suggestions below.
   Limitless (Pokémon tournament lists), Konami's structure deck pages (Yu-Gi-Oh!) and hand-curated
   lists.
 
-### Magic: The Gathering as a third game
+### Magic: The Gathering: the scanner and the rest
 
-- The biggest item. Games plug in through `GameProfile` (`src/games/types.ts`); Yu-Gi-Oh!
-  (`src/games/ygo/`) is the template: a `GameId` with an id prefix (`mtg:`), a catalog build
-  script, the profile (categories, facts, quick groups, wording), the scanner matcher and an
-  artwork hash table.
-- Data: Scryfall's bulk data (free, CORS, card images allowed with caching). Scale is the
-  challenge: about 30k distinct cards and over 90k printings, several times the Pokémon catalog, so
-  the catalog needs splitting (per set, or the distinct cards plus a printings index loaded on
-  demand) rather than one JSON file.
+Browsing, search, card pages, the collection and the binder work for Magic (`src/games/mtg/`, catalog
+from Scryfall by `npm run catalog:mtg`: ~98k printings of ~34k cards in one 11.4 MB file, 4.3 MB
+gzipped, loaded like the other games). Still to do:
+
 - Scanner: the name sits top-left and the collector number and set code bottom-left, so a new OCR
-  geometry and matcher; the artwork hashes work as for the other games.
-- Rules: a 60-card main deck, four copies of a card except basic lands, sideboards, 100-card
-  singleton commander decks. These fit the per-game `deckRules` in `src/games/deck-rules.ts`
-  (sections, `sectionOf`, `copyLimit`); a sideboard is the existing side zone, and commander is a
-  second rule set.
+  geometry and a real matcher in `src/scanner/mtg/` (fuzzy names, per-card line grouping for binder
+  pages). `src/games/mtg/match.ts` is a minimal placeholder (exact name, set code + number, one card
+  per frame) and `createMatcher` in the profile is where the real one plugs in.
+- Artwork hashes: `hashFileFor` (`src/scanner/artwork.ts`) has no Magic case yet; a table over ~98k
+  printings is about 3 MB, or hash per illustration id to share pictures between reprints.
+- Decks: `MTG_DECK_RULES` (`src/games/deck-rules.ts`) gives one main deck of at least 60 cards with
+  four copies of a card except basic lands. Still open: a sideboard (the existing side zone, at most
+  15) and 100-card singleton commander decks as a second rule set.
+- Oracle text is left out of the catalog (it would add 6 MB raw, 1.5 MB gzipped). If rules text is
+  wanted on the card page or in search, ship it as a separate file loaded on demand.
+- Set symbols: Scryfall serves one SVG per set (`icon_svg_uri` in `/sets`); the Sets list shows the
+  set code instead for now.
+- Size on phones: the Magic index takes ~100 MB of JS heap on desktop Chrome and about 0.7 s to
+  fetch, parse and index; not yet measured on a phone or the emulator, and the APK grows by the
+  catalog file.
 
 ## Standing rule: Yu-Gi-Oh! gets every fix
 
-Every fix or feature is checked against Yu-Gi-Oh! mode rather than assumed to carry over. The
+Every fix or feature is checked against Yu-Gi-Oh! mode (and now Magic) rather than assumed to carry over. The
 game-neutral paths (collection, binder, decks, sharing, backup, scroll memory, quick scroll on the
 archetypes) do carry over; a branch on `game.id` gets its own Yu-Gi-Oh! case. The project's only
 tester owns no Yu-Gi-Oh! cards, so the check is headless Chrome or the emulator with the game

@@ -129,7 +129,8 @@ code {
   height: calc(var(--nav-h) + var(--safe-b));
   padding-bottom: var(--safe-b);
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
@@ -540,6 +541,10 @@ textarea:focus {
 .card-missing {
   filter: grayscale(0.9) opacity(0.55);
 }
+/* Scryfall asks that card images are not desaturated or color-shifted: missing Magic cards are only faded. */
+.scryfall-art.card-missing {
+  filter: opacity(0.4);
+}
 .card-placeholder {
   width: 100%;
   height: 100%;
@@ -565,6 +570,10 @@ textarea:focus {
   padding: 2px 7px;
   border-radius: 999px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.scryfall-art .qty-badge {
+  top: 6px;
+  bottom: auto;
 }
 .want-badge {
   position: absolute;

@@ -213,15 +213,16 @@ export interface CollectionStats {
   totalCopies: number;
   uniqueCards: number;
   wanted: number;
-  /** Distinct groups (Pokémon species / Yu-Gi-Oh! archetypes) with at least one owned card. */
+  /** Distinct groups (Pokémon species / Yu-Gi-Oh! archetypes / Magic Oracle cards) with at least one owned card. */
   groupsOwned: number;
   /** Sets with at least one owned card. */
   setsTouched: number;
 }
 
-/** Grouping keys of a card for the stats tile: species dex ids or the archetype. */
-export function groupsOf(card: Pick<CatalogCard, 'dex' | 'arc'>): string[] {
+/** Grouping keys of a card for the stats tile: species dex ids, the archetype, or the Magic Oracle card. */
+export function groupsOf(card: Pick<CatalogCard, 'dex' | 'arc' | 'oid'>): string[] {
   if (card.dex) return card.dex.map(String);
+  if (card.oid) return [card.oid];
   return card.arc ? [card.arc] : [];
 }
 

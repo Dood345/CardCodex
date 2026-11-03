@@ -10,6 +10,7 @@ import { clearImageCache, imageCacheStats } from '@/data/imageCache';
 import { YGOPRODECK_IMAGES } from '@/data/types';
 import { GAMES } from '@/games';
 import { Chip, Sheet, Toast, TopBar, useToast } from '@/ui/components';
+import { GAME_BLURB } from '@/ui/GameSwitch';
 
 function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
@@ -75,7 +76,12 @@ export default function SettingsPage() {
   }
 
   const groupsLine =
-    game.id === 'pokemon' ? `${index.species.length} species` : `${index.archetypes.length} archetypes, ${index.cardsByPasscode.size.toLocaleString()} distinct cards`;
+    game.id === 'pokemon'
+      ? `${index.species.length} species`
+      : game.id === 'mtg'
+        ? `${new Set(index.catalog.cards.map((c) => c.oid)).size.toLocaleString()} distinct cards`
+        : `${index.archetypes.length} archetypes, ${index.cardsByPasscode.size.toLocaleString()} distinct cards`;
+  const rebuildCommand = game.id === 'pokemon' ? 'npm run catalog' : `npm run catalog:${game.id}`;
 
   return (
     <>
@@ -95,12 +101,12 @@ export default function SettingsPage() {
                 <g.Icon size={28} />
                 <span>
                   <strong>{g.name}</strong>
-                  <small>{g.id === 'pokemon' ? 'Pokédex, sets, printed numbers' : 'Archetypes, sets, set codes and passcodes'}</small>
+                  <small>{GAME_BLURB[g.id]}</small>
                 </span>
               </button>
             ))}
           </div>
-          <p className="hint">Each game has its own catalog, browse tab and scanner. Your collection keeps both games' cards.</p>
+          <p className="hint">Each game has its own catalog, browse tab and scanner. Your collection keeps every game's cards.</p>
         </section>
 
         <section className="settings-section">
@@ -255,13 +261,13 @@ export default function SettingsPage() {
         <section className="settings-section">
           <h2>Catalog</h2>
           <p className="hint">
-            {game.name}: {index.catalog.cards.length.toLocaleString()} {game.id === 'ygo' ? 'printings' : 'cards'} across{' '}
+            {game.name}: {index.catalog.cards.length.toLocaleString()} {game.id === 'pokemon' ? 'cards' : 'printings'} across{' '}
             {index.catalog.sets.length.toLocaleString()} sets, {groupsLine}.
             <br />
             Built {new Date(index.catalog.builtAt).toLocaleDateString()}. {game.text.credits}
           </p>
           <p className="hint">
-            To pick up new sets, rebuild the catalog with <code>{game.id === 'ygo' ? 'npm run catalog:ygo' : 'npm run catalog'}</code> and
+            To pick up new sets, rebuild the catalog with <code>{rebuildCommand}</code> and
             deploy: the web app loads the new data on its next start, the Android app with its next APK.
           </p>
         </section>
@@ -272,6 +278,7 @@ export default function SettingsPage() {
             CardCodex v{__APP_VERSION__} · open source under GPL-3.0. Not affiliated with Nintendo, Creatures, GAME FREAK, The Pokémon
             Company, Konami, Shueisha or 4K Media.
           </p>
+          <p className="hint">{GAMES.find((g) => g.id === 'mtg')?.text.disclaimer}</p>
         </section>
       </div>
 

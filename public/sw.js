@@ -10,7 +10,7 @@ const VERSION = 'cardcodex-v2';
 const SHELL = `${VERSION}-shell`;
 const DATA = `${VERSION}-data`;
 const IMAGES = `${VERSION}-images`;
-const IMAGE_HOSTS = ['assets.tcgdex.net', 'raw.githubusercontent.com', 'images.ygoprodeck.com'];
+const IMAGE_HOSTS = ['assets.tcgdex.net', 'raw.githubusercontent.com', 'images.ygoprodeck.com', 'cards.scryfall.io'];
 const MAX_IMAGES = 1500;
 /* One build is index.html, the web manifest, a dozen hashed chunks, icons and
  * the OCR model; the hashed chunks of older builds age out past this. */

@@ -149,7 +149,7 @@ describe('public/data/manifest.json', () => {
 
   it('lists every data file the app loads', () => {
     expect(committed).not.toBeNull();
-    expect(Object.keys(committed!.files).sort()).toEqual(['catalog.json', 'hashes.json', 'species.json', 'ygo/catalog.json', 'ygo/decks.json', 'ygo/hashes.json']);
+    expect(Object.keys(committed!.files).sort()).toEqual(['catalog.json', 'hashes.json', 'mtg/catalog.json', 'species.json', 'ygo/catalog.json', 'ygo/decks.json', 'ygo/hashes.json']);
   });
   it('matches the committed data files byte for byte', () => {
     for (const [file, entry] of Object.entries(committed!.files)) {

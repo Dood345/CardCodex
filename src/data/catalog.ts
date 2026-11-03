@@ -7,6 +7,7 @@
  */
 import { isNative } from '@/app/platform';
 import type { GameId } from '@/games/ids';
+import { expandMtgCatalog, type MtgCatalogFile } from '@/games/mtg/catalog';
 import { expandYgoCatalog, type YgoCatalogFile } from '@/games/ygo/catalog';
 import {
   dataCacheMode,
@@ -161,6 +162,12 @@ export async function loadCatalog(game: GameId = 'pokemon'): Promise<CatalogInde
     const file = await fetchJson<YgoCatalogFile>('ygo/catalog.json', manifest);
     return buildIndex(expandYgoCatalog(file), []);
   }
+  if (game === 'mtg') {
+    // One file (11 MB, 4.3 MB gzipped for ~98k printings), like the other games;
+    // see scripts/build-mtg-catalog.mjs for what it holds.
+    const file = await fetchJson<MtgCatalogFile>('mtg/catalog.json', manifest);
+    return buildIndex(expandMtgCatalog(file), []);
+  }
   const [catalog, speciesFile] = await Promise.all([
     fetchJson<Catalog>('catalog.json', manifest),
     fetchJson<SpeciesFile>('species.json', manifest),
@@ -207,7 +214,16 @@ export function buildIndex(catalog: Catalog, species: Species[]): CatalogIndex {
 
     const set = setsById.get(card.set);
     const setText = set ? `${normalizeText(set.name)} ${set.abbr.toLowerCase()}` : '';
-    const extra = [card.pc, card.arc && normalizeText(card.arc), card.race && normalizeText(card.race)].filter(Boolean).join(' ');
+    const extra = [
+      card.pc,
+      card.arc && normalizeText(card.arc),
+      card.race && normalizeText(card.race),
+      // Magic: the type line ("goblin", "equipment") and the illustrator.
+      card.sid && card.sub && normalizeText(card.sub),
+      card.artist && normalizeText(card.artist),
+    ]
+      .filter(Boolean)
+      .join(' ');
     searchText.set(card.id, {
       name: normName,
       all: `${normName} | ${setText} ${card.num.toLowerCase()} ${card.id} ${card.set} ${set?.official ?? ''} ${extra}`,

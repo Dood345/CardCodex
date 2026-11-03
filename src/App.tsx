@@ -118,7 +118,8 @@ function Shell() {
     { key: 'search', path: '/search', label: 'Search', Icon: SearchIcon },
     { key: 'scan', path: '/scan', label: 'Scan', Icon: CameraIcon },
     { key: 'collection', path: '/collection', label: 'Collection', Icon: BackpackIcon },
-  ];
+    // A game whose browse tab is Sets (Magic) gets four tabs, not two Sets.
+  ].filter((n) => n.key === 'browse' || n.path !== game.browse.path);
 
   let page: React.ReactNode;
   switch (section) {
@@ -159,7 +160,7 @@ function Shell() {
       );
       break;
     default:
-      page = browseKey === 'archetypes' ? <ArchetypesPage /> : <DexPage />;
+      page = browseKey === 'archetypes' ? <ArchetypesPage /> : browseKey === 'sets' ? <SetsPage /> : <DexPage />;
   }
 
   return (

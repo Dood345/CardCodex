@@ -3,6 +3,9 @@ import { useCatalog, useGame } from '@/app/context';
 import { useCollection, progressOf } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
 import { SetRow, TopBar } from '@/ui/components';
+import { GameSwitch } from '@/ui/GameSwitch';
+import { GearIcon } from '@/ui/icons';
+import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
 
 export default function SetsPage() {
@@ -47,7 +50,21 @@ export default function SetsPage() {
 
   return (
     <>
-      <TopBar title="Sets" subtitle={`${touched} of ${index.catalog.sets.length} sets started`}>
+      <TopBar
+        title="Sets"
+        subtitle={`${touched} of ${index.catalog.sets.length} sets started`}
+        actions={
+          // Where Sets is the browse tab (Magic), it carries the game switch and Settings like the other browse tabs.
+          game.browse.path === '/sets' ? (
+            <>
+              <GameSwitch />
+              <a className="icon-btn" href={href('/settings')} aria-label="Settings">
+                <GearIcon />
+              </a>
+            </>
+          ) : undefined
+        }
+      >
         <div className="toolbar">
           <input
             className="search-input"
