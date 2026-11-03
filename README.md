@@ -102,6 +102,9 @@ with Capacitor. Your collection lives only on your device.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
+What comes next (prebuilt decks and suggestions, adding cards from the binder in the deck editor,
+Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
+
 ### Yu-Gi-Oh! mode
 
 - **Archetypes** replaces the Pokédex: all ~665 archetypes with a cover artwork and how many of
