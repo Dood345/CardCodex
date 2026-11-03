@@ -22,7 +22,7 @@ interface TourStep {
 }
 
 export function tourSteps(game: GameProfile): TourStep[] {
-  return [
+  const steps: TourStep[] = [
     { title: 'Welcome to CardCodex', body: game.text.tourWelcome },
     { title: game.text.tourBrowseTitle, route: game.browse.path, target: 'nav-browse', body: game.text.tourBrowse },
     {
@@ -44,6 +44,8 @@ export function tourSteps(game: GameProfile): TourStep[] {
       body: 'Start by scanning a few cards or opening a set. Your collection stays on this device; export a backup from Settings whenever you like.',
     },
   ];
+  // When Sets is the browse tab (Magic), the browse step already covers it.
+  return game.browse.path === '/sets' ? steps.filter((s) => s.target !== 'nav-sets') : steps;
 }
 
 const PAD = 8;

@@ -9,9 +9,11 @@ import { GAMES, gameById } from '@/games';
 import { Sheet } from './components';
 import { navigate } from './router';
 
-const BLURB: Record<string, string> = {
+/** One line per game under its name in the game pickers (here and Settings). */
+export const GAME_BLURB: Record<string, string> = {
   pokemon: 'Pokédex, sets, printed numbers',
   ygo: 'Archetypes, sets, set codes and passcodes',
+  mtg: 'Sets, printings and collector numbers',
 };
 
 export function GameSwitch({ compact }: { compact?: boolean }) {
@@ -43,12 +45,12 @@ export function GameSwitch({ compact }: { compact?: boolean }) {
               <g.Icon size={28} />
               <span>
                 <strong>{g.name}</strong>
-                <small>{BLURB[g.id]}</small>
+                <small>{GAME_BLURB[g.id]}</small>
               </span>
             </button>
           ))}
         </div>
-        <p className="hint">Your collection keeps both games; switching only changes what the app shows and scans.</p>
+        <p className="hint">Your collection keeps every game's cards; switching only changes what the app shows and scans.</p>
       </Sheet>
     </>
   );

@@ -1,6 +1,6 @@
 /**
  * Deck rules per game: the sections a deck has (Pokémon one of 60 cards;
- * Yu-Gi-Oh! Main 40–60, Extra 0–15, Side 0–15), which section a deck line
+ * Yu-Gi-Oh! Main 40–60, Extra 0–15, Side 0–15; Magic one of 60 or more), which section a deck line
  * belongs to, and how many copies of a card a deck may hold. Pure (no React)
  * so the data layer and the tests use it directly; each game profile points
  * at its rules (`GameProfile.deckRules`). Nothing here is enforced: the deck
@@ -8,6 +8,7 @@
  */
 import type { DeckCard } from '@/data/db';
 import type { CatalogCard } from '@/data/types';
+import { isBasicLand } from './mtg/catalog';
 
 export type DeckSectionId = 'main' | 'extra' | 'side';
 
@@ -79,6 +80,17 @@ export const YGO_DECK_RULES: DeckRules = {
   sectionOf: (card, line) => (line.zone === 'side' ? 'side' : isExtraDeckCard(card) ? 'extra' : 'main'),
   copyLimit: () => 3,
   limitHint: '3 copies at most',
+};
+
+/* ---------- Magic: The Gathering ---------- */
+
+/** Constructed: at least 60 cards, four copies of a card at most, any number of basic lands. */
+export const MTG_DECK_RULES: DeckRules = {
+  sections: [{ id: 'main', label: 'Deck', min: 60, max: Infinity, hint: 'A Magic deck has at least 60 cards' }],
+  side: false,
+  sectionOf: () => 'main',
+  copyLimit: (card) => (isBasicLand(card) ? Infinity : 4),
+  limitHint: '4 copies at most',
 };
 
 /** The size reminder for one section, or null when its count is in range. */

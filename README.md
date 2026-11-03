@@ -1,7 +1,7 @@
 # CardCodex
 
-A Pokédex-style collection tracker for the **Pokémon Trading Card Game** and the **Yu-Gi-Oh! Trading
-Card Game**. Browse every English card ever printed with its artwork, keep track of exactly which ones
+A Pokédex-style collection tracker for the **Pokémon Trading Card Game**, the **Yu-Gi-Oh! Trading
+Card Game** and **Magic: The Gathering**. Browse every English card ever printed with its artwork, keep track of exactly which ones
 you own, hunt for the ones you're missing, and add cards by pointing your phone's camera at them.
 
 CardCodex is a single web app (installable PWA) that is also packaged as a native **Android** app
@@ -14,10 +14,10 @@ with Capacitor. Your collection lives only on your device.
 
 ## What it does
 
-- **Two games, one collection** – pick Pokémon or Yu-Gi-Oh! in Settings or from the pill in the
-  browse and collection tabs. Each game has its own offline catalog, browse tab, card facts and
-  scanner; your collection and backups hold both games' cards. (See *Yu-Gi-Oh! mode* below for what
-  differs.)
+- **Three games, one collection** – pick Pokémon, Yu-Gi-Oh! or Magic in Settings or from the pill in
+  the browse and collection tabs. Each game has its own offline catalog, browse tab, card facts and
+  scanner; your collection and backups hold every game's cards. (See *Yu-Gi-Oh! mode* and *Magic
+  mode* below for what differs.)
 - **Pokédex** – all 1,025 species with sprites and type colours. Species you own no cards of show as
   silhouettes, Pokédex-style. Filter by generation or collected/missing; tap a species for its
   official artwork and every card that features it (newest first) with owned counts.
@@ -108,11 +108,11 @@ with Capacitor. Your collection lives only on your device.
   come from YGOPRODeck (`npm run decks:ygo`, one copy per printed card); Pokémon has no starter
   decks yet, because TCGdex carries no deck lists and the official product pages cannot be
   fetched by a build script.
-- **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
+- **Guided tour** – a short, skippable walk through the tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
-What comes next (Pokémon starter decks and card suggestions for a deck, Magic: The Gathering as a
-third game) is in [ROADMAP.md](ROADMAP.md).
+What comes next (Pokémon starter decks and card suggestions for a deck, the Magic
+scanner) is in [ROADMAP.md](ROADMAP.md).
 
 ### Yu-Gi-Oh! mode
 
@@ -142,6 +142,28 @@ third game) is in [ROADMAP.md](ROADMAP.md).
   service worker do the same job. Settings → *Card images* can point the app at a self-hosted mirror
   of the `cards_small/` and `cards/` folders and shows/clears the stored images.
 
+### Magic mode
+
+- **Sets is the browse tab** (four tabs instead of five): 626 English paper sets from Alpha to the
+  newest previews, grouped by release year, each with its binder and completion bar.
+- **Printings are the unit**, as for Yu-Gi-Oh!: every catalog entry is one set + collector number
+  (id `mtg:lea-161`; numbers may carry letters or `★`), about 98k printings of 34k distinct cards.
+  The Scryfall Oracle id ties the printings of a card together: a card page lists its other
+  printings, and the collection counts distinct cards by it. Tokens, art cards, gold-bordered
+  replicas, oversized cards (planes, schemes) and digital-only cards are left out.
+- **Card facts**: type line, mana cost, mana value, color, power/toughness, loyalty or defense,
+  rarity, artist and the number of printings. Search understands names (either face of a
+  double-faced card), type lines (`goblin`, `equipment`), set names, set codes with collector numbers
+  (`LEA 161`) and artists; filters narrow by card type, color, rarity and year. Oracle text is not
+  in the catalog (it would add 6 MB); the card image carries it.
+- **Images** come from [Scryfall](https://scryfall.com)'s image CDN (`cards.scryfall.io`, the
+  `grid` and `display` WebP formats), cached by the browser and the service worker. As Scryfall's
+  image guidelines ask, card images are shown whole: the quantity badge sits top-right, clear of the
+  copyright line, and unowned cards in a set are faded rather than greyed.
+- **Scanner**: basic for now. A placeholder matcher (`src/games/mtg/match.ts`) reads the card name
+  and the set code and collector number at the bottom-left of one card; there is no artwork hash
+  table yet, so binder-page scanning only has OCR to go on.
+
 ## Data
 
 The card catalogs are prebuilt, offline snapshots in `public/data/`:
@@ -153,6 +175,12 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   [YGOPRODeck API](https://ygoprodeck.com/api-guide/) (two-level: cards by passcode with type,
   attribute, monster type, level, ATK/DEF, archetype; printings by set code with rarity). Expanded
   into the shared catalog shape at load time (`src/games/ygo/catalog.ts`).
+- `mtg/catalog.json` – every English paper Magic: The Gathering printing from
+  [Scryfall's bulk data](https://scryfall.com/docs/api/bulk-data) (`default_cards`; 11.4 MB, 4.3 MB
+  gzipped). Two-level like the Yu-Gi-Oh! file: cards by Oracle id with type line, mana cost, mana
+  value, colors, power/toughness, loyalty, defense; printings by set and collector number with
+  rarity, Scryfall id (which names the image) and artist. Expanded at load time
+  (`src/games/mtg/catalog.ts`).
 - `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (19.7k cards,
   32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
   (`src/scanner/hash.ts`). Built from the TCGdex images by `npm run hashes` (each image is downloaded
@@ -164,7 +192,7 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
 
 Pokémon card images are served by TCGdex (`assets.tcgdex.net`), species sprites and artwork by the
 PokéAPI sprites repository; Yu-Gi-Oh! images by YGOPRODeck, stored on the device after the first
-view (see above). Rebuild a catalog to pick up new sets:
+view (see above); Magic images by Scryfall. Rebuild a catalog to pick up new sets:
 
 ```bash
 npm run catalog
@@ -172,6 +200,10 @@ npm run catalog
 
 ```bash
 npm run catalog:ygo
+```
+
+```bash
+npm run catalog:mtg
 ```
 
 ```bash
@@ -302,9 +334,15 @@ SDK under `%LOCALAPPDATA%`, Chrome for the grid bench) and say what to do when s
 
 Pokémon card data and images: [TCGdex](https://tcgdex.dev). Pokédex data and sprites:
 [PokéAPI](https://pokeapi.co). Yu-Gi-Oh! card data and images: [YGOPRODeck](https://ygoprodeck.com).
+Magic: The Gathering card data and images: [Scryfall](https://scryfall.com); CardCodex is not
+produced by or endorsed by Scryfall.
 Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and GAME FREAK; Pokémon
 card images are © The Pokémon Company. Yu-Gi-Oh! is a trademark of Konami; Yu-Gi-Oh! card images and
 text are © Konami Digital Entertainment / 4K Media. CardCodex is an independent fan project and is not
 affiliated with or endorsed by any of them.
+
+CardCodex is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by
+Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast
+LLC.
 
 Licensed under GPL-3.0 – see [LICENSE](LICENSE).
