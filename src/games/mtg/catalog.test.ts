@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { buildIndex } from '@/data/catalog';
 import { groupsOf } from '@/data/collection';
+import { decodeDeck, encodeDeck, DECK_LINK_PREFIX } from '@/data/deck-code';
+import { decodeDeckText, encodeDeckFile } from '@/data/deck-file';
 import { limitHint, overLimit } from '@/data/decks';
+import { routeForUrl } from '@/app/deepLinks';
 import { searchCards } from '@/data/search';
 import { cardImageUrl } from '@/data/types';
 import { MTG_DECK_RULES, sectionHint } from '../deck-rules';
@@ -243,5 +246,27 @@ describe('deck rules', () => {
     ];
     expect(MTG_DECK_RULES.copyLimit(forest)).toBe(Infinity);
     expect(limitHint(MTG_DECK_RULES, overLimit(MTG_DECK_RULES, cards, index))).toBe('4 copies at most: Lightning Bolt ×5.');
+  });
+});
+
+describe('deck sharing', () => {
+  // Collector numbers may carry ★ (and †, Φ): the ids must survive every way a deck travels.
+  const deck = {
+    game: 'mtg' as const,
+    name: 'Burn',
+    cards: [
+      { cardId: 'mtg:sld-1638★', qty: 4 },
+      { cardId: 'mtg:plst-PF19-1', qty: 1 },
+      { cardId: 'mtg:lea-294', qty: 20 },
+    ],
+  };
+
+  it('round-trips a Magic deck through the share code, the link and the .ccdeck file', async () => {
+    const code = await encodeDeck(deck);
+    expect(code).toMatch(/^CCD1\.[A-Za-z0-9_-]+$/);
+    expect(await decodeDeck(code)).toEqual(deck);
+    const link = `${DECK_LINK_PREFIX}${code}`;
+    expect(routeForUrl(link)).toBe(`/decks/import/${code}`);
+    expect(await decodeDeckText(encodeDeckFile(deck))).toEqual(deck);
   });
 });
