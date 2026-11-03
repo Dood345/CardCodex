@@ -9,6 +9,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { CatalogIndex } from '@/data/catalog';
 import type { CardCategory, CatalogCard, CatalogSet } from '@/data/types';
 import type { ScanMatcher } from '@/scanner/types';
+import type { DeckRules } from './deck-rules';
 import type { GameId } from './ids';
 
 export interface IconProps {
@@ -83,6 +84,8 @@ export interface GameProfile {
   /** Browse groups matching a search query (shown above card results). */
   quickGroups(index: CatalogIndex, query: string): QuickGroup[];
   text: GameText;
+  /** Deck sections, copy limits and size reminders (src/games/deck-rules.ts). */
+  deckRules: DeckRules;
   /** The OCR-lines → card candidates matcher for this game's catalog. */
   createMatcher(index: CatalogIndex): ScanMatcher;
 }

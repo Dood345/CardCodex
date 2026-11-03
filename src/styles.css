@@ -2453,6 +2453,42 @@ textarea:focus {
 .sheet .deck-new {
   margin: 12px 0 0;
 }
+/* Deck sections from the game's rules (src/pages/DeckSections.tsx): "Main 40 · Extra 15 · Side 15". */
+.deck-counts {
+  margin: 12px 12px 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.deck-count.off {
+  color: var(--warn);
+}
+.deck-limit {
+  color: var(--warn);
+}
+.deck-zone {
+  padding-top: 8px;
+}
+.deck-zone-title {
+  font-size: 17px;
+  margin: 12px 12px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.deck-zone .section-title {
+  font-size: 14px;
+  padding: 0;
+  color: var(--fg-muted);
+}
+.deck-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: none;
+}
+.deck-move {
+  white-space: nowrap;
+}
 
 /* A sheet whose choices stack: the share sheet of a deck (src/pages/DeckPage.tsx). */
 .sheet-actions.stack {

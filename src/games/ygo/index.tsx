@@ -9,6 +9,7 @@ import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import { createYgoMatcher } from '@/scanner/ygo/match';
 import { ArchetypeIcon, AttributeIcon, MillenniumIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
+import { YGO_DECK_RULES } from '../deck-rules';
 import type { Fact, GameProfile, QuickGroup } from '../types';
 import { levelLabel } from './catalog';
 
@@ -139,5 +140,6 @@ export const ygo: GameProfile = {
       'Built from the YGOPRODeck API. Card images © Konami Digital Entertainment, served by YGOPRODeck and stored on this device after the first view, as their terms ask.',
     disclaimer: 'Not affiliated with Konami, Shueisha or 4K Media.',
   },
+  deckRules: YGO_DECK_RULES,
   createMatcher: (index) => createYgoMatcher(index.catalog),
 };

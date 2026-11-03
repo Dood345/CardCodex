@@ -14,7 +14,7 @@ import { createDeck, summarizeDeck } from '@/data/decks';
 import { gameById } from '@/games';
 import { EmptyState, TopBar } from '@/ui/components';
 import { href, navigate } from '@/ui/router';
-import { DeckRow } from './DeckPage';
+import { DeckSections } from './DeckSections';
 
 type State = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ok'; share: DeckShare };
 
@@ -108,18 +108,13 @@ export default function DeckImportPage({ code }: { code: string }) {
           {unknown} {unknown === 1 ? 'card is' : 'cards are'} not in this catalog and will be left out.
         </p>
       )}
-      {known.length === 0 ? (
-        <EmptyState title="Nothing to import" hint="None of the cards in this deck are in the catalog." />
-      ) : (
-        <section className="deck-section">
-          <div className="scan-candidates">
-            {known.map((c) => {
-              const card = index.cardsById.get(c.cardId)!;
-              return <DeckRow key={c.cardId} card={card} set={index.setsById.get(card.set)} qty={c.qty} collection={collection} />;
-            })}
-          </div>
-        </section>
-      )}
+      <DeckSections
+        game={game}
+        cards={known}
+        index={index}
+        collection={collection}
+        empty={<EmptyState title="Nothing to import" hint="None of the cards in this deck are in the catalog." />}
+      />
     </>
   );
 }

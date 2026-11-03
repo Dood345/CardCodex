@@ -43,7 +43,10 @@ async function pipe(bytes: Uint8Array<ArrayBuffer>, stream: CompressionStream | 
 
 /** The share code for a deck. */
 export async function encodeDeck(deck: DeckShare): Promise<string> {
-  const json = JSON.stringify({ v: 1, g: deck.game, n: deck.name, c: deck.cards.map((c) => [c.cardId, c.qty]) });
+  // A side-deck line gains a third element, 's'. The format stays v1: a
+  // 1.5.0 reader ignores the extra element and puts those copies in the deck.
+  const lines = deck.cards.map((c) => (c.zone === 'side' ? [c.cardId, c.qty, 's'] : [c.cardId, c.qty]));
+  const json = JSON.stringify({ v: 1, g: deck.game, n: deck.name, c: lines });
   const packed = await pipe(new TextEncoder().encode(json), new CompressionStream('deflate-raw'));
   return PREFIX + toBase64Url(packed);
 }
@@ -71,7 +74,7 @@ export async function decodeDeck(text: string): Promise<DeckShare> {
   for (const line of r.c) {
     if (!Array.isArray(line) || typeof line[0] !== 'string') continue;
     const qty = Math.min(99, Math.floor(Number(line[1])));
-    if (qty > 0) cards.push({ cardId: line[0], qty });
+    if (qty > 0) cards.push(line[2] === 's' ? { cardId: line[0], qty, zone: 'side' } : { cardId: line[0], qty });
   }
   return { game: r.g, name: r.n.trim().slice(0, 80) || 'Shared deck', cards };
 }
