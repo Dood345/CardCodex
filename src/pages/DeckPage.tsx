@@ -19,8 +19,9 @@ import { searchCards } from '@/data/search';
 import type { CatalogCard, CatalogSet } from '@/data/types';
 import { gameById } from '@/games';
 import { EmptyState, Sheet, Toast, TopBar, useToast } from '@/ui/components';
-import { HeartIcon, ShareIcon } from '@/ui/icons';
+import { BinderIcon, HeartIcon, ShareIcon } from '@/ui/icons';
 import { navigate } from '@/ui/router';
+import { FromBinderSheet } from './deck/FromBinderSheet';
 import type { CatalogIndex } from '@/data/catalog';
 import { DeckRow, DeckSections } from './DeckSections';
 
@@ -53,6 +54,7 @@ export default function DeckPage({ id }: { id: string }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [toast, showToast] = useToast();
 
   const summary = useMemo(() => (deck ? summarizeDeck(deck.cards, collection) : null), [deck, collection]);
@@ -151,6 +153,9 @@ export default function DeckPage({ id }: { id: string }) {
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"
           />
+          <button type="button" className="btn" onClick={() => setPicking(true)}>
+            <BinderIcon size={18} /> From my binder
+          </button>
         </div>
       </TopBar>
 
@@ -198,6 +203,7 @@ export default function DeckPage({ id }: { id: string }) {
         empty={<EmptyState title="An empty deck" hint="Search above to add cards, or open any card and tap “Add to deck”." />}
       />
 
+      <FromBinderSheet open={picking} onClose={() => setPicking(false)} deckId={deck.id} cards={deck.cards} />
       <Sheet open={sharing} onClose={() => setSharing(false)} title={`Share ${deck.name}`}>
         <p>
           The deck file opens in a friend's CardCodex with their own owned and missing counts. A message does for chats that take no

@@ -401,11 +401,14 @@ export function Sheet({
   open,
   onClose,
   title,
+  className,
   children,
 }: {
   open: boolean;
   onClose: () => void;
   title?: ReactNode;
+  /** Extra class on the sheet itself (a taller sheet, say). */
+  className?: string;
   children: ReactNode;
 }) {
   // Android back and Escape both close the sheet.
@@ -421,7 +424,7 @@ export function Sheet({
   if (!open) return null;
   return (
     <div className="backdrop" onClick={onClose}>
-      <div className="sheet" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+      <div className={`sheet${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
         {title && <div className="sheet-title">{title}</div>}
         {children}
       </div>
