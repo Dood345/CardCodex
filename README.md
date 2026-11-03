@@ -91,8 +91,9 @@ with Capacitor. Your collection lives only on your device.
   arrow keys. Empty pockets on the last page show where the next cards go, and opening a card and
   coming back lands on the same page.
 - **Decks** – Collection → Decks holds deck lists for either game, made of cards you own and cards
-  you are still after. Add cards from a search box on the deck or from any card's "Add to deck";
-  every line shows how many copies you own and how many are missing, and one tap puts every missing
+  you are still after. Add cards from a search box on the deck, from "From my binder" (a tall sheet
+  over your owned cards, or your wishlist, set by set like the binder, with a name search, a set
+  filter and a stepper on every card) or from any card's "Add to deck"; every line shows how many copies you own and how many are missing, and one tap puts every missing
   card on your wishlist. "Share" sends the deck through the Android share sheet (Messenger, Quick
   Share, mail…) as a small `.ccdeck` file that opens in a friend's CardCodex when they tap it, or as
   a plain message: the list in words plus a short `CCD1.` code and a `cardcodex://deck/` link to
@@ -102,8 +103,7 @@ with Capacitor. Your collection lives only on your device.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
-What comes next (prebuilt decks and suggestions, adding cards from the binder in the deck editor,
-Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
+What comes next (prebuilt decks and suggestions, Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
 
 ### Yu-Gi-Oh! mode
 

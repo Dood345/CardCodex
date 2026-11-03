@@ -19,8 +19,9 @@ import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import { gameById } from '@/games';
 import { EmptyState, Sheet, Toast, TopBar, useToast } from '@/ui/components';
-import { HeartIcon, MinusIcon, PlusIcon, ShareIcon } from '@/ui/icons';
+import { BinderIcon, HeartIcon, MinusIcon, PlusIcon, ShareIcon } from '@/ui/icons';
 import { href, navigate } from '@/ui/router';
+import { FromBinderSheet } from './deck/FromBinderSheet';
 import type { CatalogIndex } from '@/data/catalog';
 
 /** "SVI 057/198" for Pokémon, the set code for Yu-Gi-Oh!. */
@@ -56,6 +57,7 @@ export default function DeckPage({ id }: { id: string }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [toast, showToast] = useToast();
 
   const summary = useMemo(() => (deck ? summarizeDeck(deck.cards, collection) : null), [deck, collection]);
@@ -173,6 +175,9 @@ export default function DeckPage({ id }: { id: string }) {
             onChange={(e) => setQuery(e.target.value)}
             autoComplete="off"
           />
+          <button type="button" className="btn" onClick={() => setPicking(true)}>
+            <BinderIcon size={18} /> From my binder
+          </button>
         </div>
       </TopBar>
 
@@ -239,6 +244,7 @@ export default function DeckPage({ id }: { id: string }) {
         </p>
       )}
 
+      <FromBinderSheet open={picking} onClose={() => setPicking(false)} deckId={deck.id} cards={deck.cards} />
       <Sheet open={sharing} onClose={() => setSharing(false)} title={`Share ${deck.name}`}>
         <p>
           The deck file opens in a friend's CardCodex with their own owned and missing counts. A message does for chats that take no

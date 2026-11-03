@@ -20,13 +20,6 @@ a design.
   Limitless (Pokémon tournament lists), Konami's structure deck pages (Yu-Gi-Oh!) and hand-curated
   lists.
 
-### Add cards from the binder in the deck editor
-
-- The deck page adds cards through a search box only. A "From my binder" button opens the owned
-  cards (the Binder component in a pick mode, or the owned-cards grid with its set filters) with a
-  stepper on each tile, so a deck is built from what is in hand without typing names.
-- The same picker over the wishlist tab lets a deck take cards you are still after.
-
 ### Magic: The Gathering as a third game
 
 - The biggest item. Games plug in through `GameProfile` (`src/games/types.ts`); Yu-Gi-Oh!
