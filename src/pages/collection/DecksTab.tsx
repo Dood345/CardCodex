@@ -1,13 +1,14 @@
 /**
  * The Decks tab of the Collection: every deck of the active game with how
  * much of it the collection covers, a box to start a new one, and the
- * import of a friend's share text (the deck code it carries opens the
- * import page, src/pages/DeckImportPage.tsx).
+ * import of a friend's deck file or share text (either opens the import
+ * page, src/pages/DeckImportPage.tsx).
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { findDeckCode } from '@/data/deck-code';
+import { DECK_FILE_ROUTE, holdDeckFile } from '@/data/deck-file';
 import { createDeck, summarizeDeck, useDecks } from '@/data/decks';
 import { cardImageUrl } from '@/data/types';
 import { EmptyState, Img, Sheet } from '@/ui/components';
@@ -23,6 +24,7 @@ export function DecksTab() {
   const [importOpen, setImportOpen] = useState(false);
   const [pasted, setPasted] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const create = async () => {
     const deck = await createDeck(game.id, name || 'New deck');
@@ -39,6 +41,19 @@ export function DecksTab() {
     setPasted('');
     setError(null);
     navigate(`/decks/import/${code}`);
+  };
+  const openFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      holdDeckFile({ name: file.name, text: await file.text() });
+    } catch {
+      setError('Could not read that file.');
+      return;
+    }
+    setImportOpen(false);
+    setPasted('');
+    setError(null);
+    navigate(DECK_FILE_ROUTE);
   };
 
   return (
@@ -86,7 +101,19 @@ export function DecksTab() {
         </div>
       )}
       <Sheet open={importOpen} onClose={() => setImportOpen(false)} title="Import a deck">
-        <p>Paste the message a friend shared from CardCodex, or just its CCD1… code.</p>
+        <p>Open the deck file (.ccdeck) a friend sent, or paste their message or just its CCD1… code.</p>
+        <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
+          Open a deck file…
+        </button>
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          onChange={(e) => {
+            void openFile(e.target.files?.[0]);
+            e.target.value = '';
+          }}
+        />
         <textarea className="deck-paste" rows={5} value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="Paste here…" />
         {error && <p className="error">{error}</p>}
         <div className="sheet-actions">

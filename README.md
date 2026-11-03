@@ -31,8 +31,8 @@ with Capacitor. Your collection lives only on your device.
   per-card copy count with optional variant breakdown (normal / holo / reverse / other), wishlist
   flag, free-text note, and every other printing of the same card.
 - **Collection** – totals (cards, unique, species, sets, wanted), owned cards grouped by set, and a
-  wishlist tab. Export / import a JSON backup from Settings (on Android the export lands in the
-  Downloads folder).
+  wishlist tab. Export / import a JSON backup of your cards and decks from Settings (on Android the
+  export lands in the Downloads folder).
 - **Scan** – frame one card and tap the shutter: a full-resolution photo is read on the device (the
   card name, HP and the printed number/set code against the catalog, and the picture against the
   artwork table) and the best match is listed with its alternatives, each one tap to add; the next
@@ -93,10 +93,12 @@ with Capacitor. Your collection lives only on your device.
 - **Decks** – Collection → Decks holds deck lists for either game, made of cards you own and cards
   you are still after. Add cards from a search box on the deck or from any card's "Add to deck";
   every line shows how many copies you own and how many are missing, and one tap puts every missing
-  card on your wishlist. "Share" sends the deck as a plain message through the Android share sheet
-  (Messenger, Quick Share, mail…): the list in words plus a short `CCD1.` code and a
-  `cardcodex://deck/` link. A friend taps the link, or pastes the message into Decks → Import, and
-  gets the deck with their own owned/missing counts. No server is involved.
+  card on your wishlist. "Share" sends the deck through the Android share sheet (Messenger, Quick
+  Share, mail…) as a small `.ccdeck` file that opens in a friend's CardCodex when they tap it, or as
+  a plain message: the list in words plus a short `CCD1.` code and a `cardcodex://deck/` link to
+  paste into Decks → Import (which opens a deck file too). Either way the friend gets the deck with
+  their own owned/missing counts. No server is involved, and decks ride along in the Settings
+  backup.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 

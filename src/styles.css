@@ -2453,3 +2453,12 @@ textarea:focus {
 .sheet .deck-new {
   margin: 12px 0 0;
 }
+
+/* A sheet whose choices stack: the share sheet of a deck (src/pages/DeckPage.tsx). */
+.sheet-actions.stack {
+  flex-direction: column;
+}
+.sheet-actions.stack .btn {
+  width: 100%;
+  justify-content: center;
+}

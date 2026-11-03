@@ -1,17 +1,19 @@
 /**
  * One deck: its cards by category with how many the collection covers,
  * a search box that adds cards straight into it, one tap to put every
- * missing card on the wishlist, and sharing as a message (the deck list
+ * missing card on the wishlist, and sharing as a small file that opens in a
+ * friend's CardCodex (src/data/deck-file.ts) or as a message (the deck list
  * plus a code any CardCodex can import, src/data/deck-code.ts).
  */
 import { useMemo, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useSettings } from '@/app/settings';
-import { copyText, shareMessage, shareText } from '@/app/share';
+import { copyText, shareFile, shareMessage, shareText } from '@/app/share';
 import { formatCardNumber } from '@/data/catalog';
 import { useCollection, type CollectionMap } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
 import { deckShareText, encodeDeck } from '@/data/deck-code';
+import { deckFileName, encodeDeckFile } from '@/data/deck-file';
 import { adjustDeckCard, deleteDeck, qtyOf, renameDeck, sizeHint, summarizeDeck, useDeck, wantMissing } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
@@ -53,6 +55,7 @@ export default function DeckPage({ id }: { id: string }) {
   const [draft, setDraft] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [toast, showToast] = useToast();
 
   const summary = useMemo(() => (deck ? summarizeDeck(deck.cards, collection) : null), [deck, collection]);
@@ -105,21 +108,32 @@ export default function DeckPage({ id }: { id: string }) {
   const hint = sizeHint(game.id, s.total);
   const secs = Array.isArray(sections) ? { list: [], unknown: 0 } : sections;
 
-  const share = async () => {
+  const payload = { game: deck.game, name: deck.name, cards: deck.cards };
+  const title = `${deck.name} (CardCodex deck)`;
+  const shareAsFile = async () => {
+    setSharing(false);
     setBusy(true);
     try {
-      const payload = { game: deck.game, name: deck.name, cards: deck.cards };
+      const msg = shareMessage(await shareFile(deckFileName(deck.name), encodeDeckFile(payload), title));
+      if (msg) showToast(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const shareAsMessage = async () => {
+    setSharing(false);
+    setBusy(true);
+    try {
       const code = await encodeDeck(payload);
-      const text = deckShareText(payload, game.name, deckLines(deck.cards, index), code);
-      const msg = shareMessage(await shareText(`${deck.name} (CardCodex deck)`, text));
+      const msg = shareMessage(await shareText(title, deckShareText(payload, game.name, deckLines(deck.cards, index), code)));
       if (msg) showToast(msg);
     } finally {
       setBusy(false);
     }
   };
   const copyCode = async () => {
-    const code = await encodeDeck({ game: deck.game, name: deck.name, cards: deck.cards });
-    showToast((await copyText(code)) ? 'Deck code copied.' : 'Could not copy here.');
+    setSharing(false);
+    showToast((await copyText(await encodeDeck(payload))) ? 'Deck code copied.' : 'Could not copy here.');
   };
   const wishlist = async () => {
     const n = await wantMissing(deck.cards, collection);
@@ -187,11 +201,8 @@ export default function DeckPage({ id }: { id: string }) {
         <button type="button" className="btn primary" onClick={() => void wishlist()} disabled={s.needs.length === 0}>
           <HeartIcon size={18} /> Add {s.needs.length ? `${s.needs.length} missing` : 'missing'} to wishlist
         </button>
-        <button type="button" className="btn" onClick={() => void share()} disabled={busy || deck.cards.length === 0}>
+        <button type="button" className="btn" onClick={() => setSharing(true)} disabled={busy || deck.cards.length === 0}>
           <ShareIcon size={18} /> Share
-        </button>
-        <button type="button" className="btn ghost" onClick={() => void copyCode()} disabled={deck.cards.length === 0}>
-          Copy code
         </button>
         <button type="button" className="btn ghost danger" onClick={() => setConfirmDelete(true)}>
           Delete
@@ -228,6 +239,23 @@ export default function DeckPage({ id }: { id: string }) {
         </p>
       )}
 
+      <Sheet open={sharing} onClose={() => setSharing(false)} title={`Share ${deck.name}`}>
+        <p>
+          The deck file opens in a friend's CardCodex with their own owned and missing counts. A message does for chats that take no
+          files: they paste it into Decks → Import.
+        </p>
+        <div className="sheet-actions stack">
+          <button type="button" className="btn primary" onClick={() => void shareAsFile()}>
+            <ShareIcon size={18} /> Send the deck file
+          </button>
+          <button type="button" className="btn" onClick={() => void shareAsMessage()}>
+            Send as a message
+          </button>
+          <button type="button" className="btn ghost" onClick={() => void copyCode()}>
+            Copy the code
+          </button>
+        </div>
+      </Sheet>
       <Sheet open={renaming} onClose={() => setRenaming(false)} title="Rename deck">
         <form
           onSubmit={(e) => {

@@ -1,13 +1,15 @@
 /**
  * A deck arriving from a friend: the code from a share message or a
- * cardcodex://deck/ link, decoded and shown against the collection, with
- * one tap to keep it as a deck of your own.
+ * cardcodex://deck/ link, or a .ccdeck file opened from a chat or the
+ * picker (held by src/data/deck-file.ts), decoded and shown against the
+ * collection, with one tap to keep it as a deck of your own.
  */
 import { useEffect, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useSettings } from '@/app/settings';
 import { useCollection } from '@/data/collection';
 import { decodeDeck, type DeckShare } from '@/data/deck-code';
+import { decodeDeckText, heldDeckFile } from '@/data/deck-file';
 import { createDeck, summarizeDeck } from '@/data/decks';
 import { gameById } from '@/games';
 import { EmptyState, TopBar } from '@/ui/components';
@@ -27,7 +29,14 @@ export default function DeckImportPage({ code }: { code: string }) {
   useEffect(() => {
     let cancelled = false;
     setState({ status: 'loading' });
-    decodeDeck(code)
+    const read = async (): Promise<DeckShare> => {
+      if (code !== 'file') return decodeDeck(code);
+      const held = heldDeckFile();
+      if (!held) throw new Error('Open the deck file again.');
+      if (held.error) throw new Error(held.error);
+      return decodeDeckText(held.text ?? '');
+    };
+    read()
       .then((share) => {
         if (!cancelled) setState({ status: 'ok', share });
       })

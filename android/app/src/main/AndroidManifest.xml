@@ -30,6 +30,29 @@
                 <data android:scheme="cardcodex" android:host="deck" />
             </intent-filter>
 
+            <!-- Deck files: a .ccdeck tapped in a chat, a mail or the Files app opens the deck for import
+                 (src/app/deepLinks.ts). Chats and downloads hand over content:// URLs without the file name,
+                 typed as unknown binary, so those are claimed as a whole; the app says when one is not a deck. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.ccdeck" />
+                <data android:pathPattern=".*\\..*\\.ccdeck" />
+                <data android:pathPattern=".*\\..*\\..*\\.ccdeck" />
+                <data android:pathPattern=".*\\..*\\..*\\..*\\.ccdeck" />
+            </intent-filter>
+
         </activity>
 
         <provider
