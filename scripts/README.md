@@ -42,7 +42,37 @@ and stored, which the app does per device (`src/data/imageCache.ts`).
 
 Expected size: ~3.6 MB (~0.8 MB gzip) for ~14.6k cards and ~38.7k printings.
 
-Both builders reuse the raw downloads in `scripts/.cache/` (gitignored); pass `--no-cache` (as
+## build-mtg-catalog.mjs
+
+Builds `public/data/mtg/catalog.json` (`MtgCatalogFile` in `src/games/mtg/catalog.ts`): every English paper
+Magic: The Gathering printing from Scryfall. Two API requests (`/bulk-data`, `/sets`) with a descriptive
+`User-Agent` and `Accept: application/json` and 150 ms between them, as Scryfall's API guidelines ask; the
+`default_cards` bulk file (~80 MB of gzipped JSON Lines, named by `/bulk-data`) comes from
+`data.scryfall.io`. All three are cached in `scripts/.cache/mtg/`; a newer bulk file replaces the older one.
+The file is streamed line by line, so the ~500 MB of JSON never sits in memory as one string. The mapping
+itself (`buildMtgCatalog` in `src/games/mtg/scryfall.ts`, tested in `src/games/mtg/catalog.test.ts`) is
+TypeScript that Node runs directly through type stripping.
+
+- Left out: non-English and digital-only cards, token / memorabilia / minigame / Alchemy sets, token,
+  emblem and art-series layouts, and oversized cards (planes, schemes, Vanguard, oversized commanders).
+  The summary line counts each reason.
+- `sets`: lowercase Scryfall code as id, name and release date from `/sets` (a set only the cards name is
+  synthesized from them), the number of kept printings as total; oldest first.
+- `cards`: one per Oracle id, sorted by name: name, type line, mana cost, mana value, colors (WUBRG
+  letters), power/toughness, loyalty, defense. Double-faced cards take cost, colors and stats from the
+  front face; reversible cards (the same card on both sides) are named once.
+- `artists`: the artist names, sorted; printings point at them.
+- `printings`: `[card, set, collector number, rarity letter, Scryfall id, artist]`, by set then collector
+  number. The app shows `https://cards.scryfall.io/{grid|display}/front/<a>/<b>/<id>.webp`.
+
+Oracle text is not kept: it would take the file from 11.4 MB to 17.5 MB (4.3 → 5.8 MB gzipped).
+
+    node scripts/build-mtg-catalog.mjs             # uses scripts/.cache/mtg
+    node scripts/build-mtg-catalog.mjs --no-cache  # re-fetch /bulk-data and /sets (and a newer bulk file)
+
+Expected size: ~11.4 MB (~4.3 MB gzip) for ~34.2k cards, ~98.4k printings and 626 sets.
+
+The builders reuse the raw downloads in `scripts/.cache/` (gitignored); pass `--no-cache` (as
 `npm run catalog -- --no-cache`) to pick up new sets. `builtAt` changes on every run: when it is the
 only diff, `git checkout -- public/data` instead of committing (that restores the manifest below too).
 

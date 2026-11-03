@@ -10,6 +10,7 @@ import { formatCardNumber } from '@/data/catalog';
 import type { CollectionEntry } from '@/data/db';
 import { adjustQty } from '@/data/collection';
 import { cachedImageUrl, isCacheableImage, resolveImage } from '@/data/imageCache';
+import { ManaIcon } from '@/games/mtg/icons';
 import { AttributeIcon, BackIcon, EnergyIcon, GAME_TYPE_COLORS, HeartIcon, MinusIcon, PlusIcon } from './icons';
 import { href, back } from './router';
 
@@ -237,7 +238,8 @@ export function CardTile({
   const url = set ? cardImageUrl(card, set.series, 'low') : undefined;
   const body = (
     <>
-      <div className={`card-art${dim && !owned ? ' card-missing' : ''}`}>
+      {/* Scryfall's image terms (Magic): the copyright, printed bottom-right, stays visible and colors are not altered. */}
+      <div className={`card-art${dim && !owned ? ' card-missing' : ''}${card.sid ? ' scryfall-art' : ''}`}>
         <Img src={url} alt={card.name} className="card-img" fallback={<CardPlaceholder card={card} />} />
         {owned && <span className="qty-badge">×{entry!.qty}</span>}
         {entry?.wanted ? (
@@ -279,7 +281,14 @@ export function CardPlaceholder({ card }: { card: CatalogCard }) {
   const type = card.types?.[0];
   return (
     <div className="card-placeholder">
-      {type && (card.pc !== undefined ? <AttributeIcon type={type} size={28} /> : <EnergyIcon type={type} size={28} />)}
+      {type &&
+        (card.pc !== undefined ? (
+          <AttributeIcon type={type} size={28} />
+        ) : card.sid ? (
+          <ManaIcon type={type} size={28} />
+        ) : (
+          <EnergyIcon type={type} size={28} />
+        ))}
       <span>{card.name}</span>
     </div>
   );
