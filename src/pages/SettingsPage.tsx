@@ -5,6 +5,7 @@ import { useSettings, type Theme, type TileSize } from '@/app/settings';
 import { openTour } from '@/app/tourState';
 import { PAGE_LAYOUTS } from '@/scanner/page';
 import { clearCollection, exportCollection, importCollection } from '@/data/collection';
+import { importDecks } from '@/data/decks';
 import { clearImageCache, imageCacheStats } from '@/data/imageCache';
 import { YGOPRODECK_IMAGES } from '@/data/types';
 import { GAMES } from '@/games';
@@ -43,7 +44,7 @@ export default function SettingsPage() {
     try {
       // Android: the public Downloads folder (src/app/saveFile.ts); browser: a download.
       const saved = await saveFile(new Blob([json], { type: 'application/json' }), name);
-      showToast(`${savedMessage(saved, name)} · ${data.entries.length} entries`, 4000);
+      showToast(`${savedMessage(saved, name)} · ${data.entries.length} entries, ${data.decks?.length ?? 0} decks`, 4000);
     } catch {
       // Nowhere to write (a denied permission, an old WebView): show the JSON to copy.
       setExportText(json);
@@ -66,7 +67,8 @@ export default function SettingsPage() {
     if (!data) return;
     try {
       const r = await importCollection(data, mode, index);
-      showToast(`Imported ${r.imported} entries${r.skipped ? `, skipped ${r.skipped}` : ''}`);
+      const decks = await importDecks((data as { decks?: unknown }).decks, mode);
+      showToast(`Imported ${r.imported} entries${decks ? `, ${decks} ${decks === 1 ? 'deck' : 'decks'}` : ''}${r.skipped ? `, skipped ${r.skipped}` : ''}`);
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Import failed');
     }
@@ -242,7 +244,8 @@ export default function SettingsPage() {
             />
           </div>
           <p className="hint">
-            Your collection lives only on this device. The export holds every game's cards; export a JSON backup before switching phones.
+            Your collection and decks live only on this device. The export holds every game's cards and decks; export a JSON backup before
+            switching phones.
           </p>
           <button type="button" className="btn danger" onClick={() => setConfirmClear(true)}>
             Clear {game.short} collection
@@ -273,7 +276,10 @@ export default function SettingsPage() {
       </div>
 
       <Sheet open={pendingImport !== null} onClose={() => setPendingImport(null)} title="Import collection">
-        <p>Merge adds the imported quantities to what you already have. Replace wipes this device's collection (every game) first.</p>
+        <p>
+          Merge adds the imported quantities to what you already have and keeps the newer copy of each deck. Replace wipes this device's
+          collection and decks (every game) first.
+        </p>
         <div className="sheet-actions">
           <button type="button" className="btn primary" onClick={() => void doImport('merge')}>
             Merge

@@ -7,7 +7,7 @@
  */
 import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { db, type CollectionEntry, type VariantKey, VARIANT_KEYS } from './db';
+import { db, type CollectionEntry, type Deck, type VariantKey, VARIANT_KEYS } from './db';
 import type { CatalogIndex } from './catalog';
 import type { CatalogCard } from './types';
 import { gameOfId, type GameId } from '@/games/ids';
@@ -128,11 +128,13 @@ export interface CollectionExport {
   version: 1;
   exportedAt: string;
   entries: CollectionEntry[];
+  /** Since 1.5.0; older exports have none. Read back by importDecks (src/data/decks.ts). */
+  decks?: Deck[];
 }
 
 export async function exportCollection(): Promise<CollectionExport> {
-  const entries = await db.collection.toArray();
-  return { app: 'cardcodex', version: 1, exportedAt: new Date().toISOString(), entries };
+  const [entries, decks] = await Promise.all([db.collection.toArray(), db.decks.toArray()]);
+  return { app: 'cardcodex', version: 1, exportedAt: new Date().toISOString(), entries, decks };
 }
 
 export interface ImportResult {

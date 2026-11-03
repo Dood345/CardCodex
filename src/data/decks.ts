@@ -7,7 +7,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Deck, type DeckCard } from './db';
 import { setWanted, type CollectionMap } from './collection';
-import type { GameId } from '@/games/ids';
+import { isGameId, type GameId } from '@/games/ids';
 
 const EMPTY: Deck[] = [];
 
@@ -143,4 +143,46 @@ export function sizeHint(game: GameId, total: number): string | null {
   }
   if (total >= 40 && total <= 60) return null;
   return total < 40 ? `A Yu-Gi-Oh! main deck has 40–60 cards: ${40 - total} to go.` : `A Yu-Gi-Oh! main deck has 40–60 cards: ${total - 60} over.`;
+}
+
+/* ---------- export / import: the decks part of the Settings backup (src/data/collection.ts) ---------- */
+
+/** The decks of an export that are well-formed enough to keep; bad lines inside a deck are dropped. */
+export function parseExportedDecks(raw: unknown): Deck[] {
+  if (!Array.isArray(raw)) return [];
+  const now = Date.now();
+  const out: Deck[] = [];
+  for (const d of raw as (Partial<Deck> | null)[]) {
+    if (!d || typeof d.id !== 'string' || !d.id || !isGameId(d.game) || !Array.isArray(d.cards)) continue;
+    const cards = (d.cards as (Partial<DeckCard> | null)[]).flatMap((c) => (c && typeof c.cardId === 'string' ? [{ cardId: c.cardId, qty: Number(c.qty) }] : []));
+    out.push({
+      id: d.id,
+      game: d.game,
+      name: (typeof d.name === 'string' ? d.name.trim().slice(0, 80) : '') || 'Untitled deck',
+      cards: normalizeCards(cards),
+      createdAt: Number(d.createdAt) || now,
+      updatedAt: Number(d.updatedAt) || now,
+    });
+  }
+  return out;
+}
+
+/**
+ * Puts exported decks back. `replace` wipes the decks first; `merge` keeps
+ * the newer copy of a deck both sides have. Resolves with how many were
+ * written.
+ */
+export async function importDecks(raw: unknown, mode: 'merge' | 'replace'): Promise<number> {
+  const decks = parseExportedDecks(raw);
+  let written = 0;
+  await db.transaction('rw', db.decks, async () => {
+    if (mode === 'replace') await db.decks.clear();
+    for (const deck of decks) {
+      const existing = mode === 'merge' ? await db.decks.get(deck.id) : undefined;
+      if (existing && existing.updatedAt >= deck.updatedAt) continue;
+      await db.decks.put(deck);
+      written++;
+    }
+  });
+  return written;
 }
