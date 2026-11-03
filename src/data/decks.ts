@@ -1,15 +1,26 @@
 /**
  * Decks: named lists of cards and counts, owned or not, one game each.
  * Stored in the `decks` table; the pure parts (deck-list arithmetic, what
- * the collection is short of, size hints) are here too so the pages and
- * the tests share them.
+ * the collection is short of, sections and reminders from the game's deck
+ * rules in src/games/deck-rules.ts) are here too so the pages and the tests
+ * share them. A line is keyed by card and zone: the same card may sit once
+ * in the deck and once in the side deck (`zone: 'side'`); everything that
+ * compares with the collection counts per card over both.
  */
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db, type Deck, type DeckCard } from './db';
 import { setWanted, type CollectionMap } from './collection';
+import type { CatalogIndex } from './catalog';
 import { isGameId, type GameId } from '@/games/ids';
+import { sectionHint, type DeckRules, type DeckSection, type DeckSectionId } from '@/games/deck-rules';
 
 const EMPTY: Deck[] = [];
+
+/** Where a line sits: undefined for the deck proper, 'side' for the side deck. */
+export type DeckZone = DeckCard['zone'];
+
+const isLine = (c: DeckCard, cardId: string, zone: DeckZone) => c.cardId === cardId && c.zone === zone;
+const line = (cardId: string, qty: number, zone: DeckZone): DeckCard => (zone ? { cardId, qty, zone } : { cardId, qty });
 
 /** Live list of a game's decks, most recently changed first. */
 export function useDecks(game: GameId): Deck[] {
@@ -35,30 +46,39 @@ export function newDeckId(): string {
   return `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 
-/** The list with `cardId` at `qty` copies (0 or less removes it); order kept, a new card goes last. */
-export function withQty(cards: readonly DeckCard[], cardId: string, qty: number): DeckCard[] {
+/** The list with `cardId` at `qty` copies in `zone` (0 or less removes the line); order kept, a new line goes last. */
+export function withQty(cards: readonly DeckCard[], cardId: string, qty: number, zone?: DeckZone): DeckCard[] {
   const n = Math.floor(qty);
-  const rest = cards.filter((c) => c.cardId !== cardId);
+  const rest = cards.filter((c) => !isLine(c, cardId, zone));
   if (n <= 0) return rest;
-  const i = cards.findIndex((c) => c.cardId === cardId);
-  if (i < 0) return [...rest, { cardId, qty: n }];
-  return cards.map((c) => (c.cardId === cardId ? { cardId, qty: n } : c));
+  const i = cards.findIndex((c) => isLine(c, cardId, zone));
+  if (i < 0) return [...rest, line(cardId, n, zone)];
+  return cards.map((c) => (isLine(c, cardId, zone) ? line(cardId, n, zone) : c));
 }
 
-/** Copies of `cardId` in the list. */
-export function qtyOf(cards: readonly DeckCard[], cardId: string): number {
-  return cards.find((c) => c.cardId === cardId)?.qty ?? 0;
+/** Copies of `cardId` in `zone` (the deck proper by default). */
+export function qtyOf(cards: readonly DeckCard[], cardId: string, zone?: DeckZone): number {
+  return cards.find((c) => isLine(c, cardId, zone))?.qty ?? 0;
 }
 
-/** Duplicates merged, empty lines dropped, counts whole and at most 99. */
+/** The list with up to `n` copies of `cardId` moved from one zone to the other. */
+export function withMoved(cards: readonly DeckCard[], cardId: string, from: DeckZone, to: DeckZone, n = 1): DeckCard[] {
+  const have = qtyOf(cards, cardId, from);
+  const k = Math.min(have, Math.floor(n));
+  if (k <= 0 || from === to) return [...cards];
+  return withQty(withQty(cards, cardId, have - k, from), cardId, qtyOf(cards, cardId, to) + k, to);
+}
+
+/** Duplicate lines (same card and zone) merged, empty lines dropped, counts whole and at most 99; only `zone: 'side'` is kept. */
 export function normalizeCards(cards: readonly DeckCard[]): DeckCard[] {
   const out: DeckCard[] = [];
   for (const c of cards) {
     const qty = Math.min(99, Math.floor(c.qty));
     if (!c.cardId || !(qty > 0)) continue;
-    const prev = out.find((o) => o.cardId === c.cardId);
+    const zone: DeckZone = c.zone === 'side' ? 'side' : undefined;
+    const prev = out.find((o) => isLine(o, c.cardId, zone));
     if (prev) prev.qty = Math.min(99, prev.qty + qty);
-    else out.push({ cardId: c.cardId, qty });
+    else out.push(line(c.cardId, qty, zone));
   }
   return out;
 }
@@ -74,27 +94,32 @@ export async function renameDeck(id: string, name: string): Promise<void> {
   await db.decks.update(id, { name: name.trim() || 'Untitled deck', updatedAt: Date.now() });
 }
 
-export async function setDeckCardQty(id: string, cardId: string, qty: number): Promise<void> {
+async function editDeckCards(id: string, edit: (cards: DeckCard[]) => DeckCard[]): Promise<void> {
   await db.transaction('rw', db.decks, async () => {
     const deck = await db.decks.get(id);
     if (!deck) return;
-    await db.decks.put({ ...deck, cards: withQty(deck.cards, cardId, qty), updatedAt: Date.now() });
+    await db.decks.put({ ...deck, cards: edit(deck.cards), updatedAt: Date.now() });
   });
 }
 
-export async function adjustDeckCard(id: string, cardId: string, delta: number): Promise<void> {
-  await db.transaction('rw', db.decks, async () => {
-    const deck = await db.decks.get(id);
-    if (!deck) return;
-    await db.decks.put({ ...deck, cards: withQty(deck.cards, cardId, qtyOf(deck.cards, cardId) + delta), updatedAt: Date.now() });
-  });
+export async function setDeckCardQty(id: string, cardId: string, qty: number, zone?: DeckZone): Promise<void> {
+  await editDeckCards(id, (cards) => withQty(cards, cardId, qty, zone));
+}
+
+export async function adjustDeckCard(id: string, cardId: string, delta: number, zone?: DeckZone): Promise<void> {
+  await editDeckCards(id, (cards) => withQty(cards, cardId, qtyOf(cards, cardId, zone) + delta, zone));
+}
+
+/** Moves `n` copies (one by default) of a card between the deck proper and the side deck, in one write. */
+export async function moveDeckCard(id: string, cardId: string, from: DeckZone, to: DeckZone, n = 1): Promise<void> {
+  await editDeckCards(id, (cards) => withMoved(cards, cardId, from, to, n));
 }
 
 export async function deleteDeck(id: string): Promise<void> {
   await db.decks.delete(id);
 }
 
-/** A deck line the collection cannot fill: `short` copies missing. */
+/** A card the collection cannot fill: `qty` copies over every zone, `short` of them missing. */
 export interface DeckNeed {
   cardId: string;
   qty: number;
@@ -103,29 +128,37 @@ export interface DeckNeed {
 }
 
 export interface DeckSummary {
-  /** Cards in the deck (copies). */
+  /** Cards in the deck (copies, every zone). */
   total: number;
-  /** Different cards. */
+  /** Different cards (a card in the deck and the side deck counts once). */
   distinct: number;
   /** Copies the collection covers. */
   covered: number;
   /** Copies the collection is short of. */
   short: number;
-  /** Lines the collection is short of, in deck order. */
+  /** Cards the collection is short of, in deck order (one entry per card, over every zone). */
   needs: DeckNeed[];
+}
+
+/** Copies of each card over every zone, in first-seen order. */
+function perCard(cards: readonly DeckCard[]): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const c of cards) out.set(c.cardId, (out.get(c.cardId) ?? 0) + c.qty);
+  return out;
 }
 
 export function summarizeDeck(cards: readonly DeckCard[], collection: CollectionMap): DeckSummary {
   let total = 0;
   let covered = 0;
   const needs: DeckNeed[] = [];
-  for (const c of cards) {
-    const owned = collection.get(c.cardId)?.qty ?? 0;
-    total += c.qty;
-    covered += Math.min(owned, c.qty);
-    if (owned < c.qty) needs.push({ cardId: c.cardId, qty: c.qty, owned, short: c.qty - owned });
+  const counts = perCard(cards);
+  for (const [cardId, qty] of counts) {
+    const owned = collection.get(cardId)?.qty ?? 0;
+    total += qty;
+    covered += Math.min(owned, qty);
+    if (owned < qty) needs.push({ cardId, qty, owned, short: qty - owned });
   }
-  return { total, distinct: cards.length, covered, short: total - covered, needs };
+  return { total, distinct: counts.size, covered, short: total - covered, needs };
 }
 
 /** Puts every card the collection is short of on the wishlist; returns how many were not on it yet. */
@@ -135,26 +168,83 @@ export async function wantMissing(cards: readonly DeckCard[], collection: Collec
   return fresh.length;
 }
 
-/** What a legal deck holds, as a reminder (nothing is enforced): "60 cards" for Pokémon, "40–60 cards" for a Yu-Gi-Oh! main deck. */
-export function sizeHint(game: GameId, total: number): string | null {
-  if (game === 'pokemon') {
-    if (total === 60) return null;
-    return total < 60 ? `A Pokémon deck has 60 cards: ${60 - total} to go.` : `A Pokémon deck has 60 cards: ${total - 60} over.`;
+/** What a legal section holds, as a reminder (nothing is enforced): "A Pokémon deck has 60 cards: 12 to go.". Null when in range. */
+export function sizeHint(rules: DeckRules, total: number, section: DeckSectionId = 'main'): string | null {
+  const sec = rules.sections.find((s) => s.id === section);
+  return sec ? sectionHint(sec, total) : null;
+}
+
+/** One deck line placed in its section, with the owned copies it can use (the deck proper claims owned copies before the side deck). */
+export interface PlacedLine extends DeckCard {
+  available: number;
+}
+
+export interface PlacedSection {
+  section: DeckSection;
+  /** Lines in deck order, unknown cards included. */
+  lines: PlacedLine[];
+  /** Copies in the section. */
+  total: number;
+  /** The size reminder, or null when the count is in range. */
+  hint: string | null;
+}
+
+/** The deck split into its game's sections, in the rules' order; every section is listed, empty ones too. */
+export function deckSections(rules: DeckRules, cards: readonly DeckCard[], index: CatalogIndex, collection: CollectionMap): PlacedSection[] {
+  const left = new Map<string, number>();
+  const placed = new Map<DeckCard, PlacedLine>();
+  for (const c of [...cards.filter((c) => c.zone !== 'side'), ...cards.filter((c) => c.zone === 'side')]) {
+    const free = left.get(c.cardId) ?? collection.get(c.cardId)?.qty ?? 0;
+    const used = Math.min(free, c.qty);
+    left.set(c.cardId, free - used);
+    placed.set(c, { ...c, available: used });
   }
-  if (total >= 40 && total <= 60) return null;
-  return total < 40 ? `A Yu-Gi-Oh! main deck has 40–60 cards: ${40 - total} to go.` : `A Yu-Gi-Oh! main deck has 40–60 cards: ${total - 60} over.`;
+  return rules.sections.map((section) => {
+    const lines = cards.filter((c) => rules.sectionOf(index.cardsById.get(c.cardId), c) === section.id).map((c) => placed.get(c)!);
+    const total = lines.reduce((n, l) => n + l.qty, 0);
+    return { section, lines, total, hint: sectionHint(section, total) };
+  });
+}
+
+/** A card the deck holds more copies of than the rules allow. */
+export interface OverLimit {
+  name: string;
+  qty: number;
+  limit: number;
+}
+
+/** Cards over the copy limit, counted by name over every printing and section (unknown cards are skipped). */
+export function overLimit(rules: DeckRules, cards: readonly DeckCard[], index: CatalogIndex): OverLimit[] {
+  const byName = new Map<string, OverLimit>();
+  for (const c of cards) {
+    const card = index.cardsById.get(c.cardId);
+    if (!card) continue;
+    const prev = byName.get(card.name);
+    if (prev) {
+      prev.qty += c.qty;
+      prev.limit = Math.min(prev.limit, rules.copyLimit(card));
+    } else byName.set(card.name, { name: card.name, qty: c.qty, limit: rules.copyLimit(card) });
+  }
+  return [...byName.values()].filter((o) => o.qty > o.limit);
+}
+
+/** "3 copies at most: Pot of Greed ×4, Raigeki ×5.", or null when nothing is over. */
+export function limitHint(rules: DeckRules, over: readonly OverLimit[]): string | null {
+  return over.length ? `${rules.limitHint}: ${over.map((o) => `${o.name} ×${o.qty}`).join(', ')}.` : null;
 }
 
 /* ---------- export / import: the decks part of the Settings backup (src/data/collection.ts) ---------- */
 
-/** The decks of an export that are well-formed enough to keep; bad lines inside a deck are dropped. */
+/** The decks of an export that are well-formed enough to keep; bad lines inside a deck are dropped, side-deck lines keep their zone. */
 export function parseExportedDecks(raw: unknown): Deck[] {
   if (!Array.isArray(raw)) return [];
   const now = Date.now();
   const out: Deck[] = [];
   for (const d of raw as (Partial<Deck> | null)[]) {
     if (!d || typeof d.id !== 'string' || !d.id || !isGameId(d.game) || !Array.isArray(d.cards)) continue;
-    const cards = (d.cards as (Partial<DeckCard> | null)[]).flatMap((c) => (c && typeof c.cardId === 'string' ? [{ cardId: c.cardId, qty: Number(c.qty) }] : []));
+    const cards = (d.cards as (Partial<DeckCard> | null)[]).flatMap((c) =>
+      c && typeof c.cardId === 'string' ? [line(c.cardId, Number(c.qty), c.zone === 'side' ? 'side' : undefined)] : [],
+    );
     out.push({
       id: d.id,
       game: d.game,

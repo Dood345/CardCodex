@@ -40,8 +40,9 @@ a design.
 - Scanner: the name sits top-left and the collector number and set code bottom-left, so a new OCR
   geometry and matcher; the artwork hashes work as for the other games.
 - Rules: a 60-card main deck, four copies of a card except basic lands, sideboards, 100-card
-  singleton commander decks. The deck size hint grows into a per-game rule set, which Yu-Gi-Oh!
-  needs anyway (below).
+  singleton commander decks. These fit the per-game `deckRules` in `src/games/deck-rules.ts`
+  (sections, `sectionOf`, `copyLimit`); a sideboard is the existing side zone, and commander is a
+  second rule set.
 
 ## Standing rule: Yu-Gi-Oh! gets every fix
 
@@ -53,8 +54,6 @@ switched.
 
 Known Yu-Gi-Oh! gaps today:
 
-- Decks are one list. A Yu-Gi-Oh! deck needs Main, Extra (Fusion, Synchro, Xyz and Link monsters,
-  which the catalog's `frameType` identifies) and Side sections, and a three-copies rule.
 - Card tiles and binder pockets use the Pokémon 63×88 aspect; Yu-Gi-Oh! cards are 59×86 (`cardMm`
   in the profile), so their pictures are very slightly cropped.
 

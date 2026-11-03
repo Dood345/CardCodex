@@ -93,7 +93,9 @@ with Capacitor. Your collection lives only on your device.
 - **Decks** – Collection → Decks holds deck lists for either game, made of cards you own and cards
   you are still after. Add cards from a search box on the deck or from any card's "Add to deck";
   every line shows how many copies you own and how many are missing, and one tap puts every missing
-  card on your wishlist. "Share" sends the deck through the Android share sheet (Messenger, Quick
+  card on your wishlist. Each game's deck rules show as reminders, never enforced: a Pokémon deck
+  has 60 cards and four copies of a card at most (basic Energy is unlimited); a Yu-Gi-Oh! deck is
+  split into Main, Extra and Side (see below). "Share" sends the deck through the Android share sheet (Messenger, Quick
   Share, mail…) as a small `.ccdeck` file that opens in a friend's CardCodex when they tap it, or as
   a plain message: the list in words plus a short `CCD1.` code and a `cardcodex://deck/` link to
   paste into Decks → Import (which opens a deck file too). Either way the friend gets the deck with
@@ -120,6 +122,12 @@ Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
   passcode at the bottom-left names the card; name, ATK/DEF and the type line are supporting
   evidence. One wrong OCR character in either code is tolerated and marked with `≈`. Binder page
   mode uses the smaller 59×86 mm card aspect for its grid.
+- **Decks** have Main (40–60 cards, by Monster / Spell / Trap), Extra (Fusion, Synchro, Xyz and
+  Link monsters, up to 15, sorted there from the catalog's frame type) and Side (up to 15) sections,
+  with their counts in the header. A "To Side" button on each line moves a copy into the Side deck
+  and back. Three copies of a card at most, counted by name over every printing and section; a
+  fourth shows a reminder. Side cards travel in shared decks and deck files; an older CardCodex
+  opening such a deck puts them in the deck proper.
 - **Images** come from [YGOPRODeck](https://ygoprodeck.com), whose API guide forbids hotlinking.
   On Android every image is therefore downloaded once (through Capacitor's native HTTP bridge) and
   stored in the app's IndexedDB, bounded to ~8,000 images with least-recently-used eviction; in a

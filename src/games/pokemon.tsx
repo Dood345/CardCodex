@@ -9,6 +9,7 @@ import { createPokemonMatcher } from '@/scanner/match';
 import { dexNumber } from '@/ui/components';
 import { EnergyIcon, PokeballIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
+import { POKEMON_DECK_RULES } from './deck-rules';
 import type { Fact, GameProfile, QuickGroup } from './types';
 
 function facts(card: CatalogCard, _set: CatalogSet, index: CatalogIndex): Fact[] {
@@ -98,5 +99,6 @@ export const pokemon: GameProfile = {
     credits: 'Built from TCGdex and PokéAPI. Card images © The Pokémon Company; served by TCGdex.',
     disclaimer: 'Not affiliated with Nintendo, Creatures, GAME FREAK or The Pokémon Company.',
   },
+  deckRules: POKEMON_DECK_RULES,
   createMatcher: (index) => createPokemonMatcher(index.catalog),
 };

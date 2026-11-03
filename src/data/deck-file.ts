@@ -34,7 +34,8 @@ export function encodeDeckFile(deck: DeckShare, at: Date = new Date()): string {
       v: 1,
       game: deck.game,
       name: deck.name,
-      cards: deck.cards.map((c) => ({ id: c.cardId, qty: c.qty })),
+      // `side: true` marks a side-deck line; a 1.5.0 reader ignores it and puts the copies in the deck.
+      cards: deck.cards.map((c) => (c.zone === 'side' ? { id: c.cardId, qty: c.qty, side: true } : { id: c.cardId, qty: c.qty })),
       exportedAt: at.toISOString(),
     },
     null,
@@ -60,10 +61,10 @@ export async function decodeDeckText(text: string): Promise<DeckShare> {
       throw new Error(NOT_A_DECK_FILE);
     }
     const cards: DeckCard[] = [];
-    for (const line of r.cards as ({ id?: unknown; qty?: unknown } | null)[]) {
+    for (const line of r.cards as ({ id?: unknown; qty?: unknown; side?: unknown } | null)[]) {
       if (!line || typeof line.id !== 'string') continue;
       const qty = Math.min(99, Math.floor(Number(line.qty)));
-      if (qty > 0) cards.push({ cardId: line.id, qty });
+      if (qty > 0) cards.push(line.side === true ? { cardId: line.id, qty, zone: 'side' } : { cardId: line.id, qty });
     }
     return { game: r.game, name: r.name.trim().slice(0, 80) || 'Shared deck', cards };
   }
