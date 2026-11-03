@@ -24,9 +24,10 @@ source whose terms allow it), real quantities, and the card suggestions below.
   the collection already covers (`summarizeDeck` in `src/data/decks.ts` gives the coverage) and
   show the ones closest to complete first. Suggesting cards for a deck you are building (the same
   evolution line, type or archetype) is a second step.
-- Open question: the data source. TCGdex and YGOPRODeck carry no deck lists; candidates are
-  Limitless (Pokémon tournament lists), Konami's structure deck pages (Yu-Gi-Oh!) and hand-curated
-  lists.
+- Yu-Gi-Oh! decks come from YGOPRODeck. Pokémon has no source yet that fits the rule: the one
+  with the data (`PokemonTCG/pokemon-tcg-data`, 188 theme decks up to Sword & Shield) has no
+  licence, and Bulbapedia is CC BY-NC-SA, which a GPL-3.0 app cannot carry. See
+  `docs/pokemon-deck-sources.md`.
 
 ### Magic: The Gathering: the scanner and the rest
 
