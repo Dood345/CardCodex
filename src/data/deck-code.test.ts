@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { decodeDeck, deckShareText, encodeDeck, findDeckCode } from './deck-code';
 import { normalizeCards, sizeHint, summarizeDeck, withQty } from './decks';
+import { POKEMON_DECK_RULES, YGO_DECK_RULES } from '@/games/deck-rules';
 
 describe('deck code', () => {
   it('round-trips a deck through a short code found anywhere in a message', async () => {
@@ -70,12 +71,58 @@ describe('deck lists', () => {
   });
 
   it('reminds of the deck size without enforcing it', () => {
-    expect(sizeHint('pokemon', 60)).toBeNull();
-    expect(sizeHint('pokemon', 48)).toMatch(/12 to go/);
-    expect(sizeHint('pokemon', 61)).toMatch(/1 over/);
-    expect(sizeHint('ygo', 40)).toBeNull();
-    expect(sizeHint('ygo', 60)).toBeNull();
-    expect(sizeHint('ygo', 39)).toMatch(/1 to go/);
-    expect(sizeHint('ygo', 63)).toMatch(/3 over/);
+    expect(sizeHint(POKEMON_DECK_RULES, 60)).toBeNull();
+    expect(sizeHint(POKEMON_DECK_RULES, 48)).toBe('A Pokémon deck has 60 cards: 12 to go.');
+    expect(sizeHint(POKEMON_DECK_RULES, 61)).toMatch(/1 over/);
+    expect(sizeHint(YGO_DECK_RULES, 40)).toBeNull();
+    expect(sizeHint(YGO_DECK_RULES, 60)).toBeNull();
+    expect(sizeHint(YGO_DECK_RULES, 39)).toBe('A Yu-Gi-Oh! main deck has 40–60 cards: 1 to go.');
+    expect(sizeHint(YGO_DECK_RULES, 63)).toMatch(/3 over/);
+    expect(sizeHint(YGO_DECK_RULES, 0, 'extra')).toBeNull();
+    expect(sizeHint(YGO_DECK_RULES, 16, 'extra')).toBe('An Extra deck has at most 15 cards: 1 over.');
+    expect(sizeHint(YGO_DECK_RULES, 17, 'side')).toMatch(/Side deck has at most 15 cards: 2 over/);
+    expect(sizeHint(POKEMON_DECK_RULES, 3, 'side')).toBeNull();
   });
 });
+
+describe('deck code with a side deck', () => {
+  const deck = {
+    game: 'ygo' as const,
+    name: 'Side test',
+    cards: [
+      { cardId: 'ygo:LOB-EN119', qty: 2 },
+      { cardId: 'ygo:LOB-EN119', qty: 1, zone: 'side' as const },
+    ],
+  };
+
+  it('round-trips the side zone as a third element', async () => {
+    const code = await encodeDeck(deck);
+    expect(await decodeDeck(code)).toEqual(deck);
+  });
+
+  it('reads old two-element codes as the deck proper', async () => {
+    const old = await encodeDeck({ game: 'ygo', name: 'Old', cards: [{ cardId: 'ygo:LOB-EN119', qty: 3 }] });
+    expect((await decodeDeck(old)).cards).toEqual([{ cardId: 'ygo:LOB-EN119', qty: 3 }]);
+  });
+
+  it('stays a v1 code, so a 1.5.0 reader still opens it and merges the side into the deck', async () => {
+    const code = await encodeDeck(deck);
+    // What a 1.5.0 reader does: v must be 1, lines are [id, qty], and the deck is normalized on save.
+    const raw = await rawPayload(code);
+    expect(raw.v).toBe(1);
+    expect(raw.c).toEqual([
+      ['ygo:LOB-EN119', 2],
+      ['ygo:LOB-EN119', 1, 's'],
+    ]);
+    const asOld = raw.c.map((l) => ({ cardId: l[0] as string, qty: l[1] as number }));
+    expect(normalizeCards(asOld)).toEqual([{ cardId: 'ygo:LOB-EN119', qty: 3 }]);
+  });
+});
+
+async function rawPayload(code: string): Promise<{ v: number; c: unknown[][] }> {
+  const b64 = code.slice(5).replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4));
+  const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return JSON.parse(await new Response(stream).text());
+}

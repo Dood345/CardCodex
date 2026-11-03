@@ -8,6 +8,14 @@ a design.
 
 ### Prebuilt decks and deck suggestions
 
+Done for Yu-Gi-Oh!: `public/data/ygo/decks.json` (`npm run decks:ygo`, from YGOPRODeck) holds 80
+Structure and Starter Decks, one copy per printed card because the API has no quantities. Decks →
+"Starter decks" ranks them by coverage (`src/data/starter-decks.ts`), `#/decks/starter/<id>` shows
+one and copies it with "Keep this deck". Still open: Pokémon (pokemon.com sits behind bot
+protection, so the lists cannot be fetched by a script; Limitless or Bulbapedia lists would need a
+source whose terms allow it), real quantities, and the card suggestions below.
+
+
 - A set of ready-made decks per game (starter and theme decks, well-known lists) shipped like the
   catalog, under `public/data/<game>/decks.json`, built by a script from a source whose terms allow
   it. Decks gets a "Starter decks" section; one tap copies a deck into your own, and the owned and
@@ -19,13 +27,6 @@ a design.
 - Open question: the data source. TCGdex and YGOPRODeck carry no deck lists; candidates are
   Limitless (Pokémon tournament lists), Konami's structure deck pages (Yu-Gi-Oh!) and hand-curated
   lists.
-
-### Add cards from the binder in the deck editor
-
-- The deck page adds cards through a search box only. A "From my binder" button opens the owned
-  cards (the Binder component in a pick mode, or the owned-cards grid with its set filters) with a
-  stepper on each tile, so a deck is built from what is in hand without typing names.
-- The same picker over the wishlist tab lets a deck take cards you are still after.
 
 ### Magic: The Gathering as a third game
 
@@ -40,8 +41,9 @@ a design.
 - Scanner: the name sits top-left and the collector number and set code bottom-left, so a new OCR
   geometry and matcher; the artwork hashes work as for the other games.
 - Rules: a 60-card main deck, four copies of a card except basic lands, sideboards, 100-card
-  singleton commander decks. The deck size hint grows into a per-game rule set, which Yu-Gi-Oh!
-  needs anyway (below).
+  singleton commander decks. These fit the per-game `deckRules` in `src/games/deck-rules.ts`
+  (sections, `sectionOf`, `copyLimit`); a sideboard is the existing side zone, and commander is a
+  second rule set.
 
 ## Standing rule: Yu-Gi-Oh! gets every fix
 
@@ -53,8 +55,6 @@ switched.
 
 Known Yu-Gi-Oh! gaps today:
 
-- Decks are one list. A Yu-Gi-Oh! deck needs Main, Extra (Fusion, Synchro, Xyz and Link monsters,
-  which the catalog's `frameType` identifies) and Side sections, and a three-copies rule.
 - Card tiles and binder pockets use the Pokémon 63×88 aspect; Yu-Gi-Oh! cards are 59×86 (`cardMm`
   in the profile), so their pictures are very slightly cropped.
 

@@ -32,6 +32,27 @@ describe('deck file', () => {
     expect(await decodeDeckText(text)).toEqual(deck);
   });
 
+  it('carries a side-deck line as side: true, and reads files without it as the deck proper', async () => {
+    const ygo = {
+      game: 'ygo' as const,
+      name: 'Side test',
+      cards: [
+        { cardId: 'ygo:LOB-EN119', qty: 2 },
+        { cardId: 'ygo:LOB-EN119', qty: 1, zone: 'side' as const },
+      ],
+    };
+    const text = encodeDeckFile(ygo);
+    const raw = JSON.parse(text);
+    expect(raw.v).toBe(1);
+    expect(raw.cards).toEqual([
+      { id: 'ygo:LOB-EN119', qty: 2 },
+      { id: 'ygo:LOB-EN119', qty: 1, side: true },
+    ]);
+    expect(await decodeDeckText(text)).toEqual(ygo);
+    const old = JSON.stringify({ cardcodex: 'deck', v: 1, game: 'ygo', name: 'Old', cards: [{ id: 'ygo:LOB-EN119', qty: 3 }] });
+    expect((await decodeDeckText(old)).cards).toEqual([{ cardId: 'ygo:LOB-EN119', qty: 3 }]);
+  });
+
   it('drops bad lines and caps counts', async () => {
     const text = JSON.stringify({
       cardcodex: 'deck',

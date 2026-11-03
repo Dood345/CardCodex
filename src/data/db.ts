@@ -54,10 +54,16 @@ export interface KvEntry {
   at: number;
 }
 
-/** One line of a deck list. */
+/**
+ * One line of a deck list. `zone: 'side'` puts the copies in the side deck
+ * (Yu-Gi-Oh!); absent means the deck proper, whose Main/Extra split the
+ * game's rules derive from the card (src/games/deck-rules.ts). A card may
+ * have one line in each zone. Not indexed, so no schema version is needed.
+ */
 export interface DeckCard {
   cardId: string;
   qty: number;
+  zone?: 'side';
 }
 
 /**

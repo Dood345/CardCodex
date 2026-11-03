@@ -91,19 +91,28 @@ with Capacitor. Your collection lives only on your device.
   arrow keys. Empty pockets on the last page show where the next cards go, and opening a card and
   coming back lands on the same page.
 - **Decks** – Collection → Decks holds deck lists for either game, made of cards you own and cards
-  you are still after. Add cards from a search box on the deck or from any card's "Add to deck";
-  every line shows how many copies you own and how many are missing, and one tap puts every missing
-  card on your wishlist. "Share" sends the deck through the Android share sheet (Messenger, Quick
+  you are still after. Add cards from a search box on the deck, from "From my binder" (a tall sheet
+  over your owned cards, or your wishlist, set by set like the binder, with a name search, a set
+  filter and a stepper on every card) or from any card's "Add to deck"; every line shows how many
+  copies you own and how many are missing, and one tap puts every missing card on your wishlist.
+  Each game's deck rules show as reminders, never enforced: a Pokémon deck has 60 cards and four
+  copies of a card at most (basic Energy is unlimited); a Yu-Gi-Oh! deck is split into Main, Extra
+  and Side (see below). "Share" sends the deck through the Android share sheet (Messenger, Quick
   Share, mail…) as a small `.ccdeck` file that opens in a friend's CardCodex when they tap it, or as
   a plain message: the list in words plus a short `CCD1.` code and a `cardcodex://deck/` link to
   paste into Decks → Import (which opens a deck file too). Either way the friend gets the deck with
   their own owned/missing counts. No server is involved, and decks ride along in the Settings
-  backup.
+  backup. Under your decks, Yu-Gi-Oh! mode lists every Structure Deck and Starter Deck, ranked by
+  how much of each your collection already covers (the three closest are marked); tap one to see
+  what you own and what is missing and "Keep this deck" to copy it into your own. Their card lists
+  come from YGOPRODeck (`npm run decks:ygo`, one copy per printed card); Pokémon has no starter
+  decks yet, because TCGdex carries no deck lists and the official product pages cannot be
+  fetched by a build script.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
-What comes next (prebuilt decks and suggestions, adding cards from the binder in the deck editor,
-Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
+What comes next (Pokémon starter decks and card suggestions for a deck, Magic: The Gathering as a
+third game) is in [ROADMAP.md](ROADMAP.md).
 
 ### Yu-Gi-Oh! mode
 
@@ -120,6 +129,12 @@ Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
   passcode at the bottom-left names the card; name, ATK/DEF and the type line are supporting
   evidence. One wrong OCR character in either code is tolerated and marked with `≈`. Binder page
   mode uses the smaller 59×86 mm card aspect for its grid.
+- **Decks** have Main (40–60 cards, by Monster / Spell / Trap), Extra (Fusion, Synchro, Xyz and
+  Link monsters, up to 15, sorted there from the catalog's frame type) and Side (up to 15) sections,
+  with their counts in the header. A "To Side" button on each line moves a copy into the Side deck
+  and back. Three copies of a card at most, counted by name over every printing and section; a
+  fourth shows a reminder. Side cards travel in shared decks and deck files; an older CardCodex
+  opening such a deck puts them in the deck proper.
 - **Images** come from [YGOPRODeck](https://ygoprodeck.com), whose API guide forbids hotlinking.
   On Android every image is therefore downloaded once (through Capacitor's native HTTP bridge) and
   stored in the app's IndexedDB, bounded to ~8,000 images with least-recently-used eviction; in a

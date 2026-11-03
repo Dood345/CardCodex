@@ -2453,6 +2453,42 @@ textarea:focus {
 .sheet .deck-new {
   margin: 12px 0 0;
 }
+/* Deck sections from the game's rules (src/pages/DeckSections.tsx): "Main 40 · Extra 15 · Side 15". */
+.deck-counts {
+  margin: 12px 12px 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.deck-count.off {
+  color: var(--warn);
+}
+.deck-limit {
+  color: var(--warn);
+}
+.deck-zone {
+  padding-top: 8px;
+}
+.deck-zone-title {
+  font-size: 17px;
+  margin: 12px 12px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.deck-zone .section-title {
+  font-size: 14px;
+  padding: 0;
+  color: var(--fg-muted);
+}
+.deck-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: none;
+}
+.deck-move {
+  white-space: nowrap;
+}
 
 /* A sheet whose choices stack: the share sheet of a deck (src/pages/DeckPage.tsx). */
 .sheet-actions.stack {
@@ -2461,4 +2497,93 @@ textarea:focus {
 .sheet-actions.stack .btn {
   width: 100%;
   justify-content: center;
+}
+
+/* ===== Deck page: "From my binder" picker (src/pages/deck/FromBinderSheet.tsx) ===== */
+.sheet.from-binder-sheet {
+  height: 92vh;
+  max-height: 92vh;
+  overflow: hidden;
+  gap: 10px;
+}
+.from-binder-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.from-binder-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -16px;
+  padding: 0 4px;
+}
+.from-binder-empty {
+  padding: 24px 16px;
+  text-align: center;
+}
+.from-binder-set {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 0;
+  font-weight: 700;
+}
+.from-binder-set-name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.from-binder-set-count {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+.from-binder-grid {
+  padding: 8px 12px 4px;
+}
+.from-binder-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+}
+.from-binder-cell.in-deck {
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+.from-binder-stepper {
+  align-self: center;
+}
+.from-binder-foot {
+  align-items: center;
+  justify-content: space-between;
+}
+.from-binder-total {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+
+/* ===== Starter decks (src/pages/collection/DecksTab.tsx, src/pages/StarterDeckPage.tsx) ===== */
+.starter-section {
+  margin-top: 20px;
+}
+.starter-section .section-title {
+  margin: 0 0 8px;
+}
+.starter-badge {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.starter-note,
+.starter-source {
+  margin-top: 8px;
 }

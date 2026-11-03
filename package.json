@@ -1,7 +1,7 @@
 {
   "name": "cardcodex",
   "private": true,
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Pokédex-style card collection tracker for the Pokémon and Yu-Gi-Oh! TCGs with camera card scanning. Web app (PWA) wrapped with Capacitor for Android.",
   "type": "module",
   "scripts": {
@@ -19,7 +19,8 @@
     "android:release": "node scripts/android-release.mjs",
     "android:debug": "node scripts/android-release.mjs --debug",
     "hashes": "node scripts/build-hashes.mjs",
-    "hashes:ygo": "node scripts/build-hashes.mjs --game ygo"
+    "hashes:ygo": "node scripts/build-hashes.mjs --game ygo",
+    "decks:ygo": "node scripts/decks-ygo.mjs"
   },
   "dependencies": {
     "@capacitor-mlkit/text-recognition": "^8.2.2",

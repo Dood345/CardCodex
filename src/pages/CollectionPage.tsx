@@ -1,25 +1,17 @@
 import { useMemo } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { computeStats, useCollection } from '@/data/collection';
-import { setRecency } from '@/data/catalog';
-import type { CatalogCard, CatalogSet } from '@/data/types';
 import { CardGrid, CardTile, Chip, EmptyState, SetBadge, TopBar } from '@/ui/components';
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
 import { Binder } from './collection/Binder';
-import type { PageSize, Pocket } from './collection/binder-pages';
+import { groupBySet, pocketsOf, type PageSize } from './collection/binder-pages';
 import { DecksTab } from './collection/DecksTab';
 
 type Tab = 'owned' | 'wanted' | 'decks';
 type View = 'sets' | 'binder';
-
-interface Group {
-  set: CatalogSet;
-  cards: CatalogCard[];
-  copies: number;
-}
 
 export default function CollectionPage() {
   const index = useCatalog();
@@ -32,30 +24,11 @@ export default function CollectionPage() {
 
   const stats = useMemo(() => computeStats(collection, index), [collection, index]);
 
-  const groups = useMemo(() => {
-    const bySet = new Map<string, Group>();
-    for (const e of collection.values()) {
-      const include = tab === 'owned' ? e.qty > 0 : !!e.wanted;
-      if (!include) continue;
-      const card = index.cardsById.get(e.cardId);
-      const set = card && index.setsById.get(card.set);
-      if (!card || !set) continue;
-      let g = bySet.get(set.id);
-      if (!g) bySet.set(set.id, (g = { set, cards: [], copies: 0 }));
-      g.cards.push(card);
-      g.copies += e.qty;
-    }
-    const list = [...bySet.values()];
-    for (const g of list) {
-      const order = new Map((index.cardsBySet.get(g.set.id) ?? []).map((c, i) => [c.id, i]));
-      g.cards.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
-    }
-    list.sort((a, b) => (setRecency(a.set) < setRecency(b.set) ? 1 : -1));
-    return list;
-  }, [collection, index, tab]);
+  // Set by set, newest first, in number order; the deck editor's "From my binder" picker shares this grouping.
+  const groups = useMemo(() => groupBySet(collection, index, tab === 'decks' ? 'owned' : tab), [collection, index, tab]);
 
   // The binder holds the same cards in the same order, set by set.
-  const pockets = useMemo<Pocket[]>(() => groups.flatMap((g) => g.cards.map((card) => ({ card, set: g.set }))), [groups]);
+  const pockets = useMemo(() => pocketsOf(groups), [groups]);
 
   const toggle = (id: string) =>
     setOpen((prev) => {
