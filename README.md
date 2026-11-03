@@ -102,11 +102,17 @@ with Capacitor. Your collection lives only on your device.
   a plain message: the list in words plus a short `CCD1.` code and a `cardcodex://deck/` link to
   paste into Decks → Import (which opens a deck file too). Either way the friend gets the deck with
   their own owned/missing counts. No server is involved, and decks ride along in the Settings
-  backup.
+  backup. Under your decks, Yu-Gi-Oh! mode lists every Structure Deck and Starter Deck, ranked by
+  how much of each your collection already covers (the three closest are marked); tap one to see
+  what you own and what is missing and "Keep this deck" to copy it into your own. Their card lists
+  come from YGOPRODeck (`npm run decks:ygo`, one copy per printed card); Pokémon has no starter
+  decks yet, because TCGdex carries no deck lists and the official product pages cannot be
+  fetched by a build script.
 - **Guided tour** – a short, skippable walk through the five tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
-What comes next (prebuilt decks and suggestions, Magic: The Gathering as a third game) is in [ROADMAP.md](ROADMAP.md).
+What comes next (Pokémon starter decks and card suggestions for a deck, Magic: The Gathering as a
+third game) is in [ROADMAP.md](ROADMAP.md).
 
 ### Yu-Gi-Oh! mode
 

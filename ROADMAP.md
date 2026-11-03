@@ -8,6 +8,14 @@ a design.
 
 ### Prebuilt decks and deck suggestions
 
+Done for Yu-Gi-Oh!: `public/data/ygo/decks.json` (`npm run decks:ygo`, from YGOPRODeck) holds 80
+Structure and Starter Decks, one copy per printed card because the API has no quantities. Decks →
+"Starter decks" ranks them by coverage (`src/data/starter-decks.ts`), `#/decks/starter/<id>` shows
+one and copies it with "Keep this deck". Still open: Pokémon (pokemon.com sits behind bot
+protection, so the lists cannot be fetched by a script; Limitless or Bulbapedia lists would need a
+source whose terms allow it), real quantities, and the card suggestions below.
+
+
 - A set of ready-made decks per game (starter and theme decks, well-known lists) shipped like the
   catalog, under `public/data/<game>/decks.json`, built by a script from a source whose terms allow
   it. Decks gets a "Starter decks" section; one tap copies a deck into your own, and the owned and

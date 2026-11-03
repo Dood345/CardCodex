@@ -4,12 +4,13 @@
  * import of a friend's deck file or share text (either opens the import
  * page, src/pages/DeckImportPage.tsx).
  */
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { findDeckCode } from '@/data/deck-code';
 import { DECK_FILE_ROUTE, holdDeckFile } from '@/data/deck-file';
 import { createDeck, summarizeDeck, useDecks } from '@/data/decks';
+import { rankStarterDecks, useStarterDecks } from '@/data/starter-decks';
 import { cardImageUrl } from '@/data/types';
 import { EmptyState, Img, Sheet } from '@/ui/components';
 import { DeckIcon, PlusIcon } from '@/ui/icons';
@@ -20,6 +21,8 @@ export function DecksTab() {
   const game = useGame();
   const collection = useCollection();
   const decks = useDecks(game.id);
+  const starters = useStarterDecks(game.id);
+  const ranked = useMemo(() => rankStarterDecks(starters ?? [], collection, (id) => index.cardsById.has(id)), [starters, collection, index]);
   const [name, setName] = useState('');
   const [importOpen, setImportOpen] = useState(false);
   const [pasted, setPasted] = useState('');
@@ -99,6 +102,28 @@ export function DecksTab() {
             );
           })}
         </div>
+      )}
+      {ranked.length > 0 && (
+        <section className="starter-section">
+          <h2 className="section-title">Starter decks</h2>
+          <div className="deck-list">
+            {ranked.map((r, i) => {
+              const pct = Math.round(r.coverage * 100);
+              return (
+                <a key={r.deck.id} className="deck-row starter-row" href={href(`/decks/starter/${r.deck.id}`)}>
+                  <div className="deck-body">
+                    {i < 3 && r.covered > 0 && <div className="starter-badge">Closest to complete</div>}
+                    <div className="deck-name">{r.deck.name}</div>
+                    <div className="deck-sub">
+                      {r.total} {r.total === 1 ? 'card' : 'cards'} · {r.covered} owned
+                    </div>
+                  </div>
+                  <div className={`deck-pct${pct === 100 && r.total ? ' complete' : ''}`}>{pct}%</div>
+                </a>
+              );
+            })}
+          </div>
+        </section>
       )}
       <Sheet open={importOpen} onClose={() => setImportOpen(false)} title="Import a deck">
         <p>Open the deck file (.ccdeck) a friend sent, or paste their message or just its CCD1… code.</p>

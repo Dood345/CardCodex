@@ -21,6 +21,7 @@ import SearchPage from '@/pages/SearchPage';
 import CollectionPage from '@/pages/CollectionPage';
 import DeckPage from '@/pages/DeckPage';
 import DeckImportPage from '@/pages/DeckImportPage';
+import StarterDeckPage from '@/pages/StarterDeckPage';
 import SettingsPage from '@/pages/SettingsPage';
 
 // The scanner pulls in OCR code; load it only when the user opens it.
@@ -140,7 +141,12 @@ function Shell() {
       page = <CollectionPage />;
       break;
     case 'decks':
-      page = arg === 'import' ? <DeckImportPage code={route.segments[2] ?? ''} /> : arg ? <DeckPage id={arg} /> : <CollectionPage />;
+      page =
+        arg === 'import' ? (
+          <DeckImportPage code={route.segments[2] ?? ''} />
+        ) : arg === 'starter' && route.segments[2] ? (
+          <StarterDeckPage id={route.segments[2]} />
+        ) : arg ? <DeckPage id={arg} /> : <CollectionPage />;
       break;
     case 'settings':
       page = <SettingsPage />;
