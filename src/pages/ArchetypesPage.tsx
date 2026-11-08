@@ -8,6 +8,7 @@ import { useCollection } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
 import { cardImageUrl } from '@/data/types';
 import { archetypeCover } from '@/games/ygo';
+import { CardBack } from '@/ui/CardBack';
 import { Chip, EmptyState, Img, TopBar } from '@/ui/components';
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
@@ -110,7 +111,7 @@ export default function ArchetypesPage() {
           return (
             <a key={a.name} className={`arch-tile arch-${state}`} href={href(`/archetypes/${encodeURIComponent(a.name)}`)}>
               <div className="arch-art">
-                <Img src={cover ? cardImageUrl(cover, '', 'low') : undefined} alt="" className="arch-art-img" fallback={<span>?</span>} />
+                <Img src={cover ? cardImageUrl(cover, '', 'low') : undefined} alt="" className="arch-art-img" fallback={<CardBack game="ygo" />} />
               </div>
               <div className="arch-name" title={a.name}>
                 {a.name}

@@ -545,20 +545,6 @@ textarea:focus {
 .scryfall-art.card-missing {
   filter: opacity(0.4);
 }
-.card-placeholder {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 8px;
-  font-size: 12px;
-  text-align: center;
-  color: var(--fg-muted);
-  background: linear-gradient(160deg, var(--bg-card), var(--bg-hover));
-}
 .qty-badge {
   position: absolute;
   right: 6px;
@@ -2616,4 +2602,51 @@ textarea:focus {
 }
 .name-progress {
   padding: 0 12px 8px;
+}
+
+/* ===== Drawn card back (src/ui/CardBack.tsx): the placeholder where a card picture is missing ===== */
+.card-back {
+  --back: #555;
+  width: 100%;
+  height: 100%;
+  min-height: 48px;
+  padding: 6%;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--back) 80%, black);
+  display: flex;
+}
+.card-back-inner {
+  flex: 1;
+  min-width: 0;
+  border-radius: 5px;
+  border: 2px solid color-mix(in srgb, var(--back) 45%, white);
+  background: repeating-linear-gradient(45deg, color-mix(in srgb, var(--back) 72%, black) 0 6px, color-mix(in srgb, var(--back) 58%, black) 6px 12px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px;
+  color: rgba(255, 255, 255, 0.85);
+  text-align: center;
+}
+.card-back-label {
+  font-size: 11px;
+  line-height: 1.2;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.img-fallback:has(> .card-back) {
+  padding: 0;
+}
+.img-fallback.name-tile-img {
+  width: 52px;
+}
+.img-fallback.arch-art-img {
+  padding: 0;
+}
+.sprite-missing {
+  opacity: 0.35;
 }
