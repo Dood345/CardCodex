@@ -9,6 +9,7 @@
  *   node scripts/probe-card-images.mjs cards <cardId...>  all variants for single cards (also cards whose img flag 404s)
  *   node scripts/probe-card-images.mjs scrydex [setId...] gap cards against images.scrydex.com (placeholder-aware)
  *   node scripts/probe-card-images.mjs tiers              merge census + scrydex runs: English / foreign / Scrydex-only / nowhere
+ *   node scripts/probe-card-images.mjs scrydexnames       compare Scrydex hits with pokemon-tcg-data card names
  *   node scripts/probe-card-images.mjs ygo                YGOPRODeck picture check for cards without a TCG printing
  *   node scripts/probe-card-images.mjs mtg [n]            Scryfall image check for a random sample of printings
  *   node scripts/probe-card-images.mjs ext <url>...       status of arbitrary URLs (HEAD, cached)
@@ -311,7 +312,7 @@ async function cards(ids) {
 // ---------------------------------------------------------------- Scrydex image CDN (the Pokemon TCG API's picture host since 2026)
 const SCRYDEX = 'https://images.scrydex.com/pokemon';
 /** Sets whose names differ too much between TCGdex and Scrydex for the name match (checked by hand against the expansion list). */
-const SCRYDEX_ALIAS = { 'tk-hs-g': 'tk4b', 'tk-hs-r': 'tk4a', '30th-c': 'me55c', 'ex5.5': 'wb1' };
+const SCRYDEX_ALIAS = { 'tk-hs-g': 'tk4b', 'tk-hs-r': 'tk4a', 'ex5.5': 'wb1' };
 const norm = (n) => n.toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, '');
 
 async function dataRepoSets() {
@@ -441,6 +442,60 @@ function tiers() {
   fs.writeFileSync(path.join(CACHE_DIR, 'tiers.json'), JSON.stringify({ ...out, lackingSets: tally(lacking, (k) => k.set) }));
 }
 
+/**
+ * Are the Scrydex hits the right cards? For every resolved id whose set is in pokemon-tcg-data, compare the card name that
+ * file lists at that number with the catalog name (one download per set, cached). Sets not in the repo cannot be checked this way.
+ */
+async function scrydexNames() {
+  const { c } = pokemon();
+  const resolved = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, 'scrydex-resolved.json'), 'utf8'));
+  const repoSets = new Set((await dataRepoSets()).map((x) => x.id));
+  const by = new Map(c.cards.map((k) => [k.id, k]));
+    const stripName = (n) => norm(n.replace(/[-\s]?(ex|gx|vmax|vstar|v-union|vunion|v|break|star)$/i, ''));
+  const per = {};
+  const bad = [];
+  const dir = path.join(CACHE_DIR, 'repo-cards');
+  fs.mkdirSync(dir, { recursive: true });
+  for (const r of resolved) {
+    const i = r.scrydex.lastIndexOf('-');
+    const setId = r.scrydex.slice(0, i);
+    const num = r.scrydex.slice(i + 1);
+    const e = (per[setId] ||= { checked: 0, match: 0, unchecked: 0 });
+    if (!repoSets.has(setId)) {
+      e.unchecked++;
+      continue;
+    }
+    const f = path.join(dir, setId + '.json');
+    if (!fs.existsSync(f)) {
+      await sleep(GAP_MS);
+      const res = await fetch(`https://raw.githubusercontent.com/PokemonTCG/pokemon-tcg-data/master/cards/en/${setId}.json`, { headers: { 'User-Agent': UA } });
+      fs.writeFileSync(f, res.ok ? Buffer.from(await res.arrayBuffer()) : '[]');
+    }
+    const list = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const hit = list.find((x) => x.number === num || x.id === r.scrydex);
+    if (!hit) {
+      e.unchecked++;
+      continue;
+    }
+    e.checked++;
+    const a = stripName(by.get(r.card).name);
+    const b = stripName(hit.name);
+    if (a === b || a.includes(b) || b.includes(a)) e.match++;
+    else bad.push(`${r.card} "${by.get(r.card).name}" vs ${r.scrydex} "${hit.name}"`);
+  }
+  let ck = 0,
+    mt = 0,
+    un = 0;
+  for (const [id, e] of Object.entries(per)) {
+    ck += e.checked;
+    mt += e.match;
+    un += e.unchecked;
+    console.log(id.padEnd(10), JSON.stringify(e));
+  }
+  console.log('TOTAL checked', ck, 'matching name', mt, 'unchecked (set or number not in the repo)', un);
+  console.log(['mismatches:', ...bad].join('\n  '));
+}
+
 // ---------------------------------------------------------------- Yu-Gi-Oh!
 async function ygo() {
   const y = readJson('public/data/ygo/catalog.json');
@@ -494,6 +549,7 @@ else if (cmd === 'tcgdex') await tcgdex(rest);
 else if (cmd === 'census') await census(rest);
 else if (cmd === 'cards') await cards(rest);
 else if (cmd === 'tiers') tiers();
+else if (cmd === 'scrydexnames') await scrydexNames();
 else if (cmd === 'scrydex') await scrydex(rest);
 else if (cmd === 'ygo') await ygo();
 else if (cmd === 'mtg') await mtg(Number(rest[0]) || 300);

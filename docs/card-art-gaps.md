@@ -18,14 +18,14 @@ Research only: no app code, catalog or version changed. The probe script is `scr
      probing the file path in `build-catalog.mjs`.**
   2. TCGdex has the card only in other languages (German, Spanish, Italian, sometimes French): 496 cards, 119 of them Energy
      (the Trainer Kit basic Energy) and 64 Trainers.
-  3. TCGdex has nothing in any language I probed, but Scrydex (the Pokémon TCG API's picture host) does: 758 cards, 86 of them
-     Energy and 81 Trainers (all of `me06`, `sm7.5`, `smp`, `sve`, `mee`, the old Trainer Kits, McDonald's).
-  4. Nowhere I found: 138 cards (`mfb` 34, `exu` 28, `cel25cc` 25, `30th-c` 24, some Aquapolis and Skyridge cards), of them
+  3. TCGdex has nothing in any language I probed, but Scrydex (the Pokémon TCG API's picture host) does: 752 cards, 86 of them
+     Energy and 80 Trainers (all of `me06`, `sm7.5`, `smp`, `sve`, `mee`, the old Trainer Kits, McDonald's).
+  4. Nowhere I found: 144 cards (`mfb` 34, `30th-c` 30, `exu` 28, `cel25cc` 25, some Aquapolis and Skyridge cards), of them
      10 Trainers and 4 Energy.
 - **Recommended:** (a) now: probe the file path in the catalog build (371 cards, 34 of them Trainers, no new terms), also
   HEAD-verify `img: true` cards (four are broken today) and rerun `npm run hashes`. Keep the card back (d) for the rest, and
   ask Scrydex in writing whether the app may show or bundle their pictures; **only if they agree**, bundle Trainer + Energy
-  (384 of the 398 are covered, about 4.5 MB). Reasons under "Recommendation".
+  (383 of the 398 are covered, about 4.5 MB). Reasons under "Recommendation".
 
 ## 1. The measurement
 
@@ -74,7 +74,7 @@ Per set (T+E = Trainer + Energy cards among the gaps; the last four columns say 
 | `swsh10tg` Astral Radiance Trainer Gallery | 30 / 30 | 5 | 30 | 0 | 30 | 0 |
 | `swsh11tg` Lost Origin Trainer Gallery | 30 / 30 | 6 | 30 | 0 | 30 | 0 |
 | `swsh12tg` Silver Tempest Trainer Gallery | 30 / 30 | 6 | 30 | 0 | 30 | 0 |
-| `30th-c` 30th Classic Collection | 30 / 30 | 2 | 0 | 0 | 6 | 24 |
+| `30th-c` 30th Classic Collection | 30 / 30 | 2 | 0 | 0 | 0 | 30 |
 | `exu` Unseen Forces Unown Collection | 28 / 28 | 0 | 0 | 0 | 0 | 28 |
 | `2021swsh` McDonald's Collection 2021 | 25 / 25 | 0 | 0 | 0 | 25 | 0 |
 | `cel25cc` Celebrations Classic Collection | 25 / 25 | 3 | 0 | 0 | 0 | 25 |
@@ -178,11 +178,11 @@ the status counts. Sets where the sample found nothing were not probed card by c
 |---|---|---|---|---|
 | A. TCGdex English file exists (fix the build) | 371 | 337 | 34 | 0 |
 | B. only another TCGdex language | 496 | 313 | 64 | 119 |
-| C. only Scrydex | 758 | 591 | 81 | 86 |
-| D. nowhere probed | 138 | 124 | 10 | 4 |
+| C. only Scrydex | 752 | 586 | 80 | 86 |
+| D. nowhere probed | 144 | 129 | 11 | 4 |
 | **Total** | 1,763 | 1,365 | 189 | 209 |
 
-Scrydex covers 1,614 of the 1,763 (Pokémon 1,230, Trainer 179 of 189, Energy 205 of 209) and 1,244 of the 1,392 that TCGdex
+Scrydex covers 1,608 of the 1,763 (Pokémon 1,225, Trainer 178 of 189, Energy 205 of 209) and 1,238 of the 1,392 that TCGdex
 lacks in English.
 
 ## 3. Other sources, with the terms in front of me
@@ -195,11 +195,17 @@ The app's rule: only sources whose terms allow the use, source recorded, GPL-3.0
   `https://images.scrydex.com/pokemon/<id>/small` and `/large`. The old API "is scheduled to be taken offline on March 1,
   2027" (README of `PokemonTCG/pokemon-tcg-data`); docs.pokemontcg.io: "The Pokémon TCG API is deprecated" and "Please migrate
   your application to Scrydex."
-- Coverage measured: 1,614 of the 1,763 gap cards (95 % of the gap Trainers, 98 % of the gap Energy), 245×342 PNG, 45–60 KB.
-  Transcoded to 245×337 WebP at quality 75 about 15 KB (Energy about 8 KB), measured on ten. I viewed ten across sets (two
-  Energy, `smp`, `swshp`, McDonald's ×2, `ecard2`, `sm7.5`, `me6`, `svp`): all the right card. The ids are not TCGdex ids
+- Coverage measured: 1,608 of the 1,763 gap cards (94 % of the gap Trainers, 98 % of the gap Energy), 245×342 PNG, 45–60 KB.
+  Transcoded to 245×337 WebP at quality 75 about 15 KB (Energy about 8 KB), measured on ten. The ids are not TCGdex ids
   (`me06` → `me6`, `sm7.5` → `sm75`, McDonald's `2021swsh` → `mcd21`, Trainer Kits `tk4a…tk10b`); I derived them from Scrydex's
-  public expansion list plus four hand aliases. Their docs say never to assume the URL pattern.
+  public expansion list plus three hand aliases (`tk-hs-g`, `tk-hs-r`, `ex5.5`). Their docs say never to assume the URL pattern.
+- **Are the hits the right cards?** The placeholder test only proves that *some* card sits at an id. So: 837 hits in sets that
+  `pokemon-tcg-data` also lists were compared by name with the catalog (`scrydexnames`): 831 match. The six mismatches were all
+  `30th-c` (`me55c`, a hand alias I had guessed: the numbering differs, `30th-c-004` Genesect EX vs `me55c-4` Charizard), so
+  **that alias is dropped and `30th-c` counts as "nowhere"**. The other 777 hits are in sets or numbers the repo lacks
+  (Trainer Kits `tk3`–`tk10`, `wb1`, `me6`, `mep`, `mee`, most of `svp`, `mcd23`, `mcd24`); I viewed 68 of them on two contact
+  sheets (every such set, with an Energy, a Trainer and a Pokémon where the set has them, including `me6-132` Bubbly Water
+  Energy and `mee-9`): all 68 are the expected card. The other hits in those sets are unchecked beyond the placeholder test.
 - **Placeholder trap:** an unknown id returns **HTTP 200 with a card back** (45,551 bytes, identical for any unknown id).
   Status codes cannot tell a hit from a miss, so any use must compare the body.
 - **Terms.** Best-practices page: "When using the Scrydex API, you are free to include the provided card images in your
@@ -285,15 +291,18 @@ about 15 KB (Energy about 8 KB). The current arm64 APK is 29.9 MB (1.8.2), the u
 split.
 
 **(a) Fix the build to probe the file path.** In `scripts/build-catalog.mjs`, for every card whose GraphQL `image` is null,
-HEAD `<predicted>/high.webp`, then the parent set path (`swsh4.5`, `swsh12.5`, `swsh9..12`); set `img: true` for the first and
-`img: "<parent base>"` for the second (the schema and `cardImageUrl` already take a base URL string, and `build-hashes.mjs`
-goes through `cardImageUrl`, so hashes follow without a script change). Also HEAD-check the `img: true` cards (four broken now)
-and clear stale `.404` markers (six). Recovers **371 cards** (34 Trainers, no Energy), no app change, no new terms; about 1,800
-HEADs per build (about 8 minutes paced, cacheable), and later builds pick up more `mep`, `svp` and `me06` uploads by
-themselves. The hash table grows by 371 × 32 B = 12 KB raw, plus six stale ones; the hash build downloads about 380 images
-(7 MB).
+HEAD `<predicted>/low.webp` (`low`, not `high`: tiles and `build-hashes.mjs` fetch `low` through `cardImageUrl`, and a card with
+only one of the two would be marked `img: true` and still be broken), then the same under the parent set path (`swsh4.5`,
+`swsh12.5`, `swsh9..12`); set `img: true` for the first and `img: "<parent base>"` for the second (the schema and `cardImageUrl`
+already take a base URL string, and `build-hashes.mjs` goes through `cardImageUrl`, so hashes follow without a script change).
+Recovers **371 cards** (34 Trainers, no Energy), no app change, no new terms; about 1,800 HEADs per build (about 8 minutes
+paced, cacheable), and later builds pick up more `mep`, `svp` and `me06` uploads by themselves. Do **not** HEAD all 19,669
+`img: true` cards in the catalog build (about 80 minutes at this pace on every build): `build-hashes.mjs` already downloads every
+picture, so it should delete its `.404` markers before each run (six are stale today) and the catalog build should read that
+list of 404s and drop `img` for the cards on it (four are broken today). The hash table grows by 371 × 32 B = 12 KB raw plus
+six; the hash build downloads about 380 images (7 MB).
 
-**(b) A second host per card.** Scrydex is the only source with real coverage: 1,614 cards, 1,244 of the cards TCGdex lacks
+**(b) A second host per card.** Scrydex is the only source with real coverage: 1,608 cards, 1,238 of the cards TCGdex lacks
 in English, Energy 205 of 209. It needs a per-card field (`sx: "me6-48"` or a per-set id), a small change in `cardImageUrl`
 (`/small`, `/large`, no extension), and a body check against the card-back placeholder in the build (md5 prefix `f294d6fb8b51`
 for the 245×342 small size). Cost: code plus the terms decision in section 3, **blocked on Scrydex's written permission**.
@@ -306,9 +315,9 @@ not depend on language; I did not measure how well that matches) and keep the ca
 
 | What | Cards | Size | APK effect |
 |---|---|---|---|
-| All Scrydex-covered gap cards | 1,614 | 24 MB | +24 MB per APK (arm64 29.9 → about 54 MB) |
-| Still missing after (a), Scrydex-covered, `me06` left out | 1,103 | 16.5 MB | +16.5 MB |
-| Trainer + Energy only, Scrydex-covered | 384 | 4.5 MB (205 Energy × 8 KB + 179 Trainer × 16 KB) | +4.5 MB |
+| All Scrydex-covered gap cards | 1,608 | 24 MB | +24 MB per APK (arm64 29.9 → about 54 MB) |
+| Still missing after (a), Scrydex-covered, `me06` left out | 1,097 | 16.5 MB | +16.5 MB |
+| Trainer + Energy only, Scrydex-covered | 383 | 4.5 MB (205 Energy × 8 KB + 178 Trainer × 16 KB) | +4.5 MB |
 | All 1,763 at TCGdex's 19 KB (upper bound) | 1,763 | 33 MB | +33 MB |
 
 The owner accepts going past 30 MB. The hash tables are small either way (32 B per card, 1,763 cards = 56 KB); bundling
@@ -328,7 +337,7 @@ Energy cards, and those cards cannot be matched by the scanner's picture path.
   recovers 34, and of 209 Energy gaps none.
 - The Trainer and Energy gaps are the old Trainer Kits, McDonald's, Dragon Majesty and the Energy sets, all of which TCGdex
   lacks in English; Scrydex is the only source with them. Ask Scrydex in writing whether a free, GPL-3.0 collection tracker
-  may hotlink, or bundle for the 384 covered Trainer and Energy cards (about 4.5 MB), their pictures, and what credit they
+  may hotlink, or bundle for the 383 covered Trainer and Energy cards (about 4.5 MB), their pictures, and what credit they
   want. If yes, do **(c) for Trainer + Energy first** (small, offline, scanner-ready) and (b) hotlinking for the Pokémon cards
   later; if no, stay on the card back.
 - Do not show other-language TCGdex pictures without the owner's explicit yes; the scanner-only hash use is the safer
@@ -340,6 +349,7 @@ Energy cards, and those cards cannot be matched by the scanner's picture path.
 - `me06` pictures at TCGdex: recheck in one to two weeks.
 - Sets with no TCGdex hit were sampled (2–4 cards each), not counted card by card, so a few single cards in them may exist.
 - pokemon.com's terms (bot-checked) were read second-hand; TCGplayer, Cardmarket and Pokellector were not evaluated.
-- Scrydex id derivation uses its public expansion list; ten hits were checked by eye, the rest only by the placeholder test.
+- Scrydex hits: 837 checked by name against `pokemon-tcg-data` (831 right; the 6 wrong ones, `30th-c`, were dropped), 68 more
+  checked by eye, about 710 only by the placeholder test (same sets as the 68, so the risk is a numbering shift inside a set).
 - Reproduce with `node scripts/probe-card-images.mjs measure|tcgdex|census|scrydex|tiers|ygo|mtg`; the numbers above come from the
   cached runs of 2026-11-08 (`scripts/.cache/probe/tiers.json`).
