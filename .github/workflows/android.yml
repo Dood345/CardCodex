@@ -21,8 +21,10 @@ jobs:
       - run: npm test
       - run: npx vite build
       # Kept short: the repository's artifact storage filled up once (each run adds a build and a 100 MB APK set).
+      # The uploads are a convenience, so a storage-quota refusal must not fail the build or skip the Android job.
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push'
+        continue-on-error: true
         with:
           name: web-dist
           path: dist
@@ -53,6 +55,7 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'push'
+        continue-on-error: true
         with:
           name: cardcodex-debug-apks
           path: android/app/build/outputs/apk/debug/*.apk
