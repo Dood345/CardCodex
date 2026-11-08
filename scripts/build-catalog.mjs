@@ -115,6 +115,71 @@ async function csv(name) {
   return parseCsv(text.replace(/^﻿/, ''));
 }
 
+// ---------- pictures the bulk feed left blank ----------
+const PROBE_TTL_MS = 7 * 24 * 3600 * 1000;
+const PROBE_CACHE = path.join(CACHE, 'image-probe.json');
+
+/** HEAD a TCGdex asset. TCGdex serves from a CDN, so a few requests at a time are fine. */
+async function headOk(url) {
+  try {
+    const res = await fetch(url, { method: 'HEAD', headers: { 'user-agent': 'CardCodex build-catalog (github.com/Dood345/CardCodex)' } });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The GraphQL feed says `image: null` for cards whose file is on the CDN all
+ * the same: new sets while their uploads catch up, and the Shiny Vault,
+ * Galarian Gallery and Trainer Gallery subsets, whose files sit under the
+ * parent set's path (`swsh4.5sv` → `swsh4.5`). Probe `low.webp` (the size the
+ * app and the hash build fetch) at the card's own path, then at the parent's,
+ * and mark the card accordingly. Answers are kept for a week so a cached run
+ * does not ask again; `--no-cache` asks afresh.
+ */
+async function probeMissingImages(pending, setIds) {
+  let memo = {};
+  if (!NO_CACHE && fs.existsSync(PROBE_CACHE)) {
+    try {
+      memo = JSON.parse(fs.readFileSync(PROBE_CACHE, 'utf8'));
+    } catch {
+      memo = {};
+    }
+  }
+  const now = Date.now();
+  const stats = { own: 0, parent: 0, none: 0, asked: 0 };
+  let i = 0;
+  const worker = async () => {
+    while (i < pending.length) {
+      const { card, series, sid, localId } = pending[i++];
+      let hit = memo[card.id];
+      if (!hit || now - hit.at > PROBE_TTL_MS) {
+        stats.asked++;
+        const own = `https://assets.tcgdex.net/en/${series}/${sid}/${localId}`;
+        const parent = sid.match(/^([a-z]+[0-9.]+)[a-z]+$/u)?.[1];
+        let where = (await headOk(`${own}/low.webp`)) ? 'own' : 'none';
+        if (where === 'none' && parent && setIds.has(parent)) {
+          const base = `https://assets.tcgdex.net/en/${series}/${parent}/${localId}`;
+          if (await headOk(`${base}/low.webp`)) where = base;
+        }
+        hit = memo[card.id] = { where, at: now };
+      }
+      if (hit.where === 'own') {
+        card.img = true;
+        stats.own++;
+      } else if (hit.where !== 'none') {
+        card.img = hit.where;
+        stats.parent++;
+      } else stats.none++;
+    }
+  };
+  await Promise.all(Array.from({ length: 6 }, worker));
+  fs.mkdirSync(CACHE, { recursive: true });
+  fs.writeFileSync(PROBE_CACHE, JSON.stringify(memo));
+  return stats;
+}
+
 // ---------- species ----------
 async function buildSpecies() {
   log('Species (PokeAPI CSV)...');
@@ -267,6 +332,8 @@ async function main() {
   const oddCats = {};
   const badDex = [];
   const cards = [];
+  /** Cards the feed lists without a picture, probed on the CDN after the loop. */
+  const pending = [];
   const droppedTcgp = { n: 0 };
   const unknownSet = new Set();
   for (const c of raw) {
@@ -318,10 +385,19 @@ async function main() {
         buckets.custom++;
         if (customExamples.length < 10) customExamples.push(`${c.id}: ${c.image}`);
       }
-    } else buckets.none++;
+    } else {
+      buckets.none++;
+      pending.push({ card, series, sid, localId: c.localId });
+    }
     cards.push(card);
   }
   assert(unknownSet.size === 0, 'cards reference unknown sets: ' + [...unknownSet].join(','));
+
+  log(`Probing the CDN for ${pending.length} cards the feed lists without a picture...`);
+  const probed = await probeMissingImages(pending, new Set(sets.map((s) => s.id)));
+  buckets.true += probed.own;
+  buckets.custom += probed.parent;
+  buckets.none -= probed.own + probed.parent;
 
   // Drop empty sets
   const counts = new Map();
@@ -402,6 +478,7 @@ async function main() {
   log('categories:', JSON.stringify(catCounts), 'non-standard raw categories:', JSON.stringify(oddCats));
   log('img buckets: predictable=' + buckets.true, 'custom=' + buckets.custom, 'none=' + buckets.none);
   if (customExamples.length) log('custom img examples:\n  ' + customExamples.join('\n  '));
+  log(`pictures found on the CDN for cards the feed left blank: ${probed.own} at their own path, ${probed.parent} under the parent set, ${probed.none} nowhere (${probed.asked} asked, the rest remembered)`);
   log('out-of-range dex ids:', badDex.length, badDex.slice(0, 20).map((b) => `${b.id}:${b.dex}`).join(' '));
   log('Pokemon cards without dex:', pokeNoDex.length);
   log('  examples:', pokeNoDex.slice(0, 10).map((c) => `${c.id} (${c.name})`).join('; '));

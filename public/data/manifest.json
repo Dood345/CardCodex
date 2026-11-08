@@ -2,14 +2,14 @@
   "version": 1,
   "files": {
     "catalog.json": {
-      "hash": "7fd711330a29",
-      "bytes": 3345518,
-      "builtAt": "2026-11-08T16:19:03.953Z"
+      "hash": "7842187eb1e4",
+      "bytes": 3363391,
+      "builtAt": "2026-11-08T17:56:21.331Z"
     },
     "species.json": {
-      "hash": "0576d3182529",
+      "hash": "0574e3e1b79a",
       "bytes": 60832,
-      "builtAt": "2026-11-08T16:19:03.953Z"
+      "builtAt": "2026-11-08T17:56:21.331Z"
     },
     "ygo/catalog.json": {
       "hash": "68ec865fe080",
@@ -22,9 +22,9 @@
       "builtAt": "2026-11-03T01:30:34.324Z"
     },
     "hashes.json": {
-      "hash": "f9827d27e9aa",
-      "bytes": 629808,
-      "builtAt": "2026-11-08T16:34:47.281Z"
+      "hash": "ffc67648d080",
+      "bytes": 643538,
+      "builtAt": "2026-11-08T19:38:17.534Z"
     },
     "ygo/hashes.json": {
       "hash": "63b4bd3c45c8",
