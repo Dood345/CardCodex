@@ -11,7 +11,8 @@ import type { CollectionEntry } from '@/data/db';
 import { adjustQty } from '@/data/collection';
 import { cachedImageUrl, isCacheableImage, resolveImage } from '@/data/imageCache';
 import { ManaIcon } from '@/games/mtg/icons';
-import { AttributeIcon, BackIcon, EnergyIcon, GAME_TYPE_COLORS, HeartIcon, MinusIcon, PlusIcon } from './icons';
+import { CardBackFor } from './CardBack';
+import { AttributeIcon, BackIcon, EnergyIcon, GAME_TYPE_COLORS, HeartIcon, MinusIcon, PlusIcon, PokeballIcon } from './icons';
 import { href, back } from './router';
 
 /* ---------- layout ---------- */
@@ -277,20 +278,21 @@ export function CardTile({
   );
 }
 
+/** A card with no picture: a drawn card back in the game's colour, with the card's type icon and name. */
 export function CardPlaceholder({ card }: { card: CatalogCard }) {
   const type = card.types?.[0];
   return (
-    <div className="card-placeholder">
-      {type &&
-        (card.pc !== undefined ? (
+    <CardBackFor card={card}>
+      {type ? (
+        card.pc !== undefined ? (
           <AttributeIcon type={type} size={28} />
         ) : card.sid ? (
           <ManaIcon type={type} size={28} />
         ) : (
           <EnergyIcon type={type} size={28} />
-        ))}
-      <span>{card.name}</span>
-    </div>
+        )
+      ) : undefined}
+    </CardBackFor>
   );
 }
 
@@ -355,7 +357,7 @@ export function SpeciesTile({
       style={{ '--t1': primary, '--t2': secondary } as React.CSSProperties}
     >
       <div className="species-sprite-wrap">
-        <Img src={speciesSpriteUrl(species.id)} alt={species.name} className="species-sprite" fallback={<span>?</span>} />
+        <Img src={speciesSpriteUrl(species.id)} alt={species.name} className="species-sprite" fallback={<PokeballIcon size={40} className="sprite-missing" />} />
       </div>
       <div className="species-num">{dexNumber(species.id)}</div>
       <div className="species-name">{species.name}</div>

@@ -5,6 +5,7 @@
 import { useCatalog } from '@/app/context';
 import type { NameGroup } from '@/data/name-groups';
 import { cardImageUrl } from '@/data/types';
+import { CardBackFor } from './CardBack';
 import { Img } from './components';
 import { href } from './router';
 
@@ -17,7 +18,7 @@ export function NameTile({ group, owned }: { group: NameGroup; owned: number }) 
   return (
     <a className={`species-tile name-tile species-${state}`} href={href(`/dex/name/${encodeURIComponent(group.key)}`)}>
       <div className="species-sprite-wrap">
-        <Img src={set ? cardImageUrl(card, set.series, 'low') : undefined} alt={group.name} className="name-tile-img" fallback={<span>?</span>} />
+        <Img src={set ? cardImageUrl(card, set.series, 'low') : undefined} alt={group.name} className="name-tile-img" fallback={<CardBackFor card={card} label={false} />} />
       </div>
       <div className="species-name">{group.name}</div>
       <div className="species-count">
