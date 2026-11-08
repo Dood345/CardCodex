@@ -152,6 +152,30 @@ async function buildSpecies() {
   return out;
 }
 
+// Mechanic suffixes a card name adds after the species name.
+const NAME_SUFFIX = /\s+(ex|EX|GX|V|VMAX|VSTAR|BREAK|LV\.X|LEGEND|Prism Star|Star|G|GL|FB|C|E4|4|◇|☆|δ)$/u;
+
+/**
+ * Dex ids for a card whose source left `dexId` empty (new sets reach TCGdex
+ * before their dex ids do): strip the mechanic suffixes ("Fuecoco ex",
+ * "Pikachu & Zekrom GX"), then drop leading words until the rest is a species
+ * name ("Alolan Exeggutor", "Heat Rotom", "Teal Mask Ogerpon", "Team Rocket's
+ * Mewtwo"). Tag teams split on "&". Returns [] when any part is not a species.
+ */
+function dexFromName(name, dexByName) {
+  const parts = name.split(/\s*&\s*/u).map((part) => {
+    let n = part.trim();
+    for (let i = 0; i < 3; i++) n = n.replace(NAME_SUFFIX, '').replace(/-(GX|EX)$/u, '');
+    const words = n.split(/\s+/u);
+    for (let drop = 0; drop < words.length; drop++) {
+      const id = dexByName.get(words.slice(drop).join(' '));
+      if (id) return id;
+    }
+    return undefined;
+  });
+  return parts.every(Boolean) ? parts : [];
+}
+
 // ---------- cards ----------
 const CARD_FIELDS = 'id localId name category dexId types rarity hp stage image set { id }';
 
@@ -202,6 +226,8 @@ function localeCompareNum(a, b) {
 async function main() {
   const builtAt = new Date().toISOString();
   const species = await buildSpecies();
+  const dexByName = new Map(species.map((s) => [s.name, s.id]));
+  const dexFromNames = { n: 0, examples: [] };
 
   const details = await buildSets();
   log('Cards (TCGdex GraphQL)...');
@@ -267,6 +293,13 @@ async function main() {
         else badDex.push({ id: c.id, dex: d });
       }
       if (ok.length) card.dex = ok;
+    } else if (cat === 'Pokemon') {
+      const dex = dexFromName(c.name, dexByName);
+      if (dex.length) {
+        card.dex = dex;
+        dexFromNames.n++;
+        if (dexFromNames.examples.length < 6) dexFromNames.examples.push(`${c.id} (${c.name}) → ${dex.join(',')}`);
+      }
     }
     if (Array.isArray(c.types) && c.types.length) card.types = c.types;
     if (c.rarity) card.rarity = c.rarity;
@@ -372,6 +405,12 @@ async function main() {
   log('out-of-range dex ids:', badDex.length, badDex.slice(0, 20).map((b) => `${b.id}:${b.dex}`).join(' '));
   log('Pokemon cards without dex:', pokeNoDex.length);
   log('  examples:', pokeNoDex.slice(0, 10).map((c) => `${c.id} (${c.name})`).join('; '));
+  log('dex ids taken from the card name (source had none):', dexFromNames.n, dexFromNames.examples.join('; '));
+  // Every set must reach the Pokédex: a set whose Pokémon all lack dex ids is a source gap the name fallback should have closed.
+  for (const s of sets) {
+    const pk = cards.filter((c) => c.set === s.id && c.cat === 'Pokemon');
+    assert(pk.length === 0 || pk.some((c) => c.dex), `set ${s.id} (${s.name}) has ${pk.length} Pokémon cards and none with a dex id`);
+  }
   log('species:', species.length);
   log('asset probes [ok, fail]:', JSON.stringify(extResults));
   const sz = (n, s) => `${n}: ${Buffer.byteLength(s)} bytes raw, ${zlib.gzipSync(s).length} gzip`;

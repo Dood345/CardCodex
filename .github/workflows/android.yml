@@ -20,11 +20,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npx vite build
+      # Kept short: the repository's artifact storage filled up once (each run adds a build and a 100 MB APK set).
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
         with:
           name: web-dist
           path: dist
-          retention-days: 14
+          retention-days: 3
 
   android:
     name: Android (debug APK)
@@ -50,7 +52,8 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
         with:
           name: cardcodex-debug-apks
           path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 30
+          retention-days: 7
