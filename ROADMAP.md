@@ -62,6 +62,10 @@ switched.
 
 Known Yu-Gi-Oh! gaps today:
 
+- The Archetypes tab cannot reach the 5,775 cards (of 14,656) that belong to no archetype: 3,393
+  monsters, 1,207 spells, 1,016 traps. The Pokédex solved the same problem for Trainers and Energy
+  with name-grouped toggles (`src/data/name-groups.ts`, 1.8.0); the Archetypes page wants the same
+  Monster / Spell / Trap toggles over the archetype-less cards, grouped by card.
 - Card tiles and binder pockets use the Pokémon 63×88 aspect; Yu-Gi-Oh! cards are 59×86 (`cardMm`
   in the profile), so their pictures are very slightly cropped.
 

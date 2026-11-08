@@ -12,6 +12,7 @@ import { BackpackIcon, BinderIcon, CameraIcon, SearchIcon } from '@/ui/icons';
 import { href, navigate, usePaneScroll, useRoute } from '@/ui/router';
 import DexPage from '@/pages/DexPage';
 import SpeciesPage from '@/pages/SpeciesPage';
+import NameGroupPage from '@/pages/NameGroupPage';
 import ArchetypesPage from '@/pages/ArchetypesPage';
 import ArchetypePage from '@/pages/ArchetypePage';
 import SetsPage from '@/pages/SetsPage';
@@ -124,7 +125,15 @@ function Shell() {
   let page: React.ReactNode;
   switch (section) {
     case 'dex':
-      page = arg ? <SpeciesPage id={Number(arg)} /> : <DexPage />;
+      // `/dex/<number>` is a species; `/dex/name/<key>` every printing of a Trainer or Energy name.
+      page =
+        arg === 'name' ? (
+          <NameGroupPage key={route.segments[2]} nameKey={route.segments[2] ?? ''} />
+        ) : arg ? (
+          <SpeciesPage id={Number(arg)} />
+        ) : (
+          <DexPage />
+        );
       break;
     case 'archetypes':
       page = arg ? <ArchetypePage name={arg} /> : <ArchetypesPage />;
