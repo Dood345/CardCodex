@@ -2,19 +2,19 @@
   "version": 1,
   "files": {
     "catalog.json": {
-      "hash": "98a9de569eaf",
-      "bytes": 3317759,
-      "builtAt": "2026-11-01T01:28:28.938Z"
+      "hash": "7fd711330a29",
+      "bytes": 3345518,
+      "builtAt": "2026-11-08T16:19:03.953Z"
     },
     "species.json": {
-      "hash": "e0056a0630af",
+      "hash": "0576d3182529",
       "bytes": 60832,
-      "builtAt": "2026-11-01T01:28:28.938Z"
+      "builtAt": "2026-11-08T16:19:03.953Z"
     },
     "ygo/catalog.json": {
-      "hash": "25fcd8d44483",
-      "bytes": 3624834,
-      "builtAt": "2026-11-01T15:15:03.527Z"
+      "hash": "68ec865fe080",
+      "bytes": 3632363,
+      "builtAt": "2026-11-08T16:20:14.667Z"
     },
     "mtg/catalog.json": {
       "hash": "e4d2251dd7d8",
@@ -22,14 +22,14 @@
       "builtAt": "2026-11-03T01:30:34.324Z"
     },
     "hashes.json": {
-      "hash": "9236afb5e33a",
+      "hash": "f9827d27e9aa",
       "bytes": 629808,
-      "builtAt": "2026-11-01T20:13:06.590Z"
+      "builtAt": "2026-11-08T16:34:47.281Z"
     },
     "ygo/hashes.json": {
-      "hash": "d7988d3bfd91",
-      "bytes": 477965,
-      "builtAt": "2026-11-01T23:16:17.904Z"
+      "hash": "63b4bd3c45c8",
+      "bytes": 478065,
+      "builtAt": "2026-11-08T16:31:48.784Z"
     },
     "ygo/decks.json": {
       "hash": "385d5b627d03",
