@@ -114,6 +114,10 @@ async function politely() {
 /** `<id>.404` beside where the image would be (the marker name the Pokémon cache has always used). */
 const missingPath = (card) => card.file.replace(/\.[a-z]+$/, '.404');
 
+// A 404 is not forever: new sets get their pictures weeks after their cards, so every run asks again
+// for the cards that were missing last time (a few requests) instead of trusting the markers.
+for (const f of fs.readdirSync(IMAGES)) if (f.endsWith('.404')) fs.unlinkSync(path.join(IMAGES, f));
+
 /** The card's cached image bytes, downloading once; null when the server has none (remembered). */
 async function imageBytes(card, stats) {
   if (fs.existsSync(card.file)) {
