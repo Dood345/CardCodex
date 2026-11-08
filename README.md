@@ -20,7 +20,10 @@ with Capacitor. Your collection lives only on your device.
   mode* below for what differs.)
 - **Pokédex** – all 1,025 species with sprites and type colours. Species you own no cards of show as
   silhouettes, Pokédex-style. Filter by generation or collected/missing; tap a species for its
-  official artwork and every card that features it (newest first) with owned counts.
+  official artwork and every card that features it (newest first) with owned counts. Trainer and
+  Energy cards, which have no species, get their own toggles in the same row: one entry per card
+  name with its owned count, letters on the quick scroll, and a tap opens every printing of that
+  name with the same collected/missing filter.
 - **Sets (binder view)** – every series and set from Base Set to the current releases, with set
   symbols, logos and completion bars. Open a set to see its cards in number order; cards you don't
   own are dimmed. **Quick add** mode turns every tile into a one-tap "+1" for fast inventory entry.

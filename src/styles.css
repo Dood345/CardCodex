@@ -2596,3 +2596,24 @@ textarea:focus {
 .starter-source {
   margin-top: 8px;
 }
+
+/* Pokédex tiles for Trainer and Energy names (src/ui/NameTile.tsx): a card picture where a species has its sprite. */
+.name-tile {
+  --t1: #6b7280;
+  --t2: #6b7280;
+}
+.name-tile .species-sprite-wrap {
+  height: 72px;
+}
+.name-tile-img {
+  height: 72px;
+  width: auto;
+  border-radius: 4px;
+  object-fit: contain;
+}
+.species-missing img.name-tile-img {
+  filter: grayscale(1) opacity(0.45);
+}
+.name-progress {
+  padding: 0 12px 8px;
+}
