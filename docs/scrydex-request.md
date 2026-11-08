@@ -12,9 +12,10 @@ https://scrydex.com/support; their site has no form). Their Terms of Service: ht
 Hello Scrydex team,
 
 I maintain CardCodex, a free and open-source (GPL-3.0) Android app that helps collectors track their
-Pokémon TCG, Yu-Gi-Oh! and Magic collections: https://github.com/Dood345/CardCodex. It is not a
-commercial product, has no ads or subscriptions, and is not a card database service of its own: it
-shows one picture per card on the user's own phone so they can tell their cards apart.
+Pokémon TCG, Yu-Gi-Oh! and Magic collections: https://github.com/Dood345/CardCodex. It is free to
+use and free of ads, it is not a card database service of its own, and it shows one picture per
+card on the user's own phone so they can tell their cards apart. If we ever charge for the app or
+for a service around it, we will come back to you first.
 
 Our Pokémon pictures come from TCGdex, which has no English picture for about 1,400 cards, mostly the
 older Trainer Kits, McDonald's promos, Dragon Majesty and the Energy cards. Scrydex serves pictures
