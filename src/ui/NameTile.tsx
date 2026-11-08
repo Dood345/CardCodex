@@ -12,7 +12,8 @@ import { href } from './router';
 export function NameTile({ group, owned }: { group: NameGroup; owned: number }) {
   const index = useCatalog();
   const total = group.cards.length;
-  const card = group.cards[0];
+  // The newest printing that has a picture; a new set often arrives without pictures while older printings have them.
+  const card = group.cards.find((c) => c.img) ?? group.cards[0];
   const set = index.setsById.get(card.set);
   const state = owned === 0 ? 'missing' : 'owned';
   return (
