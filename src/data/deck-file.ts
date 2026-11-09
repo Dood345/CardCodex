@@ -34,6 +34,8 @@ export function encodeDeckFile(deck: DeckShare, at: Date = new Date()): string {
       v: 1,
       game: deck.game,
       name: deck.name,
+      // The rule set ("commander"), left out for the game's default; an older reader ignores it.
+      ...(deck.rules ? { rules: deck.rules } : {}),
       // `side: true` marks a side-deck line; a 1.5.0 reader ignores it and puts the copies in the deck.
       cards: deck.cards.map((c) => (c.zone === 'side' ? { id: c.cardId, qty: c.qty, side: true } : { id: c.cardId, qty: c.qty })),
       exportedAt: at.toISOString(),
@@ -56,7 +58,7 @@ export async function decodeDeckText(text: string): Promise<DeckShare> {
     } catch {
       throw new Error(NOT_A_DECK_FILE);
     }
-    const r = raw as { cardcodex?: unknown; v?: unknown; game?: unknown; name?: unknown; cards?: unknown };
+    const r = raw as { cardcodex?: unknown; v?: unknown; game?: unknown; name?: unknown; cards?: unknown; rules?: unknown };
     if (!r || r.cardcodex !== 'deck' || r.v !== 1 || !isGameId(r.game) || typeof r.name !== 'string' || !Array.isArray(r.cards)) {
       throw new Error(NOT_A_DECK_FILE);
     }
@@ -66,7 +68,9 @@ export async function decodeDeckText(text: string): Promise<DeckShare> {
       const qty = Math.min(99, Math.floor(Number(line.qty)));
       if (qty > 0) cards.push(line.side === true ? { cardId: line.id, qty, zone: 'side' } : { cardId: line.id, qty });
     }
-    return { game: r.game, name: r.name.trim().slice(0, 80) || 'Shared deck', cards };
+    const share: DeckShare = { game: r.game, name: r.name.trim().slice(0, 80) || 'Shared deck', cards };
+    if (typeof r.rules === 'string' && /^[a-z0-9-]{1,24}$/.test(r.rules)) share.rules = r.rules;
+    return share;
   }
   if (findDeckCode(text)) return decodeDeck(text);
   throw new Error(NOT_A_DECK_FILE);

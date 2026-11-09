@@ -14,6 +14,7 @@ import type { DeckCard } from '@/data/db';
 import { deckSections, limitHint, overLimit, type DeckZone, type PlacedLine } from '@/data/decks';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import type { GameProfile } from '@/games';
+import type { DeckRules } from '@/games/deck-rules';
 import { MinusIcon, PlusIcon } from '@/ui/icons';
 import { href } from '@/ui/router';
 
@@ -32,8 +33,11 @@ export function DeckSections({
   collection,
   edits,
   empty,
+  rules = game.deckRules,
 }: {
   game: GameProfile;
+  /** The rules this deck follows when not the game's default (a Commander deck). */
+  rules?: DeckRules;
   cards: readonly DeckCard[];
   index: CatalogIndex;
   collection: CollectionMap;
@@ -41,7 +45,6 @@ export function DeckSections({
   /** Shown instead of the lines when the deck has none. */
   empty?: ReactNode;
 }) {
-  const rules = game.deckRules;
   const placed = deckSections(rules, cards, index, collection);
   const limits = limitHint(rules, overLimit(rules, cards, index));
   const multi = rules.sections.length > 1;
@@ -82,7 +85,7 @@ export function DeckSections({
                     )}
                     <div className="scan-candidates">
                       {g.lines.map((l) => (
-                        <PlacedRow key={`${l.cardId}|${l.zone ?? ''}`} line={l} index={index} game={game} collection={collection} edits={edits} />
+                        <PlacedRow key={`${l.cardId}|${l.zone ?? ''}`} line={l} index={index} rules={rules} collection={collection} edits={edits} />
                       ))}
                     </div>
                   </section>
@@ -114,18 +117,17 @@ function byCategory(lines: PlacedLine[], index: CatalogIndex, game: GameProfile)
 function PlacedRow({
   line,
   index,
-  game,
+  rules,
   collection,
   edits,
 }: {
   line: PlacedLine;
   index: CatalogIndex;
-  game: GameProfile;
+  rules: DeckRules;
   collection: CollectionMap;
   edits?: DeckEdits;
 }) {
   const card = index.cardsById.get(line.cardId)!;
-  const rules = game.deckRules;
   const side = line.zone === 'side';
   // Where a copy goes when it leaves the side deck: Extra for Fusion, Synchro, Xyz and Link monsters.
   const back = rules.sections.find((s) => s.id === rules.sectionOf(card, {}))?.label ?? 'Main';

@@ -83,15 +83,28 @@ export function normalizeCards(cards: readonly DeckCard[]): DeckCard[] {
   return out;
 }
 
-export async function createDeck(game: GameId, name: string, cards: readonly DeckCard[] = []): Promise<Deck> {
+export async function createDeck(game: GameId, name: string, cards: readonly DeckCard[] = [], rules?: string): Promise<Deck> {
   const now = Date.now();
   const deck: Deck = { id: newDeckId(), game, name: name.trim() || 'Untitled deck', cards: normalizeCards(cards), createdAt: now, updatedAt: now };
+  if (rules) deck.rules = rules;
   await db.decks.put(deck);
   return deck;
 }
 
 export async function renameDeck(id: string, name: string): Promise<void> {
   await db.decks.update(id, { name: name.trim() || 'Untitled deck', updatedAt: Date.now() });
+}
+
+/** Sets the rule set a deck follows; undefined goes back to the game's default. */
+export async function setDeckRules(id: string, rules: string | undefined): Promise<void> {
+  await db.transaction('rw', db.decks, async () => {
+    const deck = await db.decks.get(id);
+    if (!deck) return;
+    const next: Deck = { ...deck, updatedAt: Date.now() };
+    if (rules) next.rules = rules;
+    else delete next.rules;
+    await db.decks.put(next);
+  });
 }
 
 async function editDeckCards(id: string, edit: (cards: DeckCard[]) => DeckCard[]): Promise<void> {
@@ -245,14 +258,16 @@ export function parseExportedDecks(raw: unknown): Deck[] {
     const cards = (d.cards as (Partial<DeckCard> | null)[]).flatMap((c) =>
       c && typeof c.cardId === 'string' ? [line(c.cardId, Number(c.qty), c.zone === 'side' ? 'side' : undefined)] : [],
     );
-    out.push({
+    const deck: Deck = {
       id: d.id,
       game: d.game,
       name: (typeof d.name === 'string' ? d.name.trim().slice(0, 80) : '') || 'Untitled deck',
       cards: normalizeCards(cards),
       createdAt: Number(d.createdAt) || now,
       updatedAt: Number(d.updatedAt) || now,
-    });
+    };
+    if (typeof d.rules === 'string' && /^[a-z0-9-]{1,24}$/.test(d.rules)) deck.rules = d.rules;
+    out.push(deck);
   }
   return out;
 }

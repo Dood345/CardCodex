@@ -75,6 +75,8 @@ export interface Deck {
   game: GameId;
   name: string;
   cards: DeckCard[];
+  /** The rule set the deck follows (`GameProfile.deckRuleSets`), absent for the game's default. Not indexed. */
+  rules?: string;
   createdAt: number;
   updatedAt: number;
 }

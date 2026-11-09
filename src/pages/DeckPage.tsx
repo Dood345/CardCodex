@@ -15,11 +15,12 @@ import { useCollection } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
 import { deckShareText, encodeDeck } from '@/data/deck-code';
 import { deckFileName, encodeDeckFile } from '@/data/deck-file';
-import { adjustDeckCard, deleteDeck, moveDeckCard, qtyOf, renameDeck, summarizeDeck, useDeck, wantMissing } from '@/data/decks';
+import { adjustDeckCard, deleteDeck, moveDeckCard, qtyOf, renameDeck, setDeckRules, summarizeDeck, useDeck, wantMissing } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import type { CatalogCard, CatalogSet } from '@/data/types';
 import { gameById } from '@/games';
-import { EmptyState, Sheet, Toast, TopBar, useToast } from '@/ui/components';
+import { isDefaultRules, rulesFor } from '@/games/deck-rules';
+import { Chip, EmptyState, Sheet, Toast, TopBar, useToast } from '@/ui/components';
 import { BinderIcon, HeartIcon, ShareIcon } from '@/ui/icons';
 import { navigate } from '@/ui/router';
 import { DeckAdvisor } from './deck/DeckAdvisor';
@@ -90,7 +91,9 @@ export default function DeckPage({ id }: { id: string }) {
   }
   const s = summary!;
 
-  const payload = { game: deck.game, name: deck.name, cards: deck.cards };
+  const ruleSets = game.deckRuleSets ?? [];
+  const ruleSetId = ruleSets.some((r) => r.id === deck.rules) ? deck.rules : ruleSets[0]?.id;
+  const payload = { game: deck.game, name: deck.name, cards: deck.cards, ...(deck.rules ? { rules: deck.rules } : {}) };
   const title = `${deck.name} (CardCodex deck)`;
   const shareAsFile = async () => {
     setSharing(false);
@@ -193,9 +196,19 @@ export default function DeckPage({ id }: { id: string }) {
           Delete
         </button>
       </section>
-      <DeckAdvisor deck={deck} />
+      {ruleSets.length > 1 && (
+        <div className="chip-row inline deck-rulesets" role="group" aria-label="How this deck is played">
+          {ruleSets.map((r, i) => (
+            <Chip key={r.id} active={ruleSetId === r.id} onClick={() => void setDeckRules(deck.id, i === 0 ? undefined : r.id)}>
+              {r.label}
+            </Chip>
+          ))}
+        </div>
+      )}
+      {isDefaultRules(game, deck.rules) && <DeckAdvisor deck={deck} />}
       <DeckSections
         game={game}
+        rules={rulesFor(game, deck.rules)}
         cards={deck.cards}
         index={index}
         collection={collection}

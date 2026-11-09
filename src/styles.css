@@ -2856,3 +2856,8 @@ textarea:focus {
 .build-steps .cand-sub {
   color: var(--fg-muted);
 }
+
+/* Rule set of a deck (Magic: 60 cards or Commander). */
+.deck-rulesets {
+  padding: 12px 12px 0;
+}

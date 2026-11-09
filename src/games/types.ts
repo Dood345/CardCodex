@@ -9,7 +9,7 @@ import type { ComponentType, ReactNode } from 'react';
 import type { CatalogIndex } from '@/data/catalog';
 import type { CardCategory, CatalogCard, CatalogSet } from '@/data/types';
 import type { ScanMatcher } from '@/scanner/types';
-import type { DeckRules } from './deck-rules';
+import type { DeckRules, DeckRuleSet } from './deck-rules';
 import type { GameId } from './ids';
 
 export interface IconProps {
@@ -86,6 +86,8 @@ export interface GameProfile {
   text: GameText;
   /** Deck sections, copy limits and size reminders (src/games/deck-rules.ts). */
   deckRules: DeckRules;
+  /** Every way the game's decks are built, default first, when there is more than one (Magic: 60 cards, Commander). A deck names its set in `Deck.rules`. */
+  deckRuleSets?: readonly DeckRuleSet[];
   /** The OCR-lines → card candidates matcher for this game's catalog. */
   createMatcher(index: CatalogIndex): ScanMatcher;
 }

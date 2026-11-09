@@ -10,6 +10,8 @@ import type { DeckCard } from './db';
 import { isGameId, type GameId } from '@/games/ids';
 
 export interface DeckShare {
+  /** The rule set the deck follows, when not the game's default. The deck file carries it; the short code does not. */
+  rules?: string;
   game: GameId;
   name: string;
   cards: DeckCard[];

@@ -99,6 +99,41 @@ export const MTG_DECK_RULES: DeckRules = {
   limitHint: '4 copies at most',
 };
 
+/**
+ * Commander: exactly 100 cards with the commander among them, one copy of
+ * each card except basic lands. Which card is the commander and its colour
+ * identity are not checked (the catalog has no rules text to read them from).
+ */
+export const MTG_COMMANDER_RULES: DeckRules = {
+  sections: [{ id: 'main', label: 'Deck', min: 100, max: 100, hint: 'A Commander deck has exactly 100 cards, the commander included' }],
+  side: false,
+  sectionOf: () => 'main',
+  copyLimit: (card) => (isBasicLand(card) ? Infinity : 1),
+  limitHint: '1 copy of each card',
+};
+
+/** A named set of rules a deck can follow, for a game played more than one way. A game's first set is its default. */
+export interface DeckRuleSet {
+  id: string;
+  label: string;
+  rules: DeckRules;
+}
+
+export const MTG_RULE_SETS: readonly DeckRuleSet[] = [
+  { id: 'constructed', label: '60 cards', rules: MTG_DECK_RULES },
+  { id: 'commander', label: 'Commander', rules: MTG_COMMANDER_RULES },
+];
+
+/** The rules a deck follows: the set it names when the game has it, else the game's default. */
+export function rulesFor(game: { deckRules: DeckRules; deckRuleSets?: readonly DeckRuleSet[] }, id: string | undefined): DeckRules {
+  return game.deckRuleSets?.find((s) => s.id === id)?.rules ?? game.deckRules;
+}
+
+/** True when the deck follows the game's default rules (the ones the recommender knows). */
+export function isDefaultRules(game: { deckRuleSets?: readonly DeckRuleSet[] }, id: string | undefined): boolean {
+  return !id || !game.deckRuleSets?.length || game.deckRuleSets[0].id === id || !game.deckRuleSets.some((s) => s.id === id);
+}
+
 /** The size reminder for one section, or null when its count is in range. */
 export function sectionHint(section: DeckSection, total: number): string | null {
   if (total >= section.min && total <= section.max) return null;
