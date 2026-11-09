@@ -325,10 +325,14 @@ describe('building', () => {
 
   it('builds a legal 40-card Main Deck with no issues from an archetype seed, then completes an Extra Deck it can make', { timeout: 30_000 }, () => {
     const t = performance.now();
-    const built = buildDeck(ev, [seed.id], options, pool);
+    // The builder fills the Main Deck and then hands the deck to `complete` for its Extra Deck.
+    const whole = buildDeck(ev, [seed.id], options, pool);
     const ms = performance.now() - t;
     expect(ms).toBeLessThan(10_000);
+    const built = { ...whole, cards: whole.cards.filter((l) => !isExtraDeckCard(ev.card(l.cardId))) };
     expect(count(built.cards)).toBe(40);
+    expect(count(whole.cards)).toBeGreaterThan(40);
+    expect(whole.score.issues).toEqual([]);
     expect(built.score.issues).toEqual([]);
     expect(built.cards.some((l) => l.cardId === seed.id)).toBe(true);
     // The seed's archetype carries the deck.
@@ -336,6 +340,7 @@ describe('building', () => {
     expect(inArc).toBeGreaterThanOrEqual(12);
 
     const full = ev.complete!(built.cards, options, pool);
+    expect(full).toEqual(whole.cards);
     const extra = full.filter((l) => isExtraDeckCard(ev.card(l.cardId)));
     expect(count(extra)).toBeGreaterThan(0);
     expect(count(extra)).toBeLessThanOrEqual(15);

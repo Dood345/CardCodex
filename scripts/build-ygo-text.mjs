@@ -27,6 +27,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { writeDataManifest } from './data-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CACHE = path.join(ROOT, 'scripts', '.cache', 'ygo_cardinfo.json');
@@ -134,3 +135,4 @@ log(`  ${pcs.length} cards with text; ${missing.length} catalog cards without ($
 log(`  materials on ${withMaterials} of ${extraCount} Extra Deck monsters (${noMaterials} without a materials line)`);
 log(`  TCG list: ${Object.values(ban).filter((v) => v === 0).length} Forbidden, ${Object.values(ban).filter((v) => v === 1).length} Limited, ${Object.values(ban).filter((v) => v === 2).length} Semi-Limited`);
 log(`Wrote ${path.relative(ROOT, OUT)} (${(bytes / 1e6).toFixed(2)} MB, ${(gz / 1e6).toFixed(2)} MB gzipped)`);
+writeDataManifest();

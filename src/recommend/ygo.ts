@@ -176,8 +176,8 @@ export interface YgoEvaluator extends DeckEvaluator {
 export const YGO_WEIGHTS = { rules: 10, consistency: 20, bricks: 10, cohesion: 20, interaction: 15, extra: 15, shape: 10 } as const;
 
 export const YGO_FORMATS: readonly FormatOption[] = [
-  { id: 'tcg', label: 'TCG (Forbidden & Limited list)' },
-  { id: 'any', label: 'Any (three of each)' },
+  { id: 'tcg', label: 'TCG list', default: true },
+  { id: 'any', label: 'No list' },
 ];
 
 /** Opening hand: five cards (the Yu-Gi-Oh! rulebook; see docs/deck-recommender-ygo.md). */

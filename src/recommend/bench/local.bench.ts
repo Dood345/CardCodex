@@ -21,7 +21,7 @@ import { createPokemonEvaluator } from '../pokemon';
 import { compareReports, formatReport, runBench, scoreJudges, type BenchReport, type Corpus } from './bench';
 import { builtCorpus, pokemonSeeds } from './built';
 import { readCorpora } from './local';
-import { playtestJudges } from './sim-judges';
+import { duelJudge, playtestJudges } from './sim-judges';
 
 const root = new URL('../../../', import.meta.url);
 const read = <T,>(f: string): T => JSON.parse(readFileSync(new URL(`public/data/${f}`, root), 'utf8')) as T;
@@ -47,6 +47,10 @@ it('deck benchmark', { timeout: 30 * 60_000 }, () => {
     reports[corpus.id] = runBench(ev, index, corpus, judges, { seed: 1, repeats: 5 });
     const id = `${corpus.id}:playtest`;
     reports[id] = runBench(ev, index, { ...corpus, id, label: `${corpus.label}, played` }, played, { seed: 1, repeats: 3, maxDecks: 80 });
+    // Winning: every deck (and two damaged copies of it) against a field of ten of the corpus's own decks.
+    const duelId = `${corpus.id}:duel`;
+    const dueling = { ...corpus, id: duelId, label: `${corpus.label}, duels` };
+    reports[duelId] = runBench(ev, index, dueling, [judges[0], duelJudge(ev, dueling, { field: 10, games: 30, seed: 1 })], { seed: 1, repeats: 2, maxDecks: 46 });
   }
 
   let baseline: Record<string, BenchReport> = {};

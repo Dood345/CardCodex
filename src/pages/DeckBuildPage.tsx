@@ -15,7 +15,7 @@ import { createDeck, summarizeDeck, useDecks } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { hasRecommender } from '@/recommend';
-import { builtDeckName, describeMove, formatsOf, namesInDecks, namesToVary, seedIdeas } from '@/recommend/advice';
+import { builtDeckName, defaultFormat, describeMove, evaluatorFor, formatsOf, namesInDecks, namesToVary, seedIdeas } from '@/recommend/advice';
 import { buildDeck, type BuildResult } from '@/recommend/builder';
 import { canTune, tuneRound, tuneStart, type TuneState } from '@/recommend/tune';
 import type { BuildOptions, PlaySummary } from '@/recommend/types';
@@ -35,14 +35,16 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
   const collection = useCollection();
   const decks = useDecks(game.id);
   const supported = hasRecommender(game.id);
-  const { ev, error } = useEvaluator(supported);
+  const { ev: loaded, error } = useEvaluator(supported);
   const [seeds, setSeeds] = useState<CatalogCard[]>(() => {
     const card = seed ? index.cardsById.get(seed) : undefined;
     return card ? [card] : [];
   });
   const [query, setQuery] = useState('');
   const [source, setSource] = useState(advisorMemory.source);
-  const [format, setFormat] = useState(advisorMemory.format[game.id] ?? 'any');
+  const [chosen, setFormat] = useState<string | undefined>(advisorMemory.format[game.id]);
+  const format = chosen ?? (loaded ? defaultFormat(loaded) : 'any');
+  const ev = useMemo(() => (loaded ? evaluatorFor(loaded, format) : loaded), [loaded, format]);
   const [avoidOthers, setAvoidOthers] = useState(false);
   const [building, setBuilding] = useState(false);
   const [result, setResult] = useState<BuildResult | null>(null);
@@ -52,7 +54,7 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
   const [tuning, setTuning] = useState<{ round: number; swaps: number } | null>(null);
   const [tuned, setTuned] = useState<{ swaps: string[]; before: PlaySummary } | null>(null);
 
-  const formats = useMemo(() => (ev ? formatsOf(ev) : []), [ev]);
+  const formats = useMemo(() => (loaded ? formatsOf(loaded) : []), [loaded]);
   const options = useMemo<BuildOptions>(() => ({ source, collection, format }), [source, collection, format]);
   const pool = useMemo(() => (ev ? ev.pool(options) : []), [ev, options]);
   // Ideas come from the user's own cards when the source prefers them and they own enough to choose from.

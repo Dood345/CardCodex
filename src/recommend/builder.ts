@@ -121,10 +121,12 @@ export function candidateMoves(ev: DeckEvaluator, cards: readonly DeckCard[], po
   });
   const breadth = options.breadth ?? 120;
   const share: Record<string, number> = { pokemon: 0.5, trainer: 0.35, energy: 0.15 };
+  // A game without one of the kinds (Yu-Gi-Oh! has no Energy or lands) gives that share to the others.
+  const shared = [...groups.keys()].reduce((n, k) => n + (share[k] ?? 0.2), 0) || 1;
   const ranked: { card: CatalogCard; r: number }[] = [];
   for (const [kind, g] of groups) {
     g.sort((a, b) => b.r - a.r);
-    ranked.push(...g.slice(0, Math.max(4, Math.round(breadth * (share[kind] ?? 0.2)))));
+    ranked.push(...g.slice(0, Math.max(4, Math.round((breadth * (share[kind] ?? 0.2)) / shared))));
   }
   ranked.sort((a, b) => b.r - a.r);
   const moves: Move[] = [];
@@ -166,6 +168,8 @@ export function contributions(ev: DeckEvaluator, cards: readonly DeckCard[], poo
     if (l.zone || seen.has(l.cardId)) continue;
     seen.add(l.cardId);
     const card = index.get(l.cardId)!;
+    // Swaps stay inside the first section: a Yu-Gi-Oh! Extra Deck monster is not traded for a Main Deck card.
+    if (ev.rules.sectionOf(card, l) !== ev.rules.sections[0].id) continue;
     const after = ev.score(apply(cards, { add: [], remove: [card] }, index)).total;
     out.push({ card, loss: base - after });
   }
@@ -230,7 +234,8 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
     }
     cards = apply(cards, move, index);
   }
-  const count = () => cards.reduce((n, c) => n + (c.zone ? 0 : c.qty), 0);
+  const mainId = ev.rules.sections[0].id;
+  const count = () => cards.reduce((n, c) => n + (ev.rules.sectionOf(index.get(c.cardId) ?? ev.card(c.cardId), c) === mainId ? c.qty : 0), 0);
   let guard = 0;
   while (count() < target && guard++ < target + 10) {
     const before = ev.score(cards);
@@ -253,5 +258,7 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
     cards = apply(cards, swaps[0].move, index);
     steps.push(swaps[0]);
   }
+  // What the section-by-section fill leaves out (a Yu-Gi-Oh! Extra Deck) is the evaluator's to add.
+  if (ev.complete) cards = ev.complete(cards, options, pool);
   return { cards, score: ev.score(cards), steps, dropped };
 }

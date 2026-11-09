@@ -28,6 +28,17 @@ export function formatsOf(ev: DeckEvaluator): readonly FormatOption[] {
   return ev.formats?.length ? ev.formats : [ANY];
 }
 
+/** The format the screens start on: the one the evaluator marks, else "any", else its first. */
+export function defaultFormat(ev: DeckEvaluator): string {
+  const formats = formatsOf(ev);
+  return (formats.find((f) => f.default) ?? formats.find((f) => f.id === 'any') ?? formats[0]).id;
+}
+
+/** The evaluator to use under a format (see `DeckEvaluator.forFormat`). */
+export function evaluatorFor(ev: DeckEvaluator, format: string): DeckEvaluator {
+  return ev.forFormat?.(format) ?? ev;
+}
+
 /** Copies in the deck's first section (the 60 of a Pokémon deck, the Main Deck of a Yu-Gi-Oh! deck). */
 export function mainCount(ev: DeckEvaluator, cards: readonly DeckCard[]): number {
   const main = ev.rules.sections[0].id;

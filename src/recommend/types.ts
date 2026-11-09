@@ -44,6 +44,8 @@ export type DeckFormat = string;
 export interface FormatOption {
   id: DeckFormat;
   label: string;
+  /** The format the screens start on; without one they start on "any". */
+  default?: boolean;
 }
 
 export interface BuildOptions {
@@ -120,6 +122,11 @@ export interface DeckEvaluator {
    * Yu-Gi-Oh! Extra Deck). The builder calls it once, after its last swap.
    */
   complete?(cards: readonly DeckCard[], options: BuildOptions, pool: readonly CatalogCard[]): DeckCard[];
+  /**
+   * The evaluator to score and build with under a format, for a game whose rules change with it (the Yu-Gi-Oh!
+   * Forbidden & Limited list sets the copy limits). Games whose formats only limit the pool leave this out.
+   */
+  forFormat?(format: DeckFormat): DeckEvaluator;
   /** Plays the deck against nobody, seeded, and reports how it went; only games with a simulator have it (src/recommend/sim). */
   playtest?(cards: readonly DeckCard[], options: PlayOptions): PlaySummary;
   /** Shuffles the deck from a seed and deals an opening hand by the game's rules. */
