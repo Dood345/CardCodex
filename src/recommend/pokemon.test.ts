@@ -522,6 +522,20 @@ describe('Special Energy', () => {
     expect(cover([['sm6-117', 1], ['swsh9-151', 3]]).score).toBeLessThan(cover([['swsh3-174', 4]]).score);
   });
 
+  it('does not count Energy no attacker can use toward the amount', () => {
+    // The attackers need Fire, Lightning and Water. Grass Energy powers none of them.
+    const own = partOf(withExtra([]), 'energy');
+    const half = partOf(withExtra([['sve-002', 3], ['sve-001', 3]]), 'energy');
+    const allWrong = partOf(withExtra([['sve-001', 6]]), 'energy');
+    expect(own.score).toBeCloseTo(0.804, 3);
+    expect(half.score).toBeLessThan(own.score - 0.2); // was 0.804 for both before the amount counted only usable Energy
+    expect(half.detail).toContain('3 that the attackers can use');
+    expect(allWrong.score).toBeLessThan(half.score);
+    // Colorless-only Special Energy still pays Colorless costs; one that provides nothing these attackers can hold does not.
+    expect(partOf(withExtra([['sve-002', 3], ['swsh9-151', 3]]), 'energy').score).toBeCloseTo(own.score, 3);
+    expect(partOf(withExtra([['sve-002', 3], ['xy6-97', 3]]), 'energy').score).toBeCloseTo(half.score, 3);
+  });
+
   it('suggests Special Energy only where it works', () => {
     const rel = (id: string) => ev.relevance(deck(CHARIZARD), [card(id)])[0];
     expect(rel('sv05-162')).toBeGreaterThanOrEqual(0.85); // Neo Upper Energy: every type for the deck's Stage 2 attacker

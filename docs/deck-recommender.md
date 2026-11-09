@@ -31,7 +31,7 @@ Each part is 0..1 with a one-line detail; the total is the weighted sum, 0..100.
 | rules | 10 | 60 cards, four copies at most (basic Energy excepted), and the limits below: each broken limit costs a quarter of the part |
 | basics | 10 | Hypergeometric chance of no Basic Pokémon in the opening seven; full marks at 25% or less |
 | lines | 10 | Every evolution has its earlier stage in enough copies; a Stage 2 may stand on Rare Candy plus its Basic |
-| energy | 15 | Energy of the attackers' types, per attacker: Basic Energy covers a type outright, a Special Energy covers it for the Pokémon its text provides it to (half where a condition is unread), in an amount fitted to the attack costs less the deck's Energy acceleration |
+| energy | 15 | Energy of the attackers' types, per attacker: Basic Energy covers a type outright, a Special Energy covers it for the Pokémon its text provides it to (half where a condition is unread), in an amount fitted to the attack costs less the deck's Energy acceleration; only Energy some attacker can use counts toward the amount (Basic Energy of an unused type, or a Special Energy that gives these attackers nothing, does not) |
 | draw | 15 | Cards that draw (up to 8) and cards that search the deck (up to 10, Energy search and acceleration at half); at most 3 Stadium copies count |
 | power | 10 | The best attack of a line of two or more, against the 90th-percentile HP of Pokémon printed in the deck's own years |
 | synergy | 10 | Trainers and Abilities that name a type, stage, suffix (ex, V, …) or species have it in the deck (at most 3 Stadium copies count) |

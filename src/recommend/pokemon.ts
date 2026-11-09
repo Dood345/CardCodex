@@ -733,14 +733,29 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       const avgCost = costSum / attackerQty;
       const target = Math.max(5, Math.min(16, 4 + 2.5 * avgCost - 0.75 * accel));
       const coverage = w ? covered / w : 0;
-      const quantity = 1 - Math.min(1, Math.abs(energyCount - target) / 5);
+      // Only Energy some attacker can use counts toward the amount: Basic Energy of a type no attacker needs, or a
+      // Special Energy that provides nothing to these attackers, fills the deck without powering anything.
+      let usable = 0;
+      for (const l of energyLines) {
+        let u: number;
+        if (!ctx.need.size) u = 1;
+        else if (l.f.isBasicEnergy) u = [...l.f.provides].some((t) => ctx.need.has(t)) ? 1 : 0;
+        else if (!l.f.energy) u = 0.5;
+        else if (!/[^C]/.test(l.f.energy.base + l.f.energy.upgrades.map((x) => x.types).join(''))) u = 1; // Colorless costs
+        else {
+          u = 0;
+          for (const a of attackers) for (const t of a.f.best!.types) u = Math.max(u, energyCredit(l.f.energy, a.f, t));
+        }
+        usable += l.qty * u;
+      }
+      const quantity = 1 - Math.min(1, Math.abs(usable - target) / 5);
       energyScore = 0.5 * coverage + 0.5 * quantity;
       const unc = [...uncovered]
         .filter(([, weight]) => weight >= 0.15 * w)
         .sort((a, b) => b[1] - a[1])
         .map(([t]) => typeName(t))
         .join(', ');
-      energyDetail = `${energyCount} Energy (about ${Math.round(target)} fit the attacks)${unc ? `; no Energy for ${unc} attacks` : ''}`;
+      energyDetail = `${energyCount} Energy${usable < energyCount ? `, ${Math.round(usable)} that the attackers can use` : ''} (about ${Math.round(target)} fit the attacks)${unc ? `; no Energy for ${unc} attacks` : ''}`;
     }
     parts.push(part('energy', 'Energy', energyScore, energyDetail));
 
