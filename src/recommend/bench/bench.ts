@@ -90,9 +90,13 @@ export interface BenchOptions {
   /** Damaged copies and piles per deck (default 5); more repeats, finer rates. */
   repeats?: number;
   damages?: readonly Damage[];
+  /** Run on an even sample of at most this many decks, for judges that take time (a playtest per deck). */
+  maxDecks?: number;
 }
 
-export function runBench(ev: DeckEvaluator, index: CatalogIndex, corpus: Corpus, judges: readonly Judge[], options: BenchOptions = {}): BenchReport {
+export function runBench(ev: DeckEvaluator, index: CatalogIndex, whole: Corpus, judges: readonly Judge[], options: BenchOptions = {}): BenchReport {
+  const step = options.maxDecks ? Math.max(1, Math.ceil(whole.decks.length / options.maxDecks)) : 1;
+  const corpus: Corpus = step > 1 ? { ...whole, decks: whole.decks.filter((_, i) => i % step === 0) } : whole;
   const seed = options.seed ?? 1;
   const repeats = options.repeats ?? 5;
   const damages = options.damages ?? DAMAGES;

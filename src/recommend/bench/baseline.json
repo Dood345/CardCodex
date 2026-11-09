@@ -654,5 +654,351 @@
     "strength": -0.012839062795322837
    }
   ]
+ },
+ "built:playtest": {
+  "corpus": "built:playtest",
+  "label": "Decks built from 40 seeds, played",
+  "decks": 40,
+  "repeats": 3,
+  "seed": 1,
+  "judges": [
+   {
+    "id": "total",
+    "label": "Score",
+    "mean": 98.52000000000001,
+    "pile": 1,
+    "damage": {
+     "swap-6": 1,
+     "swap-12": 1,
+     "swap-24": 1,
+     "trainers": 0.9875,
+     "energy": 0.9333333333333333,
+     "pokemon": 1
+    },
+    "order": 0.989166666666667
+   },
+   {
+    "id": "sim:online3",
+    "label": "Attacking by turn 3",
+    "mean": 0.15987499999999993,
+    "pile": 0.8583333333333333,
+    "damage": {
+     "swap-6": 0.8,
+     "swap-12": 0.8333333333333334,
+     "swap-24": 0.8541666666666666,
+     "trainers": 0.7541666666666667,
+     "energy": 0.7791666666666667,
+     "pokemon": 0.7833333333333333
+    },
+    "order": 0.6579489562896718
+   },
+   {
+    "id": "sim:online4",
+    "label": "Attacking by turn 4",
+    "mean": 0.22825,
+    "pile": 0.8958333333333334,
+    "damage": {
+     "swap-6": 0.825,
+     "swap-12": 0.8625,
+     "swap-24": 0.8833333333333333,
+     "trainers": 0.775,
+     "energy": 0.7958333333333333,
+     "pokemon": 0.8208333333333333
+    },
+    "order": 0.7293648721821835
+   },
+   {
+    "id": "sim:damage",
+    "label": "Damage per turn",
+    "mean": 45.33875,
+    "pile": 0.8916666666666667,
+    "damage": {
+     "swap-6": 0.8625,
+     "swap-12": 0.9125,
+     "swap-24": 0.8958333333333334,
+     "trainers": 0.7875,
+     "energy": 0.8708333333333333,
+     "pokemon": 0.85
+    },
+    "order": 0.7403339966774747
+   },
+   {
+    "id": "sim:live",
+    "label": "Turns with a play",
+    "mean": 0.7775416666666668,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.8416666666666667,
+     "swap-12": 0.9416666666666667,
+     "swap-24": 0.9666666666666667,
+     "trainers": 0.725,
+     "energy": 0.7833333333333333,
+     "pokemon": 0.9666666666666667
+    },
+    "order": 0.9004113239080156
+   }
+  ]
+ },
+ "limitless-archetypes:playtest": {
+  "corpus": "limitless-archetypes:playtest",
+  "label": "limitless-archetypes, played",
+  "decks": 46,
+  "repeats": 3,
+  "seed": 1,
+  "judges": [
+   {
+    "id": "total",
+    "label": "Score",
+    "mean": 88.52826086956519,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.8913043478260869,
+     "swap-12": 0.9492753623188406,
+     "swap-24": 0.9927536231884058,
+     "trainers": 0.8333333333333334,
+     "energy": 0.8659420289855072,
+     "pokemon": 0.9637681159420289
+    },
+    "order": 0.9469179669165285,
+    "strength": 0.11416764411789733
+   },
+   {
+    "id": "sim:online3",
+    "label": "Attacking by turn 3",
+    "mean": 0.44934782608695656,
+    "pile": 0.9855072463768116,
+    "damage": {
+     "swap-6": 0.9166666666666666,
+     "swap-12": 0.9384057971014492,
+     "swap-24": 0.9746376811594203,
+     "trainers": 0.7789855072463768,
+     "energy": 0.7391304347826086,
+     "pokemon": 0.8695652173913043
+    },
+    "order": 0.9034426401695198,
+    "strength": -0.12027014576403239
+   },
+   {
+    "id": "sim:online4",
+    "label": "Attacking by turn 4",
+    "mean": 0.5714130434782608,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9347826086956522,
+     "swap-12": 0.9710144927536232,
+     "swap-24": 0.9855072463768116,
+     "trainers": 0.7971014492753623,
+     "energy": 0.7391304347826086,
+     "pokemon": 0.9021739130434783
+    },
+    "order": 0.9429632134593341,
+    "strength": -0.053793956908209595
+   },
+   {
+    "id": "sim:damage",
+    "label": "Damage per turn",
+    "mean": 67.53605072463768,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9637681159420289,
+     "swap-12": 0.9710144927536232,
+     "swap-24": 0.9855072463768116,
+     "trainers": 0.7246376811594203,
+     "energy": 0.8007246376811594,
+     "pokemon": 0.8985507246376812
+    },
+    "order": 0.944927536231885,
+    "strength": 0.037187789084181314
+   },
+   {
+    "id": "sim:live",
+    "label": "Turns with a play",
+    "mean": 0.8759858908362067,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9202898550724637,
+     "swap-12": 0.9855072463768116,
+     "swap-24": 1,
+     "trainers": 0.7717391304347826,
+     "energy": 0.7536231884057971,
+     "pokemon": 0.8876811594202898
+    },
+    "order": 0.9552466543727735,
+    "strength": 0.16152209449845498
+   }
+  ]
+ },
+ "limitless-lists:playtest": {
+  "corpus": "limitless-lists:playtest",
+  "label": "limitless-lists, played",
+  "decks": 70,
+  "repeats": 3,
+  "seed": 1,
+  "judges": [
+   {
+    "id": "total",
+    "label": "Score",
+    "mean": 89.92000000000002,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9214285714285714,
+     "swap-12": 0.9857142857142858,
+     "swap-24": 1,
+     "trainers": 0.8666666666666667,
+     "energy": 0.9,
+     "pokemon": 0.9666666666666667
+    },
+    "order": 0.962736568735624,
+    "strength": 0.1024041528408968
+   },
+   {
+    "id": "sim:online3",
+    "label": "Attacking by turn 3",
+    "mean": 0.446142857142857,
+    "pile": 0.9952380952380953,
+    "damage": {
+     "swap-6": 0.9285714285714286,
+     "swap-12": 0.95,
+     "swap-24": 0.9952380952380953,
+     "trainers": 0.7142857142857143,
+     "energy": 0.6523809523809524,
+     "pokemon": 0.8976190476190476
+    },
+    "order": 0.9191317612696508,
+    "strength": 0.0004215423752260381
+   },
+   {
+    "id": "sim:online4",
+    "label": "Attacking by turn 4",
+    "mean": 0.5911428571428571,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9238095238095239,
+     "swap-12": 0.9714285714285714,
+     "swap-24": 0.9952380952380953,
+     "trainers": 0.7380952380952381,
+     "energy": 0.6476190476190476,
+     "pokemon": 0.8976190476190476
+    },
+    "order": 0.9369585811623554,
+    "strength": -0.03318803430127137
+   },
+   {
+    "id": "sim:damage",
+    "label": "Damage per turn",
+    "mean": 71.22130952380952,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9428571428571428,
+     "swap-12": 0.9857142857142858,
+     "swap-24": 1,
+     "trainers": 0.7,
+     "energy": 0.6976190476190476,
+     "pokemon": 0.9095238095238095
+    },
+    "order": 0.9576190476190486,
+    "strength": 0.13350377077656012
+   },
+   {
+    "id": "sim:live",
+    "label": "Turns with a play",
+    "mean": 0.8992933940822984,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.8833333333333333,
+     "swap-12": 0.9666666666666667,
+     "swap-24": 0.9904761904761905,
+     "trainers": 0.7404761904761905,
+     "energy": 0.780952380952381,
+     "pokemon": 0.8738095238095238
+    },
+    "order": 0.9437879148388059,
+    "strength": 0.06956733797768881
+   }
+  ]
+ },
+ "pokemon-tcg-data:playtest": {
+  "corpus": "pokemon-tcg-data:playtest",
+  "label": "pokemon-tcg-data, played",
+  "decks": 62,
+  "repeats": 3,
+  "seed": 1,
+  "judges": [
+   {
+    "id": "total",
+    "label": "Score",
+    "mean": 76.09516129032257,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9731182795698925,
+     "swap-12": 0.989247311827957,
+     "swap-24": 0.9946236559139785,
+     "trainers": 0.771505376344086,
+     "energy": 0.9005376344086021,
+     "pokemon": 0.978494623655914
+    },
+    "order": 0.9210725829010313
+   },
+   {
+    "id": "sim:online3",
+    "label": "Attacking by turn 3",
+    "mean": 0.12048387096774195,
+    "pile": 0.9596774193548387,
+    "damage": {
+     "swap-6": 0.7231182795698925,
+     "swap-12": 0.7231182795698925,
+     "swap-24": 0.7473118279569892,
+     "trainers": 0.6102150537634409,
+     "energy": 0.6881720430107527,
+     "pokemon": 0.6532258064516129
+    },
+    "order": 0.6706930365482767
+   },
+   {
+    "id": "sim:online4",
+    "label": "Attacking by turn 4",
+    "mean": 0.16370967741935488,
+    "pile": 0.9838709677419355,
+    "damage": {
+     "swap-6": 0.7634408602150538,
+     "swap-12": 0.7688172043010753,
+     "swap-24": 0.7795698924731183,
+     "trainers": 0.6532258064516129,
+     "energy": 0.7688172043010753,
+     "pokemon": 0.6666666666666666
+    },
+    "order": 0.7316408873778423
+   },
+   {
+    "id": "sim:damage",
+    "label": "Damage per turn",
+    "mean": 22.518010752688177,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9086021505376344,
+     "swap-12": 0.9623655913978495,
+     "swap-24": 0.978494623655914,
+     "trainers": 0.7096774193548387,
+     "energy": 0.9543010752688172,
+     "pokemon": 0.8333333333333334
+    },
+    "order": 0.9381720430107534
+   },
+   {
+    "id": "sim:live",
+    "label": "Turns with a play",
+    "mean": 0.7426747311827957,
+    "pile": 0.989247311827957,
+    "damage": {
+     "swap-6": 0.8629032258064516,
+     "swap-12": 0.9247311827956989,
+     "swap-24": 0.9731182795698925,
+     "trainers": 0.6102150537634409,
+     "energy": 0.8198924731182796,
+     "pokemon": 0.9086021505376344
+    },
+    "order": 0.9067169831664618
+   }
+  ]
  }
 }
