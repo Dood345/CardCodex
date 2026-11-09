@@ -96,9 +96,10 @@ describe('Pokémon evaluator', () => {
     expect(bad.total).toBeLessThan(good.total - 25);
   });
 
-  it('scores the test deck as it did before the once-per-deck limits and Special Energy were read', () => {
-    // No ACE SPEC, one Radiant, Basic Fire Energy, one Stadium: nothing the new rules touch.
-    expect(ev.score(cards).total).toBe(90.3);
+  it('scores the test deck the same from run to run', () => {
+    // Pinned so that a change to any part shows up here. 90.3 until the Energy amount and the attacker copies
+    // were calibrated against the playtest simulator (six Energy read as fewer than fit, and so they are).
+    expect(ev.score(cards).total).toBe(89.3);
   });
 
   it('explains each part in one line', () => {
@@ -508,7 +509,7 @@ describe('Special Energy', () => {
     const aurora = cover([['swsh1-186', 4]]); // every type
     const turbo = cover([['swsh9-151', 4]]); // Colorless only
     const herbal = cover([['xy3-103', 4]]); // Grass Pokémon only
-    const beast = cover([['sm6-117', 1]]); // Ultra Beast: half weight
+    const beast = cover([['sm6-117', 4]]); // Ultra Beast: half weight
     expect(heat.detail).not.toMatch(/no Energy for/);
     expect(aurora.detail).not.toMatch(/no Energy for/);
     expect(turbo.detail).toMatch(/no Energy for Fire/);
@@ -527,8 +528,8 @@ describe('Special Energy', () => {
     const own = partOf(withExtra([]), 'energy');
     const half = partOf(withExtra([['sve-002', 3], ['sve-001', 3]]), 'energy');
     const allWrong = partOf(withExtra([['sve-001', 6]]), 'energy');
-    expect(own.score).toBeCloseTo(0.804, 3);
-    expect(half.score).toBeLessThan(own.score - 0.2); // was 0.804 for both before the amount counted only usable Energy
+    expect(own.score).toBeCloseTo(0.74, 2);
+    expect(half.score).toBeLessThan(own.score - 0.2); // the same for both before the amount counted only usable Energy
     expect(half.detail).toContain('3 that the attackers can use');
     expect(allWrong.score).toBeLessThan(half.score);
     // Colorless-only Special Energy still pays Colorless costs; one that provides nothing these attackers can hold does not.

@@ -738,11 +738,15 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
         attackerQty += l.qty;
       }
       const avgCost = costSum / attackerQty;
-      const target = Math.max(5, Math.min(16, 4 + 2.5 * avgCost - 0.75 * accel));
+      // Calibrated against the playtest simulator (docs/deck-playtest.md): tuned decks settled on more Energy than
+      // the first formula allowed, and acceleration replaces only a few of them.
+      const target = Math.max(6, Math.min(16, 5 + 2.5 * avgCost - Math.min(3, 0.3 * accel)));
       const coverage = w ? covered / w : 0;
       // Only Energy some attacker can use counts toward the amount: Basic Energy of a type no attacker needs, or a
       // Special Energy that provides nothing to these attackers, fills the deck without powering anything.
       let usable = 0;
+      // Copies that power nothing at all; an Energy whose condition could not be read is half usable, not dead.
+      let dead = 0;
       for (const l of energyLines) {
         let u: number;
         if (!ctx.need.size) u = 1;
@@ -754,13 +758,14 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
           for (const a of attackers) for (const t of a.f.best!.types) u = Math.max(u, energyCredit(l.f.energy, a.f, t));
         }
         usable += l.qty * u;
+        if (u === 0) dead += l.qty;
       }
       // Usable Energy is measured against the target; Energy no attacker can use is a dead card on top of that,
       // so swapping good Energy for dead Energy never looks like an improvement, not even in a deck that
       // already runs too many.
-      const dead = energyCount - usable;
-      const penalty = Math.abs(usable - target) + 1.2 * dead;
-      const quantity = 1 - Math.min(1, penalty / 5);
+      // Short of the target the part falls in proportion, so every Energy added to a deck with none counts (a
+      // flat zero there once left a Colorless deck with no Energy at all); five too many, or four dead ones, is zero.
+      const quantity = 1 - Math.min(1, Math.max(0, target - usable) / target + Math.max(0, usable - target) / 5 + (1.2 * dead) / 5);
       energyScore = 0.5 * coverage + 0.5 * quantity;
       const unc = [...uncovered]
         .filter(([, weight]) => weight >= 0.15 * w)
@@ -790,7 +795,8 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     let topName = '';
     const era = ctx.eraMin ? eraHp(ctx.eraMin, ctx.eraMax) : 120;
     for (const l of attackers) {
-      const d = l.f.best!.damage * Math.min(1, l.qty / 2);
+      // Full credit at three copies: with fewer the attacker is too often prized or not found in time (playtest).
+      const d = l.f.best!.damage * Math.min(1, l.qty / 3);
       if (d > top) {
         top = d;
         topName = `${l.card.name}'s ${l.f.best!.name}`;
@@ -936,6 +942,8 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       } else if (f.isEnergy) {
         if (f.isBasicEnergy) {
           if ([...f.provides].some((t) => ctx.need.has(t))) r = Math.max(r, 0.95);
+          // Attackers that pay in Colorless only still need Energy: any Basic Energy does, their own type first.
+          else if (!ctx.need.size && attackers.some((l) => l.f.best!.costN > 0)) r = Math.max(r, [...f.provides].some((t) => ctx.types.has(t)) ? 0.95 : 0.7);
           else r = Math.min(r, 0.1);
         } else if (!attackers.length) {
           if (f.provides === '*') r = Math.max(r, 0.8);

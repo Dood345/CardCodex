@@ -77,6 +77,22 @@ export interface Suggestion {
   partId: string;
 }
 
+export interface PlayOptions {
+  games: number;
+  seed: number;
+}
+
+/** What playing a deck some hundred times showed. */
+export interface PlaySummary {
+  /** One number, higher is better, comparable between decks of the game: what tuning climbs. */
+  value: number;
+  /** What the test pilot plays toward, one line ("Charizard ex's Burning Darkness"); "" when the deck cannot play. */
+  plan: string;
+  /** The findings, one line each, most important first. */
+  lines: string[];
+  games: number;
+}
+
 export interface DeckEvaluator {
   game: GameId;
   rules: DeckRules;
@@ -88,6 +104,8 @@ export interface DeckEvaluator {
    * Yu-Gi-Oh! Extra Deck). The builder calls it once, after its last swap.
    */
   complete?(cards: readonly DeckCard[], options: BuildOptions, pool: readonly CatalogCard[]): DeckCard[];
+  /** Plays the deck against nobody, seeded, and reports how it went; only games with a simulator have it (src/recommend/sim). */
+  playtest?(cards: readonly DeckCard[], options: PlayOptions): PlaySummary;
   /** Cards of `pool` worth building a deck around, best first: what "Build a deck" offers before the user has picked a seed. */
   seedIdeas?(pool: readonly CatalogCard[], count: number): CatalogCard[];
   /** The catalog card behind a deck line's id. */

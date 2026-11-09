@@ -12,8 +12,8 @@ type Loader = (index: CatalogIndex) => Promise<DeckEvaluator | null>;
 
 const LOADERS: Partial<Record<GameId, Loader>> = {
   pokemon: async (index) => {
-    const [text, mod] = await Promise.all([loadCardText('pokemon'), import('./pokemon')]);
-    return text ? mod.createPokemonEvaluator({ index, text }) : null;
+    const [text, mod, play] = await Promise.all([loadCardText('pokemon'), import('./pokemon'), import('./pokemon-play')]);
+    return text ? play.withPokemonPlaytest(mod.createPokemonEvaluator({ index, text })) : null;
   },
 };
 

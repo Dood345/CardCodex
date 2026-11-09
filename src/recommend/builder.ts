@@ -31,7 +31,7 @@ function qtyByName(cards: readonly DeckCard[], index: Map<string, CatalogCard>):
   return out;
 }
 
-function apply(cards: readonly DeckCard[], move: Move, index: Map<string, CatalogCard>): DeckCard[] {
+export function apply(cards: readonly DeckCard[], move: Move, index: Map<string, CatalogCard>): DeckCard[] {
   let out: DeckCard[] = [...cards];
   for (const c of move.remove) {
     const line = out.find((l) => l.cardId === c.id && !l.zone);
@@ -84,13 +84,13 @@ interface GroupLimited {
 }
 
 /** True unless adding all of `adds` would break a limit that spans card names. */
-function fitsLimits(ev: DeckEvaluator, cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean {
+export function fitsLimits(ev: DeckEvaluator, cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean {
   const g = ev as Partial<GroupLimited>;
   return g.fits ? g.fits(cards, adds) : true;
 }
 
 /** Copies of `card` the options still allow into `cards` (rules limit, and what the collection holds when it is the source). */
-function roomFor(ev: DeckEvaluator, card: CatalogCard, byName: Map<string, number>, cards: readonly DeckCard[], options: BuildOptions): number {
+export function roomFor(ev: DeckEvaluator, card: CatalogCard, byName: Map<string, number>, cards: readonly DeckCard[], options: BuildOptions): number {
   const have = byName.get(card.name) ?? 0;
   let room = ev.rules.copyLimit(card) - have;
   if (options.source === 'collection') {
@@ -107,7 +107,7 @@ function roomFor(ev: DeckEvaluator, card: CatalogCard, byName: Map<string, numbe
  * monsters, a third Trainers or spells, the rest Energy or lands) so a deck short
  * of Basics is offered Basics and not only the hundreds of relevant Trainers.
  */
-function candidateMoves(ev: DeckEvaluator, cards: readonly DeckCard[], pool: readonly CatalogCard[], options: SuggestOptions, index: Map<string, CatalogCard>): Move[] {
+export function candidateMoves(ev: DeckEvaluator, cards: readonly DeckCard[], pool: readonly CatalogCard[], options: SuggestOptions, index: Map<string, CatalogCard>): Move[] {
   const byName = qtyByName(cards, index);
   const rel = ev.relevance(cards, pool);
   const groups = new Map<string, { card: CatalogCard; r: number }[]>();
@@ -137,7 +137,7 @@ function candidateMoves(ev: DeckEvaluator, cards: readonly DeckCard[], pool: rea
 }
 
 /** The pool's cards by id, plus the deck's own printings (which may differ from the pool's). */
-function indexOf(ev: DeckEvaluator, pool: readonly CatalogCard[], cards: readonly DeckCard[]): Map<string, CatalogCard> {
+export function indexOf(ev: DeckEvaluator, pool: readonly CatalogCard[], cards: readonly DeckCard[]): Map<string, CatalogCard> {
   const index = new Map(pool.map((c) => [c.id, c]));
   for (const c of cards) if (!index.has(c.cardId)) index.set(c.cardId, ev.card(c.cardId) ?? ({ id: c.cardId, name: c.cardId } as CatalogCard));
   return index;
