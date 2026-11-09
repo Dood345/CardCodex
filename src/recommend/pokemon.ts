@@ -748,7 +748,12 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
         }
         usable += l.qty * u;
       }
-      const quantity = 1 - Math.min(1, Math.abs(usable - target) / 5);
+      // Usable Energy is measured against the target; Energy no attacker can use is a dead card on top of that,
+      // so swapping good Energy for dead Energy never looks like an improvement, not even in a deck that
+      // already runs too many.
+      const dead = energyCount - usable;
+      const penalty = Math.abs(usable - target) + 1.2 * dead;
+      const quantity = 1 - Math.min(1, penalty / 5);
       energyScore = 0.5 * coverage + 0.5 * quantity;
       const unc = [...uncovered]
         .filter(([, weight]) => weight >= 0.15 * w)
