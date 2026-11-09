@@ -4,7 +4,7 @@
  * player applies by hand. Each part explains itself in one line, so the
  * builder can say why it suggests a card.
  *
- *   rules    60 cards, four copies at most
+ *   rules    60 cards, four copies at most, one ACE SPEC, one Radiant, one of each Prism Star
  *   basics   enough Basic Pokémon that the opening hand rarely has none
  *   lines    every evolution has what it evolves from (or Rare Candy)
  *   energy   Energy of the attackers' types, in a sensible amount
@@ -25,7 +25,7 @@ import type { DeckCard } from '@/data/db';
 import { overLimit } from '@/data/decks';
 import { normalizeText } from '@/data/normalize';
 import type { CatalogCard } from '@/data/types';
-import { isBasicEnergy, POKEMON_DECK_RULES } from '@/games/deck-rules';
+import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-rules';
 import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
 import type { BuildOptions, DeckEvaluator, DeckScore, ScorePart } from './types';
 
@@ -85,6 +85,233 @@ export interface PokemonFeatures {
   isBasicEnergy: boolean;
   isTrainer: boolean;
   trainerType: string;
+  /** A Stadium card: only one is in play at a time, so the score gives only a few copies credit (STADIUM_CREDIT). */
+  stadium: boolean;
+  /** Most copies of this card's name a deck may hold (a Prism Star, or a limit its own text states); Infinity when neither. */
+  nameMax: number;
+  /** Ids of the GROUP_LIMITS this card counts toward (ACE SPEC, Radiant). */
+  groups: string[];
+  /** Special Energy only: what it provides, to which Pokémon, read from its text. */
+  energy?: EnergyRule;
+}
+
+/* ---------- once-per-deck limits, as data ---------- */
+
+/** What the evaluator knows from the whole catalog when it classifies one card. */
+export interface LimitKnowledge {
+  /** The text objects of every print rated "ACE SPEC Rare" (reprints share one object, so a reprint under another label is caught). */
+  aceTexts: ReadonlySet<CardText>;
+}
+
+/**
+ * A limit on a whole class of cards, whatever their names ("one ACE SPEC card
+ * per deck"). `matches` reads only the catalog fields and the card text; how
+ * each class is recognised in the data is explained next to its row.
+ */
+export interface GroupLimit {
+  id: string;
+  /** How the violation is named in `DeckScore.issues`: "ACE SPEC: 2 in the deck (A, B), 1 at most". */
+  label: string;
+  max: number;
+  matches(card: CatalogCard, text: CardText | undefined, known: LimitKnowledge): boolean;
+}
+
+/** Sets of the Black & White series that print ACE SPEC cards as "Rare" Items and Tools (see GROUP_LIMITS). */
+export const BW_ACE_SPEC_SETS: ReadonlySet<string> = new Set(['bw7', 'bw8', 'bw9', 'bw10']);
+
+export const GROUP_LIMITS: readonly GroupLimit[] = [
+  {
+    // Scarlet & Violet prints (sv05–sv08.5, 33 cards) carry the rarity "ACE SPEC Rare". The Black & White prints
+    // (Boundaries Crossed to Plasma Blast) are rated plain "Rare" and say nothing about ACE SPEC in the data; they
+    // are recognised as the Item and Tool cards rated Rare in those four sets (13 cards; Dragon Vault's Rare Items
+    // and the Rare Supporter Ghetsis are left out). That reading is inferred, corroborated by three of them being
+    // reprinted as "ACE SPEC Rare" (Master Ball, Scramble Switch, Scoop Up Cyclone), not stated by the text.
+    id: 'ace-spec',
+    label: 'ACE SPEC',
+    max: 1,
+    matches: (card, text, known) =>
+      card.rarity === 'ACE SPEC Rare' ||
+      (!!text && known.aceTexts.has(text)) ||
+      (card.cat === 'Trainer' && card.rarity === 'Rare' && BW_ACE_SPEC_SETS.has(card.set) && (text?.tt === 'Item' || text?.tt === 'Tool')),
+  },
+  {
+    // "Radiant " begins the name of all 16 Radiant Pokémon (15 rated "Radiant Rare", the promo Radiant Eevee "Ultra
+    // Rare"). The rarity alone would miss the promo, and a text search would catch Solgaleo ◇'s "Radiant Star" attack.
+    id: 'radiant',
+    label: 'Radiant Pokémon',
+    max: 1,
+    matches: (card) => card.cat === 'Pokemon' && /^Radiant /.test(card.name),
+  },
+];
+
+/** A limit on the copies of one name, read off the card. */
+export interface NameLimit {
+  id: string;
+  /** The most copies of this card's name, or undefined when the rule does not apply to the card. */
+  max(card: CatalogCard, text: CardText | undefined): number | undefined;
+}
+
+const STATED_LIMIT = /You can(?:'|’)t have more than (\d+) ([^.]+?) in your deck/i;
+
+export const NAME_LIMITS: readonly NameLimit[] = [
+  {
+    // The only limit the card text states ("You can't have more than 1 Miracle Energy in your deck", neo4-16);
+    // it counts when it names the card itself.
+    id: 'stated',
+    max: (card, text) => {
+      const m = STATED_LIMIT.exec(text?.fx ?? '');
+      return m && normalizeText(m[2]) === normalizeText(card.name) ? Number(m[1]) : undefined;
+    },
+  },
+  {
+    // Prism Star cards (27 in the catalog: 16 Pokémon, 9 Trainers, 2 Energy) carry ◇ after their name; a deck may
+    // hold one copy of each. The rule itself is not in the text data: the symbol is the only mark.
+    id: 'prism-star',
+    max: (card) => (card.name.includes('◇') ? 1 : undefined),
+  },
+];
+
+/* ---------- Special Energy ---------- */
+
+/** A condition on the Pokémon an Energy is attached to. */
+export type PokeCond =
+  | { kind: 'type'; letter: string }
+  | { kind: 'stage'; stage: string }
+  | { kind: 'basic' }
+  | { kind: 'evolution' }
+  /** A group the catalog does not record (Rapid Strike, Ultra Beast, Team Rocket's): met when the printed name says so, otherwise unknown. */
+  | { kind: 'name'; text: string };
+
+/** What a Special Energy provides, to which Pokémon: its text read into data. */
+export interface EnergyRule {
+  /** Letters it provides unconditionally, or "*" for every type. Colorless only is "C". */
+  base: string;
+  /** Energy it counts as at a time when attached ("only 1 Energy at a time"); 1 when the text does not say. */
+  amount: number;
+  /** Provides nothing to a Pokémon that fails this ("can only be attached to a Grass Pokémon"). */
+  only: PokeCond | null;
+  /** Further types given when a condition holds (Stage 2 gets every type); "unread" for a condition that is not about the Pokémon (Prize cards). */
+  upgrades: { types: string; cond: PokeCond | 'unread' }[];
+  /** True when the text has a clause that can withhold what `base` promises ("provides {C} Energy instead") and could not be read. */
+  caveat: boolean;
+}
+
+const TYPE_WORDS = Object.keys(COST_LETTERS);
+const RE_TYPE_WORD = new RegExp(`(${TYPE_WORDS.join('|')})`, 'g');
+// "As long as this card is attached to a Pokémon, it provides ...": the plain statement, not a condition.
+const RE_GENERIC_ATTACH = /^(?:(?:as long as|while|when) (?:this card|it) is attached to (?:a|1 of your|your) pokémon\b|while in play\b)/i;
+// Clauses that can withhold what the base promises and are not read: a stacking rule, a count of attached Energy.
+const RE_CAVEAT = /\b(?:already has|any other) Special Energy\b|basic Energy cards? attached to the Pokémon/i;
+
+/** The letters an Energy sentence provides after "provides", "*" for every type, '' when none are named. */
+function typesProvided(sentence: string): string {
+  const at = sentence.search(/\b(?:provides?|counts as)\b/i);
+  if (at < 0) return '';
+  let tail = sentence.slice(at);
+  const stop = tail.search(/,? but |,? only while | instead|\. /i);
+  if (stop > 0) tail = tail.slice(0, stop);
+  if (/every type|all types|each type|any type/i.test(tail)) return '*';
+  const out = new Set<string>();
+  for (const m of tail.matchAll(/\{([A-Z])\}/g)) out.add(m[1]);
+  for (const m of tail.matchAll(RE_TYPE_WORD)) out.add(COST_LETTERS[m[1]]);
+  return [...out].join('');
+}
+
+function condOf(subject: string): PokeCond | 'unread' {
+  const s = subject.replace(/^(?:an?|1 of your)\s+/i, '').replace(/\s+Pokémon$/i, '').trim();
+  if (/^Stage [12]$/.test(s)) return { kind: 'stage', stage: s };
+  if (/^Basic$/i.test(s)) return { kind: 'basic' };
+  if (/^(?:Evolution|Evolved)$/i.test(s)) return { kind: 'evolution' };
+  if (COST_LETTERS[s]) return { kind: 'type', letter: COST_LETTERS[s] };
+  if (/^[A-Z][A-Za-z' ]{3,}$/.test(s)) return { kind: 'name', text: s };
+  return 'unread';
+}
+
+/** The condition clause of an Energy sentence ("If this card is attached to a Stage 2 Pokémon"), read into a PokeCond. */
+function clauseCond(sentence: string): PokeCond | 'unread' {
+  const at = sentence.search(/,\s*(?:it|this card|[A-Z][\w' ]* Energy) provides?\b/);
+  if (at < 0) return 'unread';
+  const clause = sentence.slice(0, at);
+  if (/Prize|Knocked Out|opponent|discard|hand|coin|more than|that |except|isn't|isn’t|doesn't|doesn’t|\band\b/i.test(clause)) return 'unread';
+  const m = /(?:attached to|is) (?:an? |1 of your )?([A-Z][A-Za-z' ]*?|Stage [12])(?: Pokémon)?$/.exec(clause);
+  return m ? condOf(m[1]) : 'unread';
+}
+
+/** Reads a Special Energy's text; null when it names no Energy provided (the caller then treats it as Colorless only). */
+export function parseEnergyText(fx: string): EnergyRule | null {
+  if (!fx) return null;
+  const sentences = fx.split(/(?<=\.\)?)\s+(?=[A-Z({])/);
+  let only: PokeCond | null = null;
+  const m = /(?:can (?:only )?be attached (?:only )?to|attached only to|only be attached to|only while (?:this card|it) is attached to)\s+(?:an?\s+|1 of your\s+)?([A-Z][A-Za-z' ]*?|Stage [12])(?:\s+Pokémon)?(?=[.,]|\s+(?:if|If|and|The|This|Discard|When|Whenever)\b|$)/.exec(fx);
+  if (m) {
+    const c = condOf(m[1]);
+    only = c === 'unread' ? { kind: 'name', text: m[1] } : c;
+  }
+  let base = '';
+  let amount = 1;
+  // "Attach Miracle Energy to 1 of your Shining or Light Pokémon": a restriction naming several groups cannot be read.
+  let caveat = !only && /\bAttach [A-Z][\w' ]* Energy to 1 of your [A-Z][\w']*(?: or [A-Z][\w']*)+ Pokémon/.test(fx);
+  const upgrades: EnergyRule['upgrades'] = [];
+  for (const s of sentences) {
+    if (!/\b(?:provides?|counts as)\b/i.test(s)) continue;
+    const types = typesProvided(s);
+    const am = /only (\d) Energy at a time/i.exec(s) ?? /provides (\d) in any combination/i.exec(s);
+    const conditional = /^(?:if|while|as long as|when)\b/i.test(s) && !RE_GENERIC_ATTACH.test(s);
+    if (!types) continue;
+    if (/ instead\b/i.test(s)) caveat = true;
+    if (conditional) {
+      upgrades.push({ types, cond: clauseCond(s) });
+      continue;
+    }
+    base = base === '*' || types === '*' ? '*' : [...new Set(base + types)].join('');
+    if (am) amount = Number(am[1]);
+    // "provides {C} Energy. If ... it provides every type instead" is an upgrade with an unreadable condition.
+  }
+  // A later sentence may turn a base into something else ("Luminous: ... {C} Energy instead"); without a base, a lone upgrade is the card.
+  if (!only && /\b(?:can (?:only )?be attached|attached only to|only be attached)\b/i.test(fx)) caveat = true;
+  if (RE_CAVEAT.test(fx)) caveat = true;
+  if (!base && !upgrades.length) return null;
+  return { base: base || 'C', amount, only, upgrades, caveat };
+}
+
+/** Does the Pokémon meet the condition? undefined when the data cannot say. */
+export function meetsCond(c: PokeCond, f: Pick<PokemonFeatures, 'types' | 'stage' | 'isBasic' | 'isPokemon' | 'card'>): boolean | undefined {
+  switch (c.kind) {
+    case 'type':
+      return f.types.includes(c.letter);
+    case 'stage':
+      return f.stage === c.stage;
+    case 'basic':
+      return f.isBasic;
+    case 'evolution':
+      return !f.isBasic;
+    case 'name':
+      return new RegExp(`\\b${c.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(f.card.name) ? true : undefined;
+  }
+}
+
+/**
+ * How much of an `attacker`'s need for Energy type `letter` this Special Energy
+ * meets: 1 when its text says it provides the type to that Pokémon, 0.5 when a
+ * condition could not be read (Prize cards, Ultra Beast, a group the catalog
+ * does not record), 0 when it does not provide it or the Pokémon is not one it
+ * may be attached to.
+ */
+export function energyCredit(rule: EnergyRule, attacker: Pick<PokemonFeatures, 'types' | 'stage' | 'isBasic' | 'isPokemon' | 'card'>, letter: string): number {
+  let gate = 1;
+  if (rule.only) {
+    const ok = meetsCond(rule.only, attacker);
+    if (ok === false) return 0;
+    if (ok === undefined) gate = 0.5;
+  }
+  const gives = (types: string) => types === '*' || types.includes(letter);
+  let best = gives(rule.base) ? (rule.caveat ? 0.5 : 1) : 0;
+  for (const u of rule.upgrades) {
+    if (!gives(u.types)) continue;
+    const ok = u.cond === 'unread' ? undefined : meetsCond(u.cond, attacker);
+    best = Math.max(best, ok === true ? 1 : ok === undefined ? 0.5 : 0);
+  }
+  return best * gate;
 }
 
 const TYPE_NAMES = Object.keys(COST_LETTERS).filter((t) => t !== 'Colorless');
@@ -111,16 +338,21 @@ const ROLE_RULES: [Role, RegExp][] = [
 const BASIC_ENERGY_LETTER: Record<string, string> = {};
 for (const [t, l] of Object.entries(COST_LETTERS)) BASIC_ENERGY_LETTER[`${t} Energy`] = l;
 
-function providesOf(card: CatalogCard, text: CardText | undefined): string {
+/** The letters an Energy card can provide to some Pokémon ("*" for every type); a Special Energy's conditions live in `energy`. */
+function providesOf(card: CatalogCard, rule: EnergyRule | undefined): string {
   if (card.cat !== 'Energy') return '';
   const base = card.name.replace(/^Basic /, '');
   if (BASIC_ENERGY_LETTER[base]) return BASIC_ENERGY_LETTER[base];
-  const fx = text?.fx ?? '';
-  if (/provides? .*(?:every type|any type|each type|all types|Energy of each type|1 Energy of any type)/i.test(fx) || /provides 2 Energy/i.test(fx)) return '*';
-  const types = new Set<string>();
-  for (const m of fx.matchAll(RE_TYPE_ENERGY)) types.add(COST_LETTERS[m[1]]);
-  return types.size ? [...types].join('') : 'C';
+  if (!rule) return 'C';
+  const all = [rule.base, ...rule.upgrades.map((u) => u.types)];
+  if (all.includes('*')) return '*';
+  const letters = new Set<string>();
+  for (const t of all) for (const ch of t) letters.add(ch);
+  return [...letters].join('');
 }
+
+/** Copies of Stadium cards that earn credit in the draw, search and synergy parts: only one Stadium is in play at a time. */
+export const STADIUM_CREDIT = 3;
 
 function mentionsOf(texts: string[], speciesRe: RegExp | null, speciesId: Map<string, number>): Mentions {
   const m: Mentions = { types: new Set(), stages: new Set(), suffixes: new Set(), species: new Set() };
@@ -151,6 +383,11 @@ export interface PokemonEvaluatorDeps {
 /** The Pokémon evaluator also hands out the features it read from a card, for the playtest simulator and the benchmarks. */
 export interface PokemonEvaluator extends DeckEvaluator {
   features(card: CatalogCard): PokemonFeatures;
+  /**
+   * Whether adding `adds` to `cards` keeps every once-per-deck group limit (ACE SPEC, Radiant) that those cards
+   * belong to. Name limits (four copies, Prism Star) are `rules.copyLimit`, which `rules` here already folds in.
+   */
+  fits(cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean;
 }
 
 export const POKEMON_WEIGHTS = { rules: 10, basics: 10, lines: 10, energy: 15, draw: 15, power: 10, synergy: 10, focus: 10, era: 10 } as const;
@@ -182,6 +419,8 @@ interface DeckContext {
   species: Set<number>;
   /** Typed letters the attackers' best attacks need. */
   need: Set<string>;
+  /** Copies of Stadium cards, over every name. */
+  stadiumQty: number;
   /** The Pokémon's printing years, copy-weighted 10th and 90th percentile; 0 when there are none. */
   eraMin: number;
   eraMax: number;
@@ -195,9 +434,42 @@ function percentileYear(lines: Line[], q: number): number {
   return years[Math.min(years.length - 1, Math.floor(years.length * q))];
 }
 
+/** The share of a line's copies that earns credit: at most STADIUM_CREDIT Stadium copies count, over all Stadium names. */
+function stadiumScale(l: Line, ctx: DeckContext): number {
+  return l.f.stadium && ctx.stadiumQty > STADIUM_CREDIT ? STADIUM_CREDIT / ctx.stadiumQty : 1;
+}
+
+export interface GroupViolation {
+  limit: GroupLimit;
+  qty: number;
+  names: string[];
+}
+
+/** The group limits (ACE SPEC, Radiant) a deck's lines break. */
+function groupViolations(lines: readonly Line[]): GroupViolation[] {
+  const out: GroupViolation[] = [];
+  for (const limit of GROUP_LIMITS) {
+    let qty = 0;
+    const names: string[] = [];
+    for (const l of lines) {
+      if (!l.f.groups.includes(limit.id)) continue;
+      qty += l.qty;
+      if (!names.includes(l.card.name)) names.push(l.card.name);
+    }
+    if (qty > limit.max) out.push({ limit, qty, names });
+  }
+  return out;
+}
+
 export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): PokemonEvaluator {
-  const rules = POKEMON_DECK_RULES;
   const features = new Map<string, PokemonFeatures>();
+  // The deck page keeps POKEMON_DECK_RULES; the evaluator's copy also holds the limits the text and symbols state per name.
+  const rules: DeckRules = { ...POKEMON_DECK_RULES, copyLimit: (card) => Math.min(POKEMON_DECK_RULES.copyLimit(card), featuresOf(card).nameMax) };
+  const known: LimitKnowledge = { aceTexts: new Set<CardText>() };
+  for (const c of index.catalog.cards) {
+    const t = c.rarity === 'ACE SPEC Rare' ? text.byId.get(c.id)?.text : undefined;
+    if (t) (known.aceTexts as Set<CardText>).add(t);
+  }
 
   // Species names the text can mention, longest first so "Mewtwo" wins over "Mew".
   const speciesId = new Map<string, number>();
@@ -272,6 +544,9 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     const attackRoles = new Set<Role>();
     for (const [role, re] of ROLE_RULES) if (!roles.has(role) && attacks.some((a) => re.test(a.effect))) attackRoles.add(role);
     const m = /^(.*?) (ex|V|VMAX|VSTAR)$|^(.*?)-(GX|EX)$|^Radiant (.*)$/.exec(card.name);
+    const energy = card.cat === 'Energy' && !isBasicEnergy(card) ? (parseEnergyText(t?.fx ?? '') ?? undefined) : undefined;
+    let nameMax = Infinity;
+    for (const rule of NAME_LIMITS) nameMax = Math.min(nameMax, rule.max(card, t) ?? Infinity);
     f = {
       card,
       text: t,
@@ -288,11 +563,15 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       roles,
       attackRoles,
       mentions: mentionsOf(roleTexts, isPokemon ? null : speciesRe, speciesId),
-      provides: providesOf(card, t),
+      provides: providesOf(card, energy),
       isEnergy: card.cat === 'Energy',
       isBasicEnergy: isBasicEnergy(card),
       isTrainer: card.cat === 'Trainer',
       trainerType: t?.tt ?? '',
+      stadium: card.cat === 'Trainer' && t?.tt === 'Stadium',
+      nameMax,
+      groups: GROUP_LIMITS.filter((g) => g.matches(card, t, known)).map((g) => g.id),
+      energy,
     };
     features.set(card.id, f);
     return f;
@@ -318,6 +597,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       stages: new Set(),
       suffixes: new Set(),
       species: new Set(),
+      stadiumQty: lines.reduce((n, l) => n + (l.f.stadium ? l.qty : 0), 0),
       need: new Set(),
       eraMin: percentileYear(pokemon, 0.1),
       eraMax: percentileYear(pokemon, 0.9),
@@ -356,10 +636,20 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
 
     // rules
     const over = overLimit(rules, cards, index);
+    const overGroups = groupViolations(lines);
     const sizeOff = Math.abs(60 - total);
     for (const o of over) issues.push(`${o.name}: ${o.qty} copies, ${o.limit} at most`);
+    for (const g of overGroups) issues.push(`${g.limit.label}: ${g.qty} in the deck (${g.names.join(', ')}), ${g.limit.max} at most`);
     if (sizeOff) issues.push(total < 60 ? `${60 - total} cards to go` : `${total - 60} cards over 60`);
-    parts.push(part('rules', 'Deck rules', 1 - sizeOff / 60 - over.length * 0.25, sizeOff ? `${total} of 60 cards` : over.length ? `${over.length} over the copy limit` : '60 cards, copy limits kept'));
+    const broken = over.length + overGroups.length;
+    parts.push(
+      part(
+        'rules',
+        'Deck rules',
+        1 - sizeOff / 60 - broken * 0.25,
+        sizeOff ? `${total} of 60 cards` : broken ? `${broken} deck limit${broken > 1 ? 's' : ''} broken` : '60 cards, copy limits kept',
+      ),
+    );
 
     // basics
     const basics = pokemon.filter((l) => l.f.isBasic).reduce((n, l) => n + l.qty, 0);
@@ -404,16 +694,21 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     const attackers = pokemon.filter((l) => l.f.best);
     const energyLines = lines.filter((l) => l.f.isEnergy);
     const energyCount = energyLines.reduce((n, l) => n + l.qty, 0);
-    // Basic Energy covers a type outright; Special Energy that provides it (or any type) counts half, since
-    // its conditions (one per deck, one per Pokémon, no other Special Energy) are not read here.
+    // Basic Energy covers a type outright. A Special Energy covers it for the attackers its text lets it
+    // provide to (energyCredit): fully when the text says so, half where a condition could not be read.
     const basicProvided = new Set<string>();
-    const specialProvided = new Set<string>();
-    let anySpecial = false;
+    const specials: EnergyRule[] = [];
     for (const l of energyLines) {
-      if (l.f.provides === '*') anySpecial = true;
-      else for (const ch of l.f.provides) (l.f.isBasicEnergy ? basicProvided : specialProvided).add(ch);
+      if (l.f.isBasicEnergy) for (const ch of l.f.provides) basicProvided.add(ch);
+      else if (l.f.energy) specials.push(l.f.energy);
     }
-    const accel = lines.reduce((n, l) => n + (l.f.roles.has('accel') ? l.qty : l.f.roles.has('searchEnergy') ? l.qty / 2 : 0), 0);
+    const creditFor = (a: PokemonFeatures, t: string): number => {
+      if (basicProvided.has(t)) return 1;
+      let best = 0;
+      for (const rule of specials) best = Math.max(best, energyCredit(rule, a, t));
+      return best;
+    };
+    const accel = lines.reduce((n, l) => n + (l.f.roles.has('accel') ? l.qty : l.f.roles.has('searchEnergy') ? l.qty / 2 : 0) * stadiumScale(l, ctx), 0);
     let energyScore = 0.5;
     let energyDetail = 'No attackers yet';
     if (attackers.length) {
@@ -424,10 +719,13 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       const uncovered = new Map<string, number>();
       for (const l of attackers) {
         const weight = l.qty * Math.max(1, l.f.best!.damage);
-        const need = l.f.best!.types;
-        if (need.every((t) => basicProvided.has(t))) covered += weight;
-        else if (anySpecial || need.every((t) => basicProvided.has(t) || specialProvided.has(t))) covered += 0.5 * weight;
-        else for (const t of need) if (!basicProvided.has(t) && !specialProvided.has(t)) uncovered.set(t, (uncovered.get(t) ?? 0) + weight);
+        let credit = 1;
+        for (const t of l.f.best!.types) {
+          const c = creditFor(l.f, t);
+          credit = Math.min(credit, c);
+          if (c === 0) uncovered.set(t, (uncovered.get(t) ?? 0) + weight);
+        }
+        covered += credit * weight;
         w += weight;
         costSum += l.f.best!.costN * l.qty;
         attackerQty += l.qty;
@@ -435,14 +733,29 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       const avgCost = costSum / attackerQty;
       const target = Math.max(5, Math.min(16, 4 + 2.5 * avgCost - 0.75 * accel));
       const coverage = w ? covered / w : 0;
-      const quantity = 1 - Math.min(1, Math.abs(energyCount - target) / 5);
+      // Only Energy some attacker can use counts toward the amount: Basic Energy of a type no attacker needs, or a
+      // Special Energy that provides nothing to these attackers, fills the deck without powering anything.
+      let usable = 0;
+      for (const l of energyLines) {
+        let u: number;
+        if (!ctx.need.size) u = 1;
+        else if (l.f.isBasicEnergy) u = [...l.f.provides].some((t) => ctx.need.has(t)) ? 1 : 0;
+        else if (!l.f.energy) u = 0.5;
+        else if (!/[^C]/.test(l.f.energy.base + l.f.energy.upgrades.map((x) => x.types).join(''))) u = 1; // Colorless costs
+        else {
+          u = 0;
+          for (const a of attackers) for (const t of a.f.best!.types) u = Math.max(u, energyCredit(l.f.energy, a.f, t));
+        }
+        usable += l.qty * u;
+      }
+      const quantity = 1 - Math.min(1, Math.abs(usable - target) / 5);
       energyScore = 0.5 * coverage + 0.5 * quantity;
       const unc = [...uncovered]
         .filter(([, weight]) => weight >= 0.15 * w)
         .sort((a, b) => b[1] - a[1])
         .map(([t]) => typeName(t))
         .join(', ');
-      energyDetail = `${energyCount} Energy (about ${Math.round(target)} fit the attacks)${unc ? `; no Energy for ${unc} attacks` : ''}`;
+      energyDetail = `${energyCount} Energy${usable < energyCount ? `, ${Math.round(usable)} that the attackers can use` : ''} (about ${Math.round(target)} fit the attacks)${unc ? `; no Energy for ${unc} attacks` : ''}`;
     }
     parts.push(part('energy', 'Energy', energyScore, energyDetail));
 
@@ -452,12 +765,13 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     for (const l of lines) {
       const r = l.f.roles;
       const ar = l.f.attackRoles;
-      if (r.has('draw')) draw += l.qty;
-      if (r.has('searchPokemon') || r.has('searchAny')) search += l.qty;
-      if (r.has('searchEnergy') || r.has('accel')) search += 0.5 * l.qty;
-      if (ar.has('searchPokemon') || ar.has('searchAny') || ar.has('draw')) search += 0.5 * l.qty;
+      const q = l.qty * stadiumScale(l, ctx);
+      if (r.has('draw')) draw += q;
+      if (r.has('searchPokemon') || r.has('searchAny')) search += q;
+      if (r.has('searchEnergy') || r.has('accel')) search += 0.5 * q;
+      if (ar.has('searchPokemon') || ar.has('searchAny') || ar.has('draw')) search += 0.5 * q;
     }
-    parts.push(part('draw', 'Draw and search', 0.5 * Math.min(1, draw / 8) + 0.5 * Math.min(1, search / 10), `${draw} draw, ${Math.round(search)} search cards`));
+    parts.push(part('draw', 'Draw and search', 0.5 * Math.min(1, draw / 8) + 0.5 * Math.min(1, search / 10), `${Math.round(draw * 10) / 10} draw, ${Math.round(search)} search cards`));
 
     // power
     let top = 0;
@@ -479,11 +793,12 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     for (const l of lines) {
       if (l.f.isPokemon && !l.f.text?.b?.length) continue;
       if (!hasMentions(l.f.mentions)) continue;
-      conditional += l.qty;
-      if (mentionsMet(l.f.mentions, ctx)) met += l.qty;
+      const q = l.qty * stadiumScale(l, ctx);
+      conditional += q;
+      if (mentionsMet(l.f.mentions, ctx)) met += q;
       else dead.push(l.card.name);
     }
-    parts.push(part('synergy', 'Synergy', conditional ? met / conditional : 1, dead.length ? `Nothing in the deck for ${dead.join(', ')}` : conditional ? `${met} cards find what they name` : 'No conditional cards'));
+    parts.push(part('synergy', 'Synergy', conditional ? met / conditional : 1, dead.length ? `Nothing in the deck for ${dead.join(', ')}` : conditional ? `${Math.round(met)} cards find what they name` : 'No conditional cards'));
 
     // focus: a deck-sized share of Pokémon (15–35% of the cards), most of them in the two main lines, few one-ofs.
     const pokemonQty = pokemon.reduce((n, l) => n + l.qty, 0);
@@ -596,6 +911,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
   function relevance(cards: readonly DeckCard[], candidates: readonly CatalogCard[]): number[] {
     const ctx = contextOf(cards);
     const evolvesFromInDeck = new Set(ctx.pokemon.map((l) => l.f.evolvesFrom).filter(Boolean));
+    const attackers = ctx.pokemon.filter((l) => l.f.best);
     return candidates.map((card) => {
       const f = featuresOf(card);
       if (!ctx.lines.length) return f.isPokemon && f.best ? Math.min(1, f.best.damage / 200) : 0.2;
@@ -606,9 +922,19 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
         if (f.types.some((t) => ctx.types.has(t))) r = Math.max(r, 0.6);
         if (f.text?.b?.length) r = Math.max(r, 0.5);
       } else if (f.isEnergy) {
-        if ([...f.provides].some((t) => ctx.need.has(t))) r = Math.max(r, f.isBasicEnergy ? 0.95 : 0.85);
-        else if (f.provides === '*') r = Math.max(r, 0.8);
-        else r = Math.min(r, 0.1);
+        if (f.isBasicEnergy) {
+          if ([...f.provides].some((t) => ctx.need.has(t))) r = Math.max(r, 0.95);
+          else r = Math.min(r, 0.1);
+        } else if (!attackers.length) {
+          if (f.provides === '*') r = Math.max(r, 0.8);
+          else r = Math.min(r, 0.1);
+        } else {
+          // A Special Energy is as relevant as the best it does for one of the deck's attackers.
+          let best = 0;
+          if (f.energy) for (const a of attackers) for (const t of a.f.best!.types) best = Math.max(best, energyCredit(f.energy, a.f, t));
+          if (best > 0) r = Math.max(r, best >= 1 ? 0.85 : 0.6);
+          else r = Math.min(r, 0.1);
+        }
       } else if (hasMentions(f.mentions)) r = Math.max(r, mentionsMet(f.mentions, ctx) ? 0.8 : 0.05);
       else if (f.roles.size) r = Math.max(r, 0.7);
       else r = Math.max(r, 0.3);
@@ -618,5 +944,27 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     });
   }
 
-  return { game: 'pokemon', rules, card: (id) => index.cardsById.get(id), score, pool, requirements, kindOf, relevance, features: featuresOf };
+  function fits(cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean {
+    // Most cards belong to no group: no need to tally the deck for them.
+    let touched: GroupLimit[] | undefined;
+    const addGroups = adds.map((c) => featuresOf(c).groups);
+    for (const gs of addGroups) {
+      if (!gs.length) continue;
+      touched ??= [];
+      for (const g of GROUP_LIMITS) if (gs.includes(g.id) && !touched.includes(g)) touched.push(g);
+    }
+    if (!touched) return true;
+    for (const g of touched) {
+      let qty = 0;
+      for (const c of cards) {
+        const card = index.cardsById.get(c.cardId);
+        if (card && featuresOf(card).groups.includes(g.id)) qty += c.qty;
+      }
+      for (const gs of addGroups) if (gs.includes(g.id)) qty++;
+      if (qty > g.max) return false;
+    }
+    return true;
+  }
+
+  return { game: 'pokemon', rules, fits, card: (id) => index.cardsById.get(id), score, pool, requirements, kindOf, relevance, features: featuresOf };
 }

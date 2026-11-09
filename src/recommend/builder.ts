@@ -78,6 +78,17 @@ function diverse(all: Suggestion[], limit: number, perPart: number): Suggestion[
   return out;
 }
 
+/** An evaluator that keeps once-per-deck limits across card names (the Pokémon one: ACE SPEC, Radiant) says so with `fits`. */
+interface GroupLimited {
+  fits(cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean;
+}
+
+/** True unless adding all of `adds` would break a limit that spans card names. */
+function fitsLimits(ev: DeckEvaluator, cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean {
+  const g = ev as Partial<GroupLimited>;
+  return g.fits ? g.fits(cards, adds) : true;
+}
+
 /** Copies of `card` the options still allow into `cards` (rules limit, and what the collection holds when it is the source). */
 function roomFor(ev: DeckEvaluator, card: CatalogCard, byName: Map<string, number>, cards: readonly DeckCard[], options: BuildOptions): number {
   const have = byName.get(card.name) ?? 0;
@@ -102,7 +113,7 @@ function candidateMoves(ev: DeckEvaluator, cards: readonly DeckCard[], pool: rea
   const groups = new Map<string, { card: CatalogCard; r: number }[]>();
   pool.forEach((card, i) => {
     const r = rel[i];
-    if (r <= 0 || roomFor(ev, card, byName, cards, options) <= 0) return;
+    if (r <= 0 || roomFor(ev, card, byName, cards, options) <= 0 || !fitsLimits(ev, cards, [card])) return;
     const kind = ev.kindOf(card);
     let g = groups.get(kind);
     if (!g) groups.set(kind, (g = []));
@@ -119,7 +130,7 @@ function candidateMoves(ev: DeckEvaluator, cards: readonly DeckCard[], pool: rea
   const moves: Move[] = [];
   for (const { card, r } of ranked) {
     const req = ev.requirements(card, cards, pool);
-    if (req.some((c) => roomFor(ev, c, byName, cards, options) <= 0)) continue;
+    if (req.some((c) => roomFor(ev, c, byName, cards, options) <= 0) || !fitsLimits(ev, cards, [card, ...req])) continue;
     moves.push({ add: [card, ...req], remove: [], relevance: r });
   }
   return moves;
@@ -210,6 +221,13 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
       continue;
     }
     const move: Move = { add: [card, ...ev.requirements(card, cards, pool)], remove: [] };
+    // A seed the rules forbid (a second ACE SPEC, a fifth copy) is left out and reported, like one the options rule out.
+    const names = qtyByName(cards, index);
+    const overCopies = move.add.some((c) => (names.get(c.name) ?? 0) + move.add.filter((x) => x.name === c.name).length > ev.rules.copyLimit(c));
+    if (overCopies || !fitsLimits(ev, cards, move.add)) {
+      dropped.push(card.name);
+      continue;
+    }
     cards = apply(cards, move, index);
   }
   const count = () => cards.reduce((n, c) => n + (c.zone ? 0 : c.qty), 0);
