@@ -69,7 +69,7 @@ import {
   type PageStill,
   type PocketState,
 } from './session';
-import { BLANK_POSTER, CameraPlaceholder, containTransform, CorrectionSheet, fileToBitmap } from './shared';
+import { BLANK_POSTER, CameraPlaceholder, containTransform, CorrectionSheet, fileToBitmap, useViewSize } from './shared';
 
 /** Preview-frame captures (the fallback when the camera gives no photo) are taken at the stream's full resolution (≤ this). */
 const CAPTURE_MAX_WIDTH = 4096;
@@ -205,7 +205,7 @@ export function PageScan({
   const [error, setError] = useState<string | null>(null);
   const [videoSize, setVideoSize] = useState({ w: 0, h: 0 });
   const [live, setLive] = useState(false);
-  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
+  const [viewRef, viewSize] = useViewSize();
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [correcting, setCorrecting] = useState<number | null>(null);
   const [fit, setFit] = useState<FitState | null>(null);
@@ -213,7 +213,6 @@ export function PageScan({
   const [photoSize, setPhotoSize] = useState<Size | null>(null);
   const [capturing, setCapturing] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const viewRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -306,15 +305,6 @@ export function PageScan({
       setLive(false);
     };
   }, [cameraWanted]);
-
-  useEffect(() => {
-    const el = viewRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setViewSize({ w: el.clientWidth, h: el.clientHeight }));
-    ro.observe(el);
-    setViewSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
-  }, [phase, still, scanning]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

@@ -135,6 +135,24 @@ export function mapBox(b: Box, t: CoverTransform): Box {
   return { x: b.x * t.scale + t.offsetX, y: b.y * t.scale + t.offsetY, w: b.w * t.scale, h: b.h * t.scale };
 }
 
+/**
+ * Where the "add this card" chip sits for a card whose box (element CSS
+ * pixels) is `card`: its centre is the centre of the card, so the chip is on
+ * the card the user is looking at and well inside the screen. It is kept off
+ * the status bar and the scanner's own top row (`top`), off the bottom edge,
+ * and near the middle sideways, because the chip is most of the screen wide
+ * and a card at the edge of the frame would push half of it out of view.
+ * Before the view has been measured (`view` 0×0) there is nothing to clamp to.
+ */
+export function chipAnchor(card: Box, view: Size, top = 96, bottom = 44): { x: number; y: number } {
+  const x = card.x + card.w / 2;
+  const y = card.y + card.h / 2;
+  if (view.w <= 0 || view.h <= 0) return { x, y };
+  const lo = Math.min(top, view.h / 2);
+  const hi = Math.max(lo, view.h - bottom);
+  return { x: Math.max(view.w * 0.4, Math.min(view.w * 0.6, x)), y: Math.max(lo, Math.min(hi, y)) };
+}
+
 /** Inverse of mapBox: element CSS pixels → frame pixels. */
 export function unmapBox(b: Box, t: CoverTransform): Box {
   return { x: (b.x - t.offsetX) / t.scale, y: (b.y - t.offsetY) / t.scale, w: b.w / t.scale, h: b.h / t.scale };

@@ -15,6 +15,7 @@ import {
   coverTransform,
   getRecognizer,
   loadHashTable,
+  chipAnchor,
   mapBox,
   useCardScanner,
   type Box,
@@ -52,6 +53,7 @@ import {
   CorrectionSheet,
   ScanArt,
   containTransform,
+  useViewSize,
   fileToCanvas,
   recognizerFor,
   recordScan,
@@ -107,9 +109,8 @@ export default function ScanPage() {
     lastTimer.current = window.setTimeout(() => setLastAdded(null), LAST_ADDED_MS);
   }, []);
   useEffect(() => () => window.clearTimeout(lastTimer.current), []);
-  const viewRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [viewSize, setViewSize] = useState({ w: 0, h: 0 });
+  const [viewRef, viewSize] = useViewSize();
 
   // Built once per catalog (~21k Pokémon cards / 38k Yu-Gi-Oh! printings → ~100 ms).
   const matcher: ScanMatcher = useMemo(() => game.createMatcher(index), [game, index]);
@@ -177,15 +178,6 @@ export default function ScanPage() {
       cancelled = true;
     };
   }, [armed, pageMode, game.id]);
-
-  useEffect(() => {
-    const el = viewRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => setViewSize({ w: el.clientWidth, h: el.clientHeight }));
-    ro.observe(el);
-    setViewSize({ w: el.clientWidth, h: el.clientHeight });
-    return () => ro.disconnect();
-  }, [armed, still, pageMode]);
 
   const transform: CoverTransform = useMemo(
     () =>
@@ -538,15 +530,14 @@ export default function ScanPage() {
         {!still && !cameraLive && <CameraPlaceholder Icon={game.Icon} text={statusText} live={scanner.status === 'starting'} />}
         {!still && cameraLive && scanner.results.length === 0 && <div className="scan-guide" />}
         <div className="scan-overlay">
-          {results.map((r) => {
+          {/* Nothing is drawn until the view has a size: boxes mapped onto a 0×0 view all land in the corner. */}
+          {(viewSize.w > 0 ? results : []).map((r) => {
             const box = mapBox((r.cardBox ?? r.bbox) as Box, transform);
-            const anchor = mapBox(r.bbox, transform);
             const added = justAdded.has(r.key);
             const owned = collection.get(r.card.id)?.qty ?? 0;
             const thumb = cardImageUrl(r.card, r.set.series, 'low');
-            // Keep the chip on screen even when the card sits at the edge of the frame.
-            const cx = viewSize.w ? clamp(anchor.x + anchor.w / 2, viewSize.w * 0.4, viewSize.w * 0.6) : anchor.x + anchor.w / 2;
-            const cy = clamp(anchor.y - 6, 56, Math.max(56, viewSize.h - 12));
+            // The chip sits in the middle of its card, kept on screen when the card is at the edge of the frame.
+            const { x: cx, y: cy } = chipAnchor(box, viewSize);
             const steady = still ? r.score : (r.stability ?? 0);
             return (
               <div key={r.key}>

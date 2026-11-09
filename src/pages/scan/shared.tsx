@@ -1,7 +1,7 @@
 /**
  * Pieces shared by the single-card scanner and the binder-page scanner.
  */
-import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentType } from 'react';
 import type { CatalogIndex } from '@/data/catalog';
 import { formatCardNumber } from '@/data/catalog';
 import { adjustQty } from '@/data/collection';
@@ -52,6 +52,32 @@ export function recognizerFor(settings: Settings): TextRecognizer | undefined {
 }
 
 /** `object-fit: contain` counterpart of coverTransform (for still photos). */
+/**
+ * The size of the scanner's view, measured whenever the element is on screen.
+ * Returns a ref callback for the element and its size (0×0 until measured).
+ * The element is held in state, not in a ref read by an effect with its own
+ * dependency list: the live view replaces the snap view without any of the
+ * old effect's dependencies changing, which left the size at zero, the card
+ * box collapsed and the chip in the top-left corner.
+ */
+export function useViewSize(): [(el: HTMLDivElement | null) => void, { w: number; h: number }] {
+  const [el, setEl] = useState<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    if (!el) {
+      setSize({ w: 0, h: 0 });
+      return;
+    }
+    const measure = () => setSize((s) => (s.w === el.clientWidth && s.h === el.clientHeight ? s : { w: el.clientWidth, h: el.clientHeight }));
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [el]);
+  const ref = useCallback((node: HTMLDivElement | null) => setEl(node), []);
+  return [ref, size];
+}
+
 export function containTransform(w: number, h: number, ew: number, eh: number): CoverTransform {
   if (w <= 0 || h <= 0) return { scale: 1, offsetX: 0, offsetY: 0 };
   const scale = Math.min(ew / w, eh / h);
