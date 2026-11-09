@@ -148,6 +148,11 @@ export interface PokemonEvaluatorDeps {
   text: CardTextIndex;
 }
 
+/** The Pokémon evaluator also hands out the features it read from a card, for the playtest simulator and the benchmarks. */
+export interface PokemonEvaluator extends DeckEvaluator {
+  features(card: CatalogCard): PokemonFeatures;
+}
+
 export const POKEMON_WEIGHTS = { rules: 10, basics: 10, lines: 10, energy: 15, draw: 15, power: 10, synergy: 10, focus: 10, era: 10 } as const;
 
 /** Chance that a 7-card opening hand from `n` cards holds none of the `basics`. */
@@ -190,7 +195,7 @@ function percentileYear(lines: Line[], q: number): number {
   return years[Math.min(years.length - 1, Math.floor(years.length * q))];
 }
 
-export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): DeckEvaluator {
+export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): PokemonEvaluator {
   const rules = POKEMON_DECK_RULES;
   const features = new Map<string, PokemonFeatures>();
 
@@ -613,5 +618,5 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): D
     });
   }
 
-  return { game: 'pokemon', rules, card: (id) => index.cardsById.get(id), score, pool, requirements, kindOf, relevance };
+  return { game: 'pokemon', rules, card: (id) => index.cardsById.get(id), score, pool, requirements, kindOf, relevance, features: featuresOf };
 }
