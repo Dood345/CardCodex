@@ -129,15 +129,16 @@ function PlacedRow({
   const side = line.zone === 'side';
   // Where a copy goes when it leaves the side deck: Extra for Fusion, Synchro, Xyz and Link monsters.
   const back = rules.sections.find((s) => s.id === rules.sectionOf(card, {}))?.label ?? 'Main';
+  const sideLabel = rules.sections.find((s) => s.id === 'side')?.label ?? 'Side';
   const move =
     edits && rules.side ? (
       <button
         type="button"
         className="btn ghost small deck-move"
-        aria-label={side ? `Move one ${card.name} back to the ${back} deck` : `Move one ${card.name} to the side deck`}
+        aria-label={side ? `Move one ${card.name} back to ${back}` : `Move one ${card.name} to ${sideLabel}`}
         onClick={() => edits.move(card.id, line.zone, side ? undefined : 'side')}
       >
-        {side ? `To ${back}` : 'To Side'}
+        {side ? `To ${back}` : `To ${sideLabel}`}
       </button>
     ) : undefined;
   return (

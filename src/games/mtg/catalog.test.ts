@@ -229,10 +229,15 @@ describe('deck rules', () => {
   const forest = { ...byId.get('mtg:m10-146')!, id: 'mtg:m10-246', name: 'Forest', cat: 'Land' as const, sub: 'Basic Land — Forest' };
   index.cardsById.set(forest.id, forest);
 
-  it('gives Magic one deck of at least 60 cards', () => {
+  it('gives Magic a deck of at least 60 cards and a sideboard of at most 15', () => {
     expect(mtg.deckRules).toBe(MTG_DECK_RULES);
-    const [main] = MTG_DECK_RULES.sections;
-    expect(MTG_DECK_RULES.sections).toHaveLength(1);
+    const [main, side] = MTG_DECK_RULES.sections;
+    expect(MTG_DECK_RULES.sections).toHaveLength(2);
+    expect(MTG_DECK_RULES.side).toBe(true);
+    expect(MTG_DECK_RULES.sectionOf(undefined, {})).toBe('main');
+    expect(MTG_DECK_RULES.sectionOf(undefined, { zone: 'side' })).toBe('side');
+    expect(sectionHint(side, 15)).toBeNull();
+    expect(sectionHint(side, 16)).toBe('A sideboard has at most 15 cards: 1 over.');
     expect(sectionHint(main, 59)).toBe('A Magic deck has at least 60 cards: 1 to go.');
     expect(sectionHint(main, 60)).toBeNull();
     expect(sectionHint(main, 75)).toBeNull();
@@ -246,6 +251,12 @@ describe('deck rules', () => {
     ];
     expect(MTG_DECK_RULES.copyLimit(forest)).toBe(Infinity);
     expect(limitHint(MTG_DECK_RULES, overLimit(MTG_DECK_RULES, cards, index))).toBe('4 copies at most: Lightning Bolt ×5.');
+    // The sideboard counts toward the limit.
+    const split = [
+      { cardId: 'mtg:lea-161', qty: 3 },
+      { cardId: 'mtg:lea-161', qty: 2, zone: 'side' as const },
+    ];
+    expect(limitHint(MTG_DECK_RULES, overLimit(MTG_DECK_RULES, split, index))).toBe('4 copies at most: Lightning Bolt ×5.');
   });
 });
 
