@@ -58,8 +58,10 @@ export interface Suggestion {
   total: number;
   /** Change of the total. */
   delta: number;
-  /** The part that gained most, worded for the UI: "Basic Pokémon: 8 → 9". */
+  /** The part that gained most, as "Evolution lines: 0% → 50%". */
   reason: string;
+  /** That part's one-line detail after the move. */
+  detail: string;
   /** The part behind the reason. */
   partId: string;
 }

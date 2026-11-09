@@ -559,6 +559,8 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): D
       pick ??= printings.find((c) => c.img && legalIn(c, options.format)) ?? printings.find((c) => legalIn(c, options.format));
       if (!pick) continue;
       if (options.avoid?.has(pick.name)) continue;
+      // "Basic Fire Energy" is "Fire Energy" under another printed name.
+      if (pick.cat === 'Energy' && pick.name.startsWith('Basic ') && index.cardsByName.has(normalizeText(pick.name.slice(6)))) continue;
       out.push(pick);
     }
     return out;

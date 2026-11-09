@@ -18,6 +18,8 @@ export interface SuggestOptions extends BuildOptions {
   breadth?: number;
   /** Suggestions returned (default 8). */
   limit?: number;
+  /** Suggestions per score part among those returned (default 3), so a list is not six Energy cards. */
+  perPart?: number;
 }
 
 function qtyByName(cards: readonly DeckCard[], index: Map<string, CatalogCard>): Map<string, number> {
@@ -43,19 +45,37 @@ function apply(cards: readonly DeckCard[], move: Move, index: Map<string, Catalo
   return out;
 }
 
-/** Why `after` beats `before`: the part that gained most, as "Label: detail". */
-export function reasonFor(before: DeckScore, after: DeckScore): { reason: string; partId: string } {
+/** Why `after` beats `before`: the part that gained most, as "Label: 40% → 70%", with its detail after the move. */
+export function reasonFor(before: DeckScore, after: DeckScore): { reason: string; detail: string; partId: string } {
   let best = after.parts[0];
+  let was = 0;
   let gain = -Infinity;
   for (const p of after.parts) {
-    const prev = before.parts.find((q) => q.id === p.id);
-    const d = (p.score - (prev?.score ?? 0)) * p.weight;
+    const prev = before.parts.find((q) => q.id === p.id)?.score ?? 0;
+    const d = (p.score - prev) * p.weight;
     if (d > gain) {
       gain = d;
       best = p;
+      was = prev;
     }
   }
-  return best ? { reason: `${best.label}: ${best.detail}`, partId: best.id } : { reason: '', partId: '' };
+  if (!best) return { reason: '', detail: '', partId: '' };
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  return { reason: `${best.label}: ${pct(was)} → ${pct(best.score)}`, detail: best.detail, partId: best.id };
+}
+
+/** The best suggestions with at most `perPart` for any one score part. */
+function diverse(all: Suggestion[], limit: number, perPart: number): Suggestion[] {
+  const seen = new Map<string, number>();
+  const out: Suggestion[] = [];
+  for (const s of all) {
+    const n = seen.get(s.partId) ?? 0;
+    if (n >= perPart) continue;
+    seen.set(s.partId, n + 1);
+    out.push(s);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 /** Copies of `card` the options still allow into `cards` (rules limit, and what the collection holds when it is the source). */
@@ -122,7 +142,7 @@ export function suggestAdds(ev: DeckEvaluator, cards: readonly DeckCard[], optio
     out.push({ move, total: after.total, delta: after.total - base.total, ...reasonFor(base, after) });
   }
   out.sort((a, b) => b.delta - a.delta || (b.move.relevance ?? 0) - (a.move.relevance ?? 0));
-  return out.slice(0, options.limit ?? 8);
+  return diverse(out, options.limit ?? 8, options.perPart ?? 3);
 }
 
 /** How much each line carries: the score lost when one copy leaves. Lowest first. */
@@ -158,7 +178,7 @@ export function suggestSwaps(ev: DeckEvaluator, cards: readonly DeckCard[], opti
     }
   }
   out.sort((a, b) => b.delta - a.delta);
-  return out.slice(0, options.limit ?? 5);
+  return diverse(out, options.limit ?? 5, options.perPart ?? 3);
 }
 
 export interface BuildResult {
