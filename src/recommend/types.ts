@@ -33,7 +33,18 @@ export interface DeckScore {
   issues: string[];
 }
 
-export type DeckFormat = 'standard' | 'expanded' | 'any';
+/**
+ * A format id the game's evaluator understands: "standard", "expanded" and
+ * "any" for Pokémon; other games name their own. "any" (no format limit)
+ * exists in every game.
+ */
+export type DeckFormat = string;
+
+/** A format the user can pick, in the evaluator's display order. */
+export interface FormatOption {
+  id: DeckFormat;
+  label: string;
+}
 
 export interface BuildOptions {
   /** Where cards may come from: the collection only, the whole catalog, or the catalog with owned cards preferred. */
@@ -69,6 +80,14 @@ export interface Suggestion {
 export interface DeckEvaluator {
   game: GameId;
   rules: DeckRules;
+  /** The formats `BuildOptions.format` may name, "any" included; a game without formats leaves this out. */
+  formats?: readonly FormatOption[];
+  /**
+   * Finishes a deck the builder filled section by section: given the built
+   * main deck, returns the deck with whatever else the game wants (a
+   * Yu-Gi-Oh! Extra Deck). The builder calls it once, after its last swap.
+   */
+  complete?(cards: readonly DeckCard[], options: BuildOptions, pool: readonly CatalogCard[]): DeckCard[];
   /** The catalog card behind a deck line's id. */
   card(id: string): CatalogCard | undefined;
   score(cards: readonly DeckCard[]): DeckScore;
