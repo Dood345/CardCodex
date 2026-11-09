@@ -35,7 +35,7 @@ describe('advice for the deck screens', () => {
   it('knows which games have a recommender and what to offer', () => {
     expect(hasRecommender('pokemon')).toBe(true);
     expect(SOURCES.map((s) => s.id)).toEqual(['prefer-collection', 'collection', 'catalog']);
-    expect(formatsOf(ev).some((f) => f.id === 'any')).toBe(true);
+    expect(formatsOf(ev).map((f) => f.id)).toEqual(['standard', 'expanded', 'any']);
     expect(formatsOf({ ...ev, formats: undefined })).toEqual([{ id: 'any', label: 'Any format' }]);
   });
 
@@ -115,6 +115,12 @@ describe('advice for the deck screens', () => {
     expect(ideas).toHaveLength(8);
     expect(new Set(ideas.map((c) => c.name)).size).toBe(8);
     for (const c of ideas) expect(ev.kindOf(c)).toBe('pokemon');
+    // The evaluator's own ideas come from several Energy types.
+    expect(new Set(ideas.map((c) => ev.features(c).types[0])).size).toBeGreaterThan(4);
+    // Without them, the fallback takes the monsters with the highest printed HP.
+    const plain = seedIdeas({ ...ev, seedIdeas: undefined }, pool, 5);
+    expect(plain).toHaveLength(5);
+    expect(new Set(plain.map((c) => c.name)).size).toBe(5);
     expect(seedIdeas({ ...ev, seedIdeas: (p, n) => p.slice(0, n) }, pool, 2)).toEqual(pool.slice(0, 2));
   });
 });

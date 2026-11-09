@@ -27,7 +27,7 @@ import { normalizeText } from '@/data/normalize';
 import type { CatalogCard } from '@/data/types';
 import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-rules';
 import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
-import type { BuildOptions, DeckEvaluator, DeckScore, ScorePart } from './types';
+import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, ScorePart } from './types';
 
 /* ---------- features ---------- */
 
@@ -389,6 +389,13 @@ export interface PokemonEvaluator extends DeckEvaluator {
    */
   fits(cards: readonly DeckCard[], adds: readonly CatalogCard[]): boolean;
 }
+
+/** The formats a Pokémon deck can be built for, from TCGdex's legality flags per printing. */
+export const POKEMON_FORMATS: readonly FormatOption[] = [
+  { id: 'standard', label: 'Standard' },
+  { id: 'expanded', label: 'Expanded' },
+  { id: 'any', label: 'Any format' },
+];
 
 export const POKEMON_WEIGHTS = { rules: 10, basics: 10, lines: 10, energy: 15, draw: 15, power: 10, synergy: 10, focus: 10, era: 10 } as const;
 
@@ -971,5 +978,45 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     return true;
   }
 
-  return { game: 'pokemon', rules, fits, card: (id) => index.cardsById.get(id), score, pool, requirements, kindOf, relevance, features: featuresOf };
+  /**
+   * Cards worth building around: evolved attackers (and Basics that hit like one) by printed damage, taken in
+   * turn from each Energy type so the ideas are not eight Fire decks.
+   */
+  function seedIdeas(candidates: readonly CatalogCard[], count: number): CatalogCard[] {
+    const byType = new Map<string, { card: CatalogCard; damage: number }[]>();
+    for (const card of candidates) {
+      const f = featuresOf(card);
+      if (!f.isPokemon || !f.best || f.best.damage < 60 || !f.types.length) continue;
+      let list = byType.get(f.types[0]);
+      if (!list) byType.set(f.types[0], (list = []));
+      list.push({ card, damage: f.best.damage });
+    }
+    const queues = [...byType.keys()].sort().map((t) => byType.get(t)!.sort((x, y) => y.damage - x.damage || (x.card.id < y.card.id ? -1 : 1)));
+    const out: CatalogCard[] = [];
+    const seen = new Set<string>();
+    for (let round = 0; out.length < count && queues.some((q) => q.length > round); round++) {
+      for (const q of queues) {
+        const pick = q[round];
+        if (!pick || seen.has(pick.card.name) || out.length >= count) continue;
+        seen.add(pick.card.name);
+        out.push(pick.card);
+      }
+    }
+    return out;
+  }
+
+  return {
+    game: 'pokemon',
+    rules,
+    formats: POKEMON_FORMATS,
+    fits,
+    card: (id) => index.cardsById.get(id),
+    score,
+    pool,
+    requirements,
+    kindOf,
+    relevance,
+    seedIdeas,
+    features: featuresOf,
+  };
 }
