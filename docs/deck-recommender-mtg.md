@@ -145,14 +145,14 @@ hexproof/ward/indestructible, capped at 2.5; Vehicles count 0.6 of that. A creat
 | One land a turn | CR 305.2 |
 | Basic land types and the colour each makes | CR 305.6 |
 | A basic land is a land with the supertype basic | CR 205.4c (and `isBasicLand` in `src/games/mtg/catalog.ts`) |
-| Mana value; X is 0 outside the stack; split cards add their halves | CR 202.3, 202.3e, 202.3d (the catalog's `mv` is Scryfall's `cmc`) |
+| Mana value; X is 0 outside the stack; a hybrid symbol counts its largest component; split cards add their halves (the catalog's `mv`, Scryfall's `cmc`; the evaluator uses the front half's own value instead) | CR 202.3, 202.3e, 202.3f, 202.3d |
 | Hybrid and Phyrexian mana | CR 107.4e, 107.4f |
 | Format legality, banned and restricted cards | Scryfall's `legalities` in the bulk file of 2026-11-09 (a snapshot: rotation and bans after that date need a rebuild). "Restricted" is read as one copy; that limit comes from the tournament rules (CR 100.6 points to them), which were not re-read for this document |
 
 Formats offered (`MTG_FORMATS`): Standard, Pioneer, Modern, Legacy, Vintage, Pauper, and "Any format".
 "Any" is every card legal in at least one of those six, which keeps out un-cards, ante cards,
-conspiracies and other cards no constructed format allows. Pauper legality is Scryfall's (a card
-printed at common somewhere), not the rarity of the printing in the deck.
+conspiracies and other cards no constructed format allows. Pauper legality is Scryfall's flag for the Oracle card,
+not the rarity of the printing in the deck.
 
 ## Builder side
 
@@ -195,8 +195,9 @@ for the features of all 32,490 cards. Phone timings are unmeasured.
 
 `MTG_BENCH=1 npx vitest run src/recommend/mtg.test.ts` builds a deck under Standard from each of 12
 seeds (`mtgSeeds(ev, pool, 2)`: Guardian of the Great Door, The Sentry, Golden Guardian, The
-Mindskinner, Flitterwing Nuisance, Moonshadow, Sunset Saboteur, Hazoret, Godseeker, Ball Lightning,
-Pawpatch Recruit, Agonasaur Rex, Devouring Sugarmaw // Have for Dinner, The Gitrog, Ravenous Ride),
+Mindskinner, Sleep-Cursed Faerie, Moonshadow, Rot-Curse Rakshasa, Hazoret, Godseeker, Ball Lightning,
+Bristlebane Battler, Cactuar, The Gitrog, Ravenous Ride, Chief Warg's Company; ten of them sit at the
+threat-value cap of 2.5, so among those the order is power per mana value, then the lower id),
 runs `runBench` with `scoreJudges` and Magic damage labels (`spells`: a third of the noncreature spells
 swapped for random ones; `lands`: half the lands; `creatures`: a third of the creatures and
 planeswalkers), and writes `scripts/.cache/deck-bench/mtg-report.md`. Every built deck is legal with
@@ -206,32 +207,32 @@ Share of decks the judge rates above the damaged version; 5 versions of each dec
 
 | Judge | Mean | Pile | swap-6 | swap-12 | swap-24 | spells | lands | creatures | Order |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Score | 99.79 | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 0.99 |
-| Deck rules | 1.00 | 100% | 99% | 100% | 100% | 100% | 100% | 100% | 0.77 |
-| Lands | 1.00 | 100% | 99% | 99% | 100% | 91% | 50% | 94% | 0.97 |
-| Colours | 1.00 | 96% | 84% | 97% | 100% | 73% | 100% | 93% | 0.84 |
-| Curve | 1.00 | 100% | 93% | 98% | 100% | 75% | 50% | 90% | 0.97 |
-| Card advantage | 1.00 | 100% | 85% | 99% | 100% | 96% | 73% | 97% | 0.93 |
-| Interaction | 0.99 | 100% | 82% | 93% | 100% | 99% | 46% | 84% | 0.92 |
-| Threats | 1.00 | 87% | 44% | 57% | 40% | 50% | 50% | 95% | 0.33 |
-| Synergy | 0.99 | 100% | 91% | 98% | 100% | 82% | 85% | 98% | 0.93 |
-| Focus | 1.00 | 100% | 100% | 100% | 100% | 100% | 50% | 100% | 0.92 |
+| Score | 99.79 | 100% | 100% | 100% | 100% | 100% | 100% | 100% | 1.00 |
+| Deck rules | 1.00 | 100% | 99% | 100% | 100% | 100% | 100% | 100% | 0.78 |
+| Lands | 1.00 | 100% | 99% | 100% | 100% | 91% | 50% | 99% | 0.98 |
+| Colours | 1.00 | 98% | 85% | 98% | 100% | 73% | 99% | 97% | 0.86 |
+| Curve | 1.00 | 100% | 96% | 99% | 100% | 78% | 50% | 93% | 0.98 |
+| Card advantage | 1.00 | 100% | 88% | 98% | 100% | 92% | 75% | 92% | 0.93 |
+| Interaction | 0.99 | 100% | 81% | 95% | 97% | 98% | 47% | 82% | 0.91 |
+| Threats | 1.00 | 87% | 50% | 63% | 53% | 50% | 50% | 100% | 0.41 |
+| Synergy | 0.99 | 100% | 88% | 98% | 100% | 76% | 92% | 98% | 0.90 |
+| Focus | 1.00 | 100% | 100% | 100% | 100% | 100% | 50% | 100% | 0.91 |
 
-Judged by the "any" evaluator instead (legality off), the total is unchanged (100% everywhere but
-order 1.00) and only Deck rules moves: 98% pile, 69% / 71% / 89% swap-6/12/24, 62% spells, 71% lands,
+Judged by the "any" evaluator instead (legality off), the total is unchanged (100% everywhere, order
+1.00) and only Deck rules moves: 99% pile, 66% / 70% / 89% swap-6/12/24, 64% spells, 69% lands,
 67% creatures. Under Standard, then, part of the Deck rules column is legality alone: the random
 replacements come from every card printed in the deck's years (`eraPool`), many not legal in
 Standard. The total does not depend on it.
 
 What it shows:
 
-- The total tells every built deck from every damaged copy and orders the ladder (0.99).
+- The total tells every built deck from every damaged copy and orders the ladder (1.00).
 - **Built decks hit the ceiling** (99.8 of 100): every part is an "enough of it" measure, and the
   builder climbs until each is met. Among decks at the ceiling the score cannot choose; relevance
   breaks the ties. The score cannot rank strong decks against each other, only tell sound from unsound.
 - **Swapped lands are invisible to Lands, Curve and Focus** (50%): a random land is still a land.
   Colours catches them (100%) through the share of lands that make the deck's colours.
-- **Threats barely sees damage** (order 0.33, 40–57% on swaps): random creatures of the era are often
+- **Threats barely sees damage** (order 0.41, 50–63% on swaps): random creatures of the era are often
   as strong on paper as the chosen ones, and printed power says little about what a creature does.
   This is the part a playtest should replace, as on the Pokémon side.
 - Built decks lean on the cheapest answers the regexes find (X-cost burn counts at mana value 1), and
@@ -242,8 +243,10 @@ What it shows:
 
 - **Sideboard and Commander** are not modelled (nor companions, Brawl, Oathbreaker). Colour identity
   is in the file for when Commander comes.
-- **Multi-faced cards:** pips come from the front face's cost (the catalog's), so the back half of a
-  split card or an adventure does not ask for its colour; all faces' text counts for roles, so a
+- **Multi-faced cards:** the catalog's cost of a split, adventure or flip card holds both halves
+  ("{1}{W} // {1}{W}{W}", 353 cards); the evaluator casts the front half, with that half's own pips
+  and mana value (`costMv`), so the other half does not ask for its colour and a split card's curve
+  slot is its front half, not the two halves' sum. All faces' text counts for roles, so a
   transforming creature whose back face removes things is counted as removal. Modal double-faced
   spell // land cards count half a land. Meld pairs are not linked.
 - **Text reading is regular expressions**: conditional removal ("destroy target creature with power 4

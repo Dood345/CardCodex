@@ -324,6 +324,17 @@ function maskName(text: string, name: string, faces: readonly string[]): string 
   return out;
 }
 
+/** Mana value of a cost string (CR 202.3): generic numbers, 1 per other symbol, X as 0, a hybrid's largest component. */
+export function costMv(cost: string): number {
+  let n = 0;
+  for (const m of cost.matchAll(/\{([^}]+)\}/g)) {
+    const parts = m[1].split('/');
+    if (parts.every((p) => /^[XYZ]$/.test(p))) continue;
+    n += Math.max(...parts.map((p) => (/^\d+$/.test(p) ? Number(p) : 1)));
+  }
+  return n;
+}
+
 function pipsOf(cost: string | undefined): PipGroup[] {
   const groups = new Map<string, number>();
   for (const m of (cost ?? '').matchAll(/\{([^}]+)\}/g)) {
@@ -520,7 +531,10 @@ export function createMtgEvaluator({ index, text, format = 'any' }: MtgEvaluator
     if (!manaWeight) produces = '';
 
     // Threat: power against the 75th-percentile power at the card's mana value, plus evasion.
-    const mv = card.mv ?? 0;
+    // A split or adventure card's catalog cost holds both halves ("{1}{W} // {1}{W}{W}"): the front half is what
+    // the deck casts on curve, with its own mana value (a split card's catalog mana value is both halves', CR 202.3d).
+    const frontCost = (card.cost ?? '').split(' // ')[0];
+    const mv = (card.cost ?? '').includes(' // ') ? costMv(frontCost) : (card.mv ?? 0);
     const kws = new Set(entry?.keywords ?? []);
     const power = num(card.pow);
     const evasive = kws.has('Flying') || kws.has('Trample') || kws.has('Menace') || kws.has('Shadow') || kws.has('Fear') || kws.has('Intimidate') || RE_UNBLOCKABLE.test(masked);
@@ -593,7 +607,7 @@ export function createMtgEvaluator({ index, text, format = 'any' }: MtgEvaluator
     const any = RE_ANY_NUMBER.exec(masked);
     if (any) copyLimit = any[1] ? (NUMBER_WORD[any[1].toLowerCase()] ?? Number(any[1])) || 4 : Infinity;
 
-    const pips = pipsOf(card.cost);
+    const pips = pipsOf(frontCost);
     const colours = 'WUBRG'
       .split('')
       .filter((l) => pips.some((p) => p.colours.includes(l)) || (card.types ?? []).includes(MTG_COLORS[l]))
@@ -1140,7 +1154,9 @@ export function mtgSeeds(ev: MtgEvaluator, pool: readonly CatalogCard[], perColo
   }
   const out: CatalogCard[] = [];
   for (const g of ['W', 'U', 'B', 'R', 'G', 'multi']) {
-    const list = (groups.get(g) ?? []).sort((a, b) => b.threat - a.threat || (a.card.id < b.card.id ? -1 : 1));
+    // Many creatures reach the threat cap; among them, more power per mana first, then the lower id.
+    const ratio = (c: CatalogCard) => ev.features(c).power / Math.max(1, ev.features(c).mv);
+    const list = (groups.get(g) ?? []).sort((a, b) => b.threat - a.threat || ratio(b.card) - ratio(a.card) || (a.card.id < b.card.id ? -1 : 1));
     out.push(...list.slice(0, perColour).map((x) => x.card));
   }
   return out;

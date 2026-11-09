@@ -17,7 +17,7 @@ import { formatReport, runBench, scoreJudges } from './bench/bench';
 import { builtCorpus } from './bench/built';
 import { swapAny, swapKind } from './bench/damage';
 import { buildDeck, suggestAdds } from './builder';
-import { colourChance, createMtgEvaluator, hyperAtLeast, landDrops, landTarget, MTG_FORMATS, mtgSeeds, saturating, type MtgEvaluator } from './mtg';
+import { colourChance, costMv, createMtgEvaluator, hyperAtLeast, landDrops, landTarget, MTG_FORMATS, mtgSeeds, saturating, type MtgEvaluator } from './mtg';
 import { buildMtgTextIndex, MTG_TEXT_FORMATS, type MtgTextFile } from './mtg-text';
 import type { BuildOptions } from './types';
 
@@ -157,6 +157,20 @@ describe('Magic evaluator features', () => {
       return e?.keywords.includes('Ward') && !/counter/i.test(e.text.replace(/Ward/g, ''));
     })!;
     expect(ev.features(ward).roles.has('counter')).toBe(false);
+  });
+
+  it('casts a split or adventure card by its front half', () => {
+    expect(costMv('{2}{W}{W}')).toBe(4);
+    expect(costMv('{X}{R}')).toBe(1);
+    expect(costMv('{2/W}{U/P}')).toBe(3);
+    const halves = index.catalog.cards.filter((c) => (c.cost ?? '').includes(' // '));
+    expect(halves.length).toBeGreaterThan(100);
+    for (const c of halves) {
+      const f = ev.features(c);
+      const front = c.cost!.split(' // ')[0];
+      expect(f.mv).toBe(costMv(front));
+      expect(f.pips.reduce((n, p) => n + p.n, 0)).toBeLessThanOrEqual(Math.max(1, f.mv));
+    }
   });
 
   it('allows any number of the cards that say so, and one of a restricted card in Vintage', () => {
