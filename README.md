@@ -100,7 +100,8 @@ with Capacitor. Your collection lives only on your device.
   copies you own and how many are missing, and one tap puts every missing card on your wishlist.
   Each game's deck rules show as reminders, never enforced: a Pokémon deck has 60 cards and four
   copies of a card at most (basic Energy is unlimited); a Yu-Gi-Oh! deck is split into Main, Extra
-  and Side (see below). "Share" sends the deck through the Android share sheet (Messenger, Quick
+  and Side (see below); a Magic deck has 60 cards or more and a sideboard of up to 15, or follows
+  Commander rules (100 cards, one of each) when you switch the deck to them. "Share" sends the deck through the Android share sheet (Messenger, Quick
   Share, mail…) as a small `.ccdeck` file that opens in a friend's CardCodex when they tap it, or as
   a plain message: the list in words plus a short `CCD1.` code and a `cardcodex://deck/` link to
   paste into Decks → Import (which opens a deck file too). Either way the friend gets the deck with
@@ -111,11 +112,27 @@ with Capacitor. Your collection lives only on your device.
   come from YGOPRODeck (`npm run decks:ygo`, one copy per printed card); Pokémon has no starter
   decks yet, because TCGdex carries no deck lists and the official product pages cannot be
   fetched by a build script.
+- **Deck check** – every deck page has a "Deck check" that scores the deck out of 100, part by part
+  with a one-line finding each (for Pokémon: deck rules including ACE SPEC and Radiant limits, Basics
+  for the opening hand, evolution lines, Energy, draw and search, power, synergy, focus, era), and
+  says what to do next: cards to add while the deck is short, swaps once it is full, each with its
+  reason and one tap to apply. You choose where suggestions come from ("Prefer my cards", "Only my
+  cards", "Any card") and the format. A full Pokémon deck is also played 400 practice games by a
+  simple test pilot ("attacks by turn 3 in 45% of games"), "Find a swap by playing" looks for a swap
+  that plays better, and "Practice hand" deals an opening hand you can draw from. Yu-Gi-Oh! (TCG
+  Forbidden & Limited list or none) and Magic (Standard to Vintage, 60-card decks) have their own
+  parts; see `docs/deck-recommender.md`. The score reads the cards' own rules text. It knows nothing
+  about tournament results.
+- **Build a deck** – Decks → "Build one for me": pick one to three cards to build around, or take
+  an idea, and the app grows a full deck from them (60 cards for Pokémon and Magic; a 40-card Main
+  Deck and an Extra Deck it can make for Yu-Gi-Oh!). The result shows its score, how much of it
+  you own and how it came together. For Pokémon, "Tune by playing" improves it swap by swap by
+  playing it. "Keep this deck" saves it; "Build another" tries again without the last attempt's
+  cards.
 - **Guided tour** – a short, skippable walk through the tabs runs on first launch and can be
   replayed from Settings. Its wording follows the active game.
 
-What comes next (Pokémon starter decks and card suggestions for a deck, the Magic
-scanner) is in [ROADMAP.md](ROADMAP.md).
+What comes next (Pokémon starter decks, the Magic scanner) is in [ROADMAP.md](ROADMAP.md).
 
 ### Yu-Gi-Oh! mode
 
@@ -184,6 +201,11 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   value, colors, power/toughness, loyalty, defense; printings by set and collector number with
   rarity, Scryfall id (which names the image) and artist. Expanded at load time
   (`src/games/mtg/catalog.ts`).
+- `text.json`, `ygo/text.json`, `mtg/text.json` – the cards' rules text and what goes with it
+  (attacks and legality for Pokémon from TCGdex; effect text and the TCG Forbidden & Limited list
+  from YGOPRODeck; Oracle text, keywords, produced mana and format legality from Scryfall), 0.8 to
+  1.4 MB gzipped each. Only the deck check and the deck builder load them, on first use
+  (`npm run text`, `text:ygo`, `text:mtg`).
 - `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (19.7k cards,
   32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
   (`src/scanner/hash.ts`). Built from the TCGdex images by `npm run hashes` (each image is downloaded

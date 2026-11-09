@@ -22,7 +22,7 @@ import type { BuildOptions, PlaySummary } from '@/recommend/types';
 import { EmptyState, Img, TopBar } from '@/ui/components';
 import { CloseIcon } from '@/ui/icons';
 import { href, navigate } from '@/ui/router';
-import { advisorMemory, BuildChoices, PLAY_GAMES, PlayLines, PracticeBlock, SCORE_NOTE, ScoreParts, useEvaluator } from './deck/DeckAdvisor';
+import { advisorMemory, BuildChoices, PLAY_GAMES, PlayLines, PracticeBlock, SCORE_NOTE, ScoreParts, useEvaluator, usePool } from './deck/DeckAdvisor';
 import { DeckSections } from './DeckSections';
 
 const MAX_SEEDS = 3;
@@ -56,11 +56,22 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
 
   const formats = useMemo(() => (loaded ? formatsOf(loaded) : []), [loaded]);
   const options = useMemo<BuildOptions>(() => ({ source, collection, format }), [source, collection, format]);
-  const pool = useMemo(() => (ev ? ev.pool(options) : []), [ev, options]);
-  // Ideas come from the user's own cards when the source prefers them and they own enough to choose from.
-  const ownedPool = useMemo(() => (source === 'catalog' ? [] : pool.filter((c) => (collection.get(c.id)?.qty ?? 0) > 0)), [source, pool, collection]);
-  const fromOwned = source === 'collection' || ownedPool.length >= 20;
-  const ideas = useMemo(() => (ev ? seedIdeas(ev, fromOwned ? ownedPool : pool, 8) : []), [ev, fromOwned, ownedPool, pool]);
+  const getPool = usePool(ev, options);
+  // Ideas need the whole pool read, which takes a moment on a big catalog, so they arrive after the first paint.
+  // They come from the user's own cards when the source prefers them and they own enough to choose from.
+  const [ideas, setIdeas] = useState<{ cards: CatalogCard[]; fromOwned: boolean; poolSize: number } | null>(null);
+  useEffect(() => {
+    if (!ev) return;
+    setIdeas(null);
+    const t = window.setTimeout(() => {
+      const pool = getPool();
+      const owned = source === 'catalog' ? [] : pool.filter((c) => (collection.get(c.id)?.qty ?? 0) > 0);
+      const fromOwned = source === 'collection' || owned.length >= 20;
+      setIdeas({ cards: seedIdeas(ev, fromOwned ? owned : pool, 8), fromOwned, poolSize: pool.length });
+    }, 30);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ev, options]);
   const results = useMemo(() => (query.trim() ? searchCards(index, query, {}, collection, 12).cards : []), [index, query, collection]);
 
   // A different start or different rules make the last deck stale.
@@ -231,11 +242,12 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
                 Leave out cards my other decks already use
               </label>
             )}
-            {seeds.length < MAX_SEEDS && ideas.length > 0 && !query.trim() && (
+            {!ideas && <p className="deck-hint">Looking through the cards…</p>}
+            {ideas && seeds.length < MAX_SEEDS && ideas.cards.length > 0 && !query.trim() && (
               <>
-                <h3 className="advisor-sub">{fromOwned ? 'Ideas from your cards' : 'Ideas'}</h3>
+                <h3 className="advisor-sub">{ideas.fromOwned ? 'Ideas from your cards' : 'Ideas'}</h3>
                 <div className="chip-row inline build-ideas">
-                  {ideas
+                  {ideas.cards
                     .filter((c) => !seeds.some((s) => s.name === c.name))
                     .map((c) => (
                       <button key={c.id} type="button" className="chip" onClick={() => addSeed(c)}>
@@ -245,7 +257,7 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
                 </div>
               </>
             )}
-            {source === 'collection' && pool.length === 0 && (
+            {source === 'collection' && ideas?.poolSize === 0 && (
               <p className="deck-hint">Your collection has no cards for this format yet. Try “Prefer my cards”.</p>
             )}
             <div className="deck-actions build-actions">

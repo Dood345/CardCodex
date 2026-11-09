@@ -7,9 +7,10 @@ published decks (no source we may ship exists for Pokémon; see `pokemon-deck-so
 engine can propose decks nobody has played, and "competitive" here means rule-legal, consistent and
 synergistic rather than matching a tournament meta.
 
-Phase 1 (this document) is the data and the engine for Pokémon, with tests. The deck page and a
-"Build a deck" page come next; Yu-Gi-Oh! and Magic evaluators after that (their catalogs have no
-rules text yet either).
+This document covers the data and the engine for Pokémon, tuning by play, and how the app uses the
+engine for all three games. Yu-Gi-Oh! and Magic have their own documents (`deck-recommender-ygo.md`,
+`deck-recommender-mtg.md`); the playtest simulator is in `deck-playtest.md` and the benchmark in
+`deck-bench.md`.
 
 ## Data: `public/data/text.json`
 
@@ -95,17 +96,64 @@ only. Amounts ("2 Energy at a time") are read into `amount` but the Energy count
   Expanded, any, from TCGdex's legality flags), names to avoid (for variety against the user's other
   decks).
 
-## Validation (2026-11-09, not committed)
+## Tuning by play (`src/recommend/tune.ts`)
 
-The 186 theme and starter decks of `PokemonTCG/pokemon-tcg-data` (unlicensed, so used only
-locally, never shipped) were scored against a random pile of 60 distinct cards from the same years
-and against a copy with a third of the Trainers replaced by random Trainers of the era:
+The score counts cards and saturates: the first decks the builder made scored 98 of 100 and attacked
+by turn three in one game out of six (`deck-bench.md`). An evaluator that can play a deck
+(`DeckEvaluator.playtest`; Pokémon wraps the simulator of `deck-playtest.md` in
+`src/recommend/pokemon-play.ts`) lets the builder go on where the score stops:
 
-- every real deck outscored its era's random pile (mean 75.5 vs 53.6);
-- real decks beat their damaged copy 118 of 186 times (theme decks are weak decks, and a random
-  Trainer of the era often draws or searches too);
-- part means over the real decks: rules 0.94, basics 0.95, lines 0.90, energy 0.47 (theme decks run
-  16–20 Energy, far over the fitted amount), draw 0.32, power 0.62, synergy 0.87, focus 0.72, era 0.95.
+- A round plays the deck without one copy of each line to find the copy it misses least, then with
+  each candidate in its place (another copy of what the deck plays, and the pool's most relevant
+  cards). Every candidate of a round is played with the same seed, 120 games each.
+- The best swap is played again on 400 fresh games against the unchanged deck and kept only if it
+  still wins by more than 1%, costs at most 3 points of score, adds no rule issue, and leaves the
+  test pilot playing toward the card the deck was built around.
+- The value climbed is the mean damage per turn over the first six turns, scaled by how often the
+  deck had a play. It is a solo measure: no opponent, no Prize race.
+- On the ten Standard seed decks eight rounds take about 3 s a deck on a desktop and raise attacking
+  by turn three from 19% to 35% of games (tournament lists: 45%).
+
+What tuning kept asking for went back into the score, so the two agree more often: the Energy amount
+follows the main attacker's cost (`4 + 3 × cost`, less a little for acceleration, 6 to 16), falls in
+proportion when short, and counts Energy that powers nothing as dead cards; an attacker has full
+credit at three copies; Basic Energy is relevant to attackers that pay in Colorless only.
+
+## In the app
+
+- `src/recommend/index.ts` is the registry: `hasRecommender(game)` and `loadEvaluator(index)`, which
+  loads a game's evaluator and text file on first use. `src/recommend/advice.ts` holds what the
+  screens ask as plain functions (`advise`, `describeMove`, `namesInDecks`, `seedIdeas`).
+- **Deck check** (`src/pages/deck/DeckAdvisor.tsx`), on every deck page that follows the game's
+  default rules: score and parts, issues, cards to add or swaps with reasons, the playtest lines,
+  "Find a swap by playing" (one tuning round) and practice hands.
+- **Build a deck** (`src/pages/DeckBuildPage.tsx`, `#/decks/build`, `#/decks/build/<card id>`): one
+  to three seeds or an idea (`DeckEvaluator.seedIdeas`), source and format, the built deck with its
+  score, playtest, "Tune by playing" (eight rounds, one per timer tick), "Keep this deck" and
+  "Build another" (avoids the last attempt's cards).
+- Contract additions for the screens and the other games (`src/recommend/types.ts`): `formats` with
+  a default, `forFormat` (an evaluator per format where the format changes the rules), `complete`
+  (the builder fills the first section, the evaluator adds the rest: a Yu-Gi-Oh! Extra Deck),
+  `playtest`, `practice` (an opening hand by the game's rules; `practice.ts` has the plain shuffle),
+  `seedIdeas`.
+
+## The other games
+
+- **Yu-Gi-Oh!**: `docs/deck-recommender-ygo.md`. Seven parts (rules with the TCG list, consistency
+  as the chance of opening no starter, bricks, cohesion, interaction, Extra Deck access, shape);
+  builds a 40-card Main Deck and completes an Extra Deck the Main Deck can make.
+- **Magic**: `docs/deck-recommender-mtg.md`. Nine parts (rules and legality, lands, colours on
+  curve by the hypergeometric distribution, curve, card advantage, interaction, threats, synergy,
+  focus) for 60-card decks under Standard to Vintage. Commander decks get no check.
+- Neither has a playtest simulator, so their decks are scored, not played, and "Tune by playing" is
+  not offered. Their Build-a-deck ideas are the evaluator's own seeds (Magic) or the monsters with
+  the highest ATK (Yu-Gi-Oh!).
+
+## Validation
+
+`deck-bench.md` holds the benchmark: every judge (the score, each part, the playtest, simulated
+duels) against decks and their known-worse copies, over engine-built decks, 186 theme decks and 392
+tournament lists with their real win rates, with a recorded baseline.
 
 ## Known gaps
 
@@ -119,7 +167,10 @@ and against a copy with a third of the Trainers replaced by random Trainers of t
 - Energy coverage is by type, not by amount: one Basic Fire Energy and one Legacy Energy both cover a Fire
   attacker fully; the amount part fits the card count to the attack costs.
 - Standard legality comes from TCGdex's flags, which are a snapshot at catalog build time.
-- "Competitive" is structural. A meta layer would need Limitless TCG's API (keys are given to
-  public-facing projects on request) or another source whose terms allow it.
-- Yu-Gi-Oh! and Magic: `DeckEvaluator` is game-neutral and `textFileFor` returns null for them; each
-  needs its own text file (YGOPRODeck `desc`, Scryfall Oracle text) and evaluator.
+- "Competitive" is still structural plus solo play. Among tournament lists neither the score nor the
+  playtest follows the real win rates (`deck-bench.md`); a meta layer that ships derived tournament
+  data needs the permission asked for in `deck-results-sources.md`.
+- Build-a-deck seeds: a Yu-Gi-Oh! Extra Deck monster cannot be a seed yet (the pool holds Main Deck
+  cards), and Yu-Gi-Oh! ideas are picked by ATK rather than by archetype.
+- Magic: no sideboard advice, no Commander check (commander, colour identity).
+- The builder adds one copy at a time, which favours a fourth copy over a new card's first.

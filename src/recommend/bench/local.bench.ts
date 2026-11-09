@@ -47,10 +47,10 @@ it('deck benchmark', { timeout: 30 * 60_000 }, () => {
     reports[corpus.id] = runBench(ev, index, corpus, judges, { seed: 1, repeats: 5 });
     const id = `${corpus.id}:playtest`;
     reports[id] = runBench(ev, index, { ...corpus, id, label: `${corpus.label}, played` }, played, { seed: 1, repeats: 3, maxDecks: 80 });
-    // Winning: every deck (and two damaged copies of it) against a field of ten of the corpus's own decks.
+    // Winning: 40 decks, and one damaged copy of each kind, against a field of six of the corpus's own decks.
     const duelId = `${corpus.id}:duel`;
     const dueling = { ...corpus, id: duelId, label: `${corpus.label}, duels` };
-    reports[duelId] = runBench(ev, index, dueling, [judges[0], duelJudge(ev, dueling, { field: 10, games: 30, seed: 1 })], { seed: 1, repeats: 2, maxDecks: 46 });
+    reports[duelId] = runBench(ev, index, dueling, [judges[0], duelJudge(ev, dueling, { field: 6, games: 20, seed: 1 })], { seed: 1, repeats: 1, maxDecks: 40 });
   }
 
   let baseline: Record<string, BenchReport> = {};

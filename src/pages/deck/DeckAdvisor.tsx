@@ -7,12 +7,12 @@
  * playing, and deals practice hands. Closed until asked for, because opening
  * it loads the card texts. Games without an evaluator do not show it.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import type { Deck, DeckCard } from '@/data/db';
 import { adjustDeckCard } from '@/data/decks';
-import { cardImageUrl } from '@/data/types';
+import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { hasRecommender, loadEvaluator } from '@/recommend';
 import { advise, defaultFormat, describeMove, evaluatorFor, formatDelta, formatsOf, SOURCES, type Advice } from '@/recommend/advice';
 import { drawOne } from '@/recommend/practice';
@@ -41,6 +41,20 @@ export function useEvaluator(wanted: boolean): { ev: DeckEvaluator | null | unde
     };
   }, [index, wanted]);
   return state;
+}
+
+/**
+ * The candidate pool for an evaluator and its options, computed on first call and kept until either changes.
+ * Reading every card of a big catalog takes a moment (Magic: a second on a desktop), so callers ask for it
+ * from a timer or an event, after the screen has painted, never while rendering.
+ */
+export function usePool(ev: DeckEvaluator | null | undefined, options: BuildOptions): () => CatalogCard[] {
+  const kept = useRef<{ ev: DeckEvaluator; options: BuildOptions; pool: CatalogCard[] } | null>(null);
+  return () => {
+    if (!ev) return [];
+    if (!kept.current || kept.current.ev !== ev || kept.current.options !== options) kept.current = { ev, options, pool: ev.pool(options) };
+    return kept.current.pool;
+  };
 }
 
 /** What the user last chose, kept while the app runs so the next deck opens the same way. */
@@ -206,22 +220,23 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
   const [played, setPlayed] = useState<{ step: TuneStep | null } | null>(null);
 
   const options = useMemo<BuildOptions>(() => ({ source, collection, format }), [source, collection, format]);
-  const pool = useMemo(() => (ev ? ev.pool(options) : []), [ev, options]);
+  const getPool = usePool(ev, options);
 
-  // Scoring a deck is quick; a round of swaps is not instant on a phone, so it runs after the paint.
+  // Scoring a deck is quick; reading the pool and a round of swaps are not instant on a phone, so they run after the paint.
   useEffect(() => {
     if (!ev) return;
     setBusy(true);
     setPlayed(null);
     const t = window.setTimeout(() => {
-      const a = advise(ev, deck.cards, options, pool);
+      const a = advise(ev, deck.cards, options, getPool());
       setAdvice(a);
       // Playing a deck means something once it is full.
       setPlay(ev.playtest && a.mode === 'swap' ? ev.playtest(deck.cards, { games: PLAY_GAMES, seed: 1 }) : null);
       setBusy(false);
     }, 30);
     return () => window.clearTimeout(t);
-  }, [ev, deck.cards, options, pool]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ev, deck.cards, options]);
 
   if (!hasRecommender(game.id)) return null;
 
@@ -237,7 +252,7 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
     if (!ev) return;
     setTrying(true);
     window.setTimeout(() => {
-      const next = tuneRound(ev, tuneStart(deck.cards), { ...options, seed: Math.floor(Math.random() * 100000) }, pool);
+      const next = tuneRound(ev, tuneStart(deck.cards), { ...options, seed: Math.floor(Math.random() * 100000) }, getPool());
       setPlayed({ step: next.steps[0] ?? null });
       setTrying(false);
     }, 40);
@@ -266,7 +281,7 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
       {open && (
         <div className="advisor-body">
           {error && <p className="deck-hint">The card texts could not be loaded. Close and open the check to try again.</p>}
-          {!error && ev === undefined && <p className="deck-hint">Reading the card texts…</p>}
+          {!error && (ev === undefined || (ev && !advice)) && <p className="deck-hint">Reading the card texts…</p>}
           {ev && advice && (
             <>
               {advice.score.issues.length > 0 && (
