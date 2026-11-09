@@ -9,8 +9,8 @@
  */
 import type { DeckCard } from '@/data/db';
 import type { PokemonEvaluator } from './pokemon';
-import { playtest } from './sim';
-import type { DeckEvaluator, PlayOptions, PlaySummary } from './types';
+import { dealOpening, playtest } from './sim';
+import type { DeckEvaluator, PlayOptions, PlaySummary, PracticeHand } from './types';
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
 
@@ -36,7 +36,23 @@ export function pokemonPlaytest(ev: PokemonEvaluator, cards: readonly DeckCard[]
   return { value: r.meanDamagePerTurn * (0.7 + 0.3 * (1 - r.deadTurnRate)), plan: r.plan, lines, games: r.games };
 }
 
-/** The evaluator with its playtest attached. */
-export function withPokemonPlaytest(ev: PokemonEvaluator): PokemonEvaluator & Required<Pick<DeckEvaluator, 'playtest'>> {
-  return { ...ev, playtest: (cards, options) => pokemonPlaytest(ev, cards, options) };
+/** A practice deal by the Pokémon rules: seven cards, redrawn while there is no Basic Pokémon, then six Prize cards. */
+export function pokemonPractice(ev: PokemonEvaluator, cards: readonly DeckCard[], seed: number): PracticeHand {
+  const d = dealOpening(ev, cards, seed);
+  const n = d.mulligans.length;
+  const note = !d.ok
+    ? 'This deck has no Basic Pokémon, so no opening hand can be kept.'
+    : n
+      ? `Redrawn ${n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`}: no Basic Pokémon in the first ${n === 1 ? 'hand' : 'hands'}.`
+      : '';
+  return { hand: d.hand, aside: d.prizes, asideLabel: 'Prize cards', library: d.library, redraws: n, note };
+}
+
+/** The evaluator with its playtest and practice deals attached. */
+export function withPokemonPlaytest(ev: PokemonEvaluator): PokemonEvaluator & Required<Pick<DeckEvaluator, 'playtest' | 'practice'>> {
+  return {
+    ...ev,
+    playtest: (cards, options) => pokemonPlaytest(ev, cards, options),
+    practice: (cards, seed) => pokemonPractice(ev, cards, seed),
+  };
 }

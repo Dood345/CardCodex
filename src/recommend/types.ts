@@ -93,6 +93,22 @@ export interface PlaySummary {
   games: number;
 }
 
+/** A practice deal: the opening hand of a shuffled deck, for trying a deck out by hand. Plain data, so a screen can keep it. */
+export interface PracticeHand {
+  /** Card ids in hand, in the order drawn. */
+  hand: string[];
+  /** Cards set aside face down at the start (Pokémon: the six Prize cards); empty in games without any. */
+  aside: string[];
+  /** What the set-aside cards are called ("Prize cards"). */
+  asideLabel: string;
+  /** The rest of the deck, top card first. */
+  library: string[];
+  /** Opening hands that had to be shuffled back (Pokémon: no Basic Pokémon). */
+  redraws: number;
+  /** A line about the deal when there is something to say ("Redrawn twice: no Basic Pokémon"). */
+  note: string;
+}
+
 export interface DeckEvaluator {
   game: GameId;
   rules: DeckRules;
@@ -106,6 +122,8 @@ export interface DeckEvaluator {
   complete?(cards: readonly DeckCard[], options: BuildOptions, pool: readonly CatalogCard[]): DeckCard[];
   /** Plays the deck against nobody, seeded, and reports how it went; only games with a simulator have it (src/recommend/sim). */
   playtest?(cards: readonly DeckCard[], options: PlayOptions): PlaySummary;
+  /** Shuffles the deck from a seed and deals an opening hand by the game's rules. */
+  practice?(cards: readonly DeckCard[], seed: number): PracticeHand;
   /** Cards of `pool` worth building a deck around, best first: what "Build a deck" offers before the user has picked a seed. */
   seedIdeas?(pool: readonly CatalogCard[], count: number): CatalogCard[];
   /** The catalog card behind a deck line's id. */

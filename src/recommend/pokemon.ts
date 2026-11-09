@@ -740,7 +740,17 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       const avgCost = costSum / attackerQty;
       // Calibrated against the playtest simulator (docs/deck-playtest.md): tuned decks settled on more Energy than
       // the first formula allowed, and acceleration replaces only a few of them.
-      const target = Math.max(6, Math.min(16, 5 + 2.5 * avgCost - Math.min(3, 0.3 * accel)));
+      // The main attacker's cost sets the amount, not the average over every small Basic that can attack.
+      let topCost = 0;
+      let topDamage = 0;
+      for (const l of attackers) {
+        const d = l.f.best!.damage * Math.min(1, l.qty / 3);
+        if (d > topDamage) {
+          topDamage = d;
+          topCost = l.f.best!.costN;
+        }
+      }
+      const target = Math.max(6, Math.min(16, 4 + 3 * Math.max(avgCost, topCost) - Math.min(3, 0.3 * accel)));
       const coverage = w ? covered / w : 0;
       // Only Energy some attacker can use counts toward the amount: Basic Energy of a type no attacker needs, or a
       // Special Energy that provides nothing to these attackers, fills the deck without powering anything.

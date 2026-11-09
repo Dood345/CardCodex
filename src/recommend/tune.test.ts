@@ -9,7 +9,8 @@ import { pokemonSeeds } from './bench/built';
 import { buildDeck, type SuggestOptions } from './builder';
 import { buildTextIndex, type CardTextFile } from './card-text';
 import { createPokemonEvaluator } from './pokemon';
-import { pokemonPlaytest, withPokemonPlaytest } from './pokemon-play';
+import { pokemonPlaytest, pokemonPractice, withPokemonPlaytest } from './pokemon-play';
+import { dealPlain, drawOne } from './practice';
 import { canTune, tuneByPlay, tuneRound, tuneStart } from './tune';
 
 const dataDir = new URL('../../public/data/', import.meta.url);
@@ -41,6 +42,55 @@ describe('playtest summary', () => {
     const s = pokemonPlaytest(plain, energyOnly, { games: 50, seed: 1 });
     expect(s.value).toBe(0);
     expect(s.lines[0]).toMatch(/no Basic Pokémon/);
+  });
+});
+
+describe('practice hands', () => {
+  it('deals seven cards and six Prize cards from the 60, the same for the same seed', () => {
+    const d = pokemonPractice(plain, built.cards, 42);
+    expect(d.hand).toHaveLength(7);
+    expect(d.aside).toHaveLength(6);
+    expect(d.asideLabel).toBe('Prize cards');
+    expect(d.library).toHaveLength(47);
+    expect(d.hand.some((id) => plain.features(ev.card(id)!).isBasic)).toBe(true);
+    expect(pokemonPractice(plain, built.cards, 42)).toEqual(d);
+    expect(pokemonPractice(plain, built.cards, 43).hand).not.toEqual(d.hand);
+    expect(ev.practice(built.cards, 42)).toEqual(d);
+    const next = drawOne(d);
+    expect(next.hand).toEqual([...d.hand, d.library[0]]);
+    expect(next.library).toHaveLength(46);
+    expect(d.hand).toHaveLength(7);
+  });
+
+  it('says why a hand was redrawn, and when no hand can be kept', () => {
+    let redrawn = 0;
+    for (let seed = 1; seed <= 60 && !redrawn; seed++) {
+      const d = pokemonPractice(plain, built.cards, seed);
+      if (d.redraws) {
+        redrawn = d.redraws;
+        expect(d.note).toMatch(/^Redrawn (once|twice|\d+ times): no Basic Pokémon/);
+      } else expect(d.note).toBe('');
+    }
+    expect(redrawn).toBeGreaterThan(0);
+    const energyOnly = built.cards.filter((l) => ev.kindOf(ev.card(l.cardId)!) === 'energy');
+    expect(pokemonPractice(plain, energyOnly, 1).note).toMatch(/no Basic Pokémon/);
+  });
+
+  it('deals a plain hand for a game without rules of its own, from the main section only', () => {
+    const withSide: DeckCard[] = [...built.cards, { cardId: built.cards[0].cardId, qty: 3, zone: 'side' }];
+    // Pokémon decks have one section; a game with a side deck tells its lines apart.
+    const sided = { ...ev, rules: { ...ev.rules, sectionOf: (_c: unknown, l: { zone?: 'side' }) => (l.zone === 'side' ? ('side' as const) : ('main' as const)) } };
+    const d = dealPlain(sided, withSide, 5, 7);
+    expect(d.hand).toHaveLength(7);
+    expect(d.aside).toEqual([]);
+    expect(d.library).toHaveLength(53);
+    expect(d.redraws).toBe(0);
+    expect(dealPlain(sided, withSide, 5, 7)).toEqual(d);
+    expect(dealPlain(ev, withSide, 5, 7).library).toHaveLength(56);
+    expect(dealPlain(ev, [], 5, 5).hand).toEqual([]);
+    const all = [...d.hand, ...d.library].sort();
+    const expected = built.cards.flatMap((l) => Array.from({ length: l.qty }, () => l.cardId)).sort();
+    expect(all).toEqual(expected);
   });
 });
 

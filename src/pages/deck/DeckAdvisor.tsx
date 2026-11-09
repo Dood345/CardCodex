@@ -2,20 +2,27 @@
  * The deck check on the deck page: the recommender's score for the deck part
  * by part, the rule problems it sees, and what to do next — cards to add
  * while the deck is short, swaps once it is full — each with the reason and
- * one tap to apply. Closed until asked for, because opening it loads the
- * card texts. Games without an evaluator do not show it.
+ * one tap to apply. Where the game has a playtest simulator it also plays
+ * the deck (how soon it attacks, how often it stalls), finds swaps by
+ * playing, and deals practice hands. Closed until asked for, because opening
+ * it loads the card texts. Games without an evaluator do not show it.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
-import type { Deck } from '@/data/db';
+import type { Deck, DeckCard } from '@/data/db';
 import { adjustDeckCard } from '@/data/decks';
 import { cardImageUrl } from '@/data/types';
 import { hasRecommender, loadEvaluator } from '@/recommend';
 import { advise, describeMove, formatDelta, formatsOf, SOURCES, type Advice } from '@/recommend/advice';
-import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, Suggestion } from '@/recommend/types';
+import { drawOne } from '@/recommend/practice';
+import { canTune, tuneRound, tuneStart, type TuneStep } from '@/recommend/tune';
+import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, PlaySummary, PracticeHand, Suggestion } from '@/recommend/types';
 import { Chip, Img } from '@/ui/components';
 import { href } from '@/ui/router';
+
+/** Games behind the playtest numbers the screens show. */
+export const PLAY_GAMES = 400;
 
 /** The evaluator for the active catalog once `wanted` is true: undefined while loading, null when there is none or it failed. */
 export function useEvaluator(wanted: boolean): { ev: DeckEvaluator | null | undefined; error: boolean } {
@@ -63,6 +70,23 @@ export function ScoreParts({ score }: { score: DeckScore }) {
   );
 }
 
+/** What playing the deck showed: the plan the test pilot followed and its findings. */
+export function PlayLines({ play }: { play: PlaySummary }) {
+  return (
+    <div className="advisor-play">
+      {play.plan && <div className="advisor-plan">Plays toward {play.plan}</div>}
+      <ul>
+        {play.lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      <div className="advisor-detail">
+        From {play.games} practice games against nobody, played by a simple test pilot.
+      </div>
+    </div>
+  );
+}
+
 /** The source and format choices shared by the deck check and the Build-a-deck page. */
 export function BuildChoices({
   source,
@@ -102,6 +126,68 @@ export function BuildChoices({
 export const SCORE_NOTE =
   'The score reads the cards’ own text for rules of thumb. It knows nothing about tournament results, so treat it as a second opinion.';
 
+/** A practice hand: deal, draw one more, look at what was set aside, deal again. */
+export function PracticeBlock({ ev, cards }: { ev: DeckEvaluator; cards: readonly DeckCard[] }) {
+  const index = useCatalog();
+  // The hand belongs to the list it was dealt from: a changed deck list makes it meaningless, so it is dropped
+  // by comparing lists here, not by an effect that could run after the first tap.
+  const [dealt, setDealt] = useState<{ cards: readonly DeckCard[]; deal: PracticeHand } | null>(null);
+  const [peek, setPeek] = useState(false);
+  if (!ev.practice) return null;
+  const deal = dealt && dealt.cards === cards ? dealt.deal : null;
+  const setDeal = (d: PracticeHand) => setDealt({ cards, deal: d });
+  const fresh = () => {
+    setPeek(false);
+    setDeal(ev.practice!(cards, Math.floor(Math.random() * 0x7fffffff)));
+  };
+  const row = (ids: readonly string[]) => (
+    <div className="practice-hand">
+      {ids.map((id, i) => {
+        const card = index.cardsById.get(id);
+        const set = card && index.setsById.get(card.set);
+        return (
+          <a key={`${id}-${i}`} className="practice-card" href={card ? href(`/card/${card.id}`) : undefined} title={card?.name}>
+            {card && set ? <Img src={cardImageUrl(card, set.series, 'low')} alt={card.name} /> : null}
+            <span>{card?.name ?? id}</span>
+          </a>
+        );
+      })}
+    </div>
+  );
+  return (
+    <div className="advisor-practice">
+      <h3 className="advisor-sub">Practice hand</h3>
+      {deal && (
+        <>
+          {deal.note && <p className="deck-hint">{deal.note}</p>}
+          {row(deal.hand)}
+          {peek && deal.aside.length > 0 && (
+            <>
+              <div className="advisor-detail practice-aside">{deal.asideLabel}</div>
+              {row(deal.aside)}
+            </>
+          )}
+        </>
+      )}
+      <div className="deck-actions build-actions">
+        <button type="button" className="btn" onClick={fresh}>
+          {deal ? 'New hand' : 'Draw a hand'}
+        </button>
+        {deal && (
+          <button type="button" className="btn" disabled={!deal.library.length} onClick={() => setDeal(drawOne(deal))}>
+            Draw a card
+          </button>
+        )}
+        {deal && deal.aside.length > 0 && (
+          <button type="button" className="btn ghost" onClick={() => setPeek(!peek)}>
+            {peek ? `Hide ${deal.asideLabel.toLowerCase()}` : `Show ${deal.asideLabel.toLowerCase()}`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DeckAdvisor({ deck }: { deck: Deck }) {
   const game = useGame();
   const index = useCatalog();
@@ -112,7 +198,10 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
   const formats = useMemo(() => (ev ? formatsOf(ev) : []), [ev]);
   const [format, setFormat] = useState(advisorMemory.format[game.id] ?? 'any');
   const [advice, setAdvice] = useState<Advice | null>(null);
+  const [play, setPlay] = useState<PlaySummary | null>(null);
   const [busy, setBusy] = useState(false);
+  const [trying, setTrying] = useState(false);
+  const [played, setPlayed] = useState<{ step: TuneStep | null } | null>(null);
 
   const options = useMemo<BuildOptions>(() => ({ source, collection, format }), [source, collection, format]);
   const pool = useMemo(() => (ev ? ev.pool(options) : []), [ev, options]);
@@ -121,8 +210,12 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
   useEffect(() => {
     if (!ev) return;
     setBusy(true);
+    setPlayed(null);
     const t = window.setTimeout(() => {
-      setAdvice(advise(ev, deck.cards, options, pool));
+      const a = advise(ev, deck.cards, options, pool);
+      setAdvice(a);
+      // Playing a deck means something once it is full.
+      setPlay(ev.playtest && a.mode === 'swap' ? ev.playtest(deck.cards, { games: PLAY_GAMES, seed: 1 }) : null);
       setBusy(false);
     }, 30);
     return () => window.clearTimeout(t);
@@ -138,6 +231,19 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
     for (const c of s.move.remove) await adjustDeckCard(deck.id, c.id, -1);
     for (const c of s.move.add) await adjustDeckCard(deck.id, c.id, 1);
   };
+  const tryByPlay = () => {
+    if (!ev) return;
+    setTrying(true);
+    window.setTimeout(() => {
+      const next = tuneRound(ev, tuneStart(deck.cards), { ...options, seed: Math.floor(Math.random() * 100000) }, pool);
+      setPlayed({ step: next.steps[0] ?? null });
+      setTrying(false);
+    }, 40);
+  };
+  const applyPlayed = async (step: TuneStep) => {
+    await adjustDeckCard(deck.id, step.out.id, -1);
+    await adjustDeckCard(deck.id, step.in.id, 1);
+  };
 
   return (
     <section className="deck-section advisor">
@@ -149,7 +255,7 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
             <small>/100</small>
           </span>
         ) : (
-          <span className="advisor-open">{open ? '' : 'Score and suggestions'}</span>
+          <span className="advisor-open">{open ? '' : 'Score, playtest and suggestions'}</span>
         )}
         <span className={`advisor-chevron${open ? ' up' : ''}`} aria-hidden="true">
           ▾
@@ -169,6 +275,12 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
                 </ul>
               )}
               <ScoreParts score={advice.score} />
+              {ev.playtest && (
+                <>
+                  <h3 className="advisor-sub">Playtest</h3>
+                  {play ? <PlayLines play={play} /> : <p className="deck-hint">Playtest numbers appear once the deck is full.</p>}
+                </>
+              )}
               <h3 className="advisor-sub">{advice.mode === 'add' ? `Cards to add (${advice.main} of ${advice.target})` : 'Swaps that raise the score'}</h3>
               <BuildChoices
                 source={source}
@@ -221,6 +333,43 @@ export function DeckAdvisor({ deck }: { deck: Deck }) {
                   })}
                 </div>
               )}
+              {advice.mode === 'swap' && canTune(ev) && (
+                <>
+                  <h3 className="advisor-sub">Swaps found by playing</h3>
+                  {played?.step && (
+                    <div className="advisor-row">
+                      <a className="advisor-thumb" href={href(`/card/${played.step.in.id}`)} aria-label={`Open ${played.step.in.name}`}>
+                        {index.setsById.get(played.step.in.set) ? (
+                          <Img src={cardImageUrl(played.step.in, index.setsById.get(played.step.in.set)!.series, 'low')} alt="" />
+                        ) : null}
+                      </a>
+                      <div className="advisor-row-body">
+                        <div className="cand-name">
+                          Swap {played.step.out.name} for {played.step.in.name}
+                        </div>
+                        <div className="cand-sub">
+                          Played better over 400 practice games: {Math.round(played.step.from)} → {Math.round(played.step.to)}
+                        </div>
+                        <div className="cand-sub">
+                          {(collection.get(played.step.in.id)?.qty ?? 0) > 0 ? `You own ${collection.get(played.step.in.id)!.qty}` : 'Not in your collection'}
+                        </div>
+                      </div>
+                      <div className="advisor-row-side">
+                        <button type="button" className="btn" onClick={() => void applyPlayed(played.step!)}>
+                          Swap
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {played && !played.step && <p className="deck-hint advisor-none">No swap played better this time.</p>}
+                  <div className="deck-actions build-actions">
+                    <button type="button" className="btn" disabled={trying} onClick={tryByPlay}>
+                      {trying ? 'Playing…' : played ? 'Try again' : 'Find a swap by playing'}
+                    </button>
+                  </div>
+                </>
+              )}
+              <PracticeBlock ev={ev} cards={deck.cards} />
               <p className="deck-hint advisor-note">{SCORE_NOTE}</p>
             </>
           )}

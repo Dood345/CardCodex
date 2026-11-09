@@ -4,7 +4,9 @@
  * recommender grows a full deck from them. The result shows its score part
  * by part, what the collection covers and how the deck came together; "Keep
  * this deck" saves it like any other deck, "Build another" tries again
- * without the cards of the last attempt.
+ * without the cards of the last attempt. Where the game has a playtest
+ * simulator the result also says how the deck played, and "Tune by playing"
+ * improves it swap by swap.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
@@ -15,14 +17,17 @@ import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { hasRecommender } from '@/recommend';
 import { builtDeckName, describeMove, formatsOf, namesInDecks, namesToVary, seedIdeas } from '@/recommend/advice';
 import { buildDeck, type BuildResult } from '@/recommend/builder';
-import type { BuildOptions } from '@/recommend/types';
+import { canTune, tuneRound, tuneStart, type TuneState } from '@/recommend/tune';
+import type { BuildOptions, PlaySummary } from '@/recommend/types';
 import { EmptyState, Img, TopBar } from '@/ui/components';
 import { CloseIcon } from '@/ui/icons';
 import { href, navigate } from '@/ui/router';
-import { advisorMemory, BuildChoices, SCORE_NOTE, ScoreParts, useEvaluator } from './deck/DeckAdvisor';
+import { advisorMemory, BuildChoices, PLAY_GAMES, PlayLines, PracticeBlock, SCORE_NOTE, ScoreParts, useEvaluator } from './deck/DeckAdvisor';
 import { DeckSections } from './DeckSections';
 
 const MAX_SEEDS = 3;
+/** Rounds of tuning by play per tap: enough to matter, short enough to wait for on a phone. */
+const TUNE_ROUNDS = 8;
 
 export default function DeckBuildPage({ seed }: { seed?: string }) {
   const index = useCatalog();
@@ -43,6 +48,9 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
   const [result, setResult] = useState<BuildResult | null>(null);
   const [varied, setVaried] = useState<Set<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
+  const [play, setPlay] = useState<PlaySummary | null>(null);
+  const [tuning, setTuning] = useState<{ round: number; swaps: number } | null>(null);
+  const [tuned, setTuned] = useState<{ swaps: string[]; before: PlaySummary } | null>(null);
 
   const formats = useMemo(() => (ev ? formatsOf(ev) : []), [ev]);
   const options = useMemo<BuildOptions>(() => ({ source, collection, format }), [source, collection, format]);
@@ -57,6 +65,8 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
   useEffect(() => {
     setResult(null);
     setVaried(new Set());
+    setPlay(null);
+    setTuned(null);
   }, [seeds, source, format, avoidOthers]);
 
   if (!supported) {
@@ -89,16 +99,41 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
       if (avoidOthers) for (const n of namesInDecks(ev, decks)) avoid.add(n);
       for (const s of seeds) avoid.delete(s.name);
       const opts = { ...options, avoid };
-      setResult(
-        buildDeck(
-          ev,
-          seeds.map((c) => c.id),
-          opts,
-          ev.pool(opts),
-        ),
+      const built = buildDeck(
+        ev,
+        seeds.map((c) => c.id),
+        opts,
+        ev.pool(opts),
       );
+      setResult(built);
+      setTuned(null);
+      setPlay(ev.playtest ? ev.playtest(built.cards, { games: PLAY_GAMES, seed: 1 }) : null);
       setBuilding(false);
     }, 60);
+  };
+  // Tuning plays the deck thousands of times; one round per timer tick keeps the page alive and shows progress.
+  const tune = () => {
+    if (!ev || !result || !canTune(ev) || !play) return;
+    const avoid = new Set(varied);
+    if (avoidOthers) for (const n of namesInDecks(ev, decks)) avoid.add(n);
+    for (const s of seeds) avoid.delete(s.name);
+    const opts = { ...options, avoid, keep: new Set(seeds.map((c) => c.name)) };
+    const tunePool = ev.pool(opts);
+    const before = play;
+    const step = (state: TuneState) => {
+      if (state.done || state.round >= TUNE_ROUNDS) {
+        const score = ev.score(state.cards);
+        setResult({ ...result, cards: state.cards, score });
+        setPlay(ev.playtest!(state.cards, { games: PLAY_GAMES, seed: 1 }));
+        setTuned({ swaps: state.steps.map((s) => `${s.out.name} → ${s.in.name}`), before });
+        setTuning(null);
+        return;
+      }
+      setTuning({ round: state.round + 1, swaps: state.steps.length });
+      window.setTimeout(() => step(tuneRound(ev, state, opts, tunePool)), 30);
+    };
+    setTuning({ round: 1, swaps: 0 });
+    window.setTimeout(() => step(tuneStart(result.cards)), 30);
   };
   const another = () => {
     if (!ev || !result) return;
@@ -246,14 +281,33 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
               </ul>
             )}
             <ScoreParts score={result.score} />
+            {play && (
+              <>
+                <h3 className="advisor-sub">Playtest</h3>
+                <PlayLines play={play} />
+                {tuned && (
+                  <p className="deck-hint">
+                    {tuned.swaps.length
+                      ? `Tuned by playing, ${tuned.swaps.length} ${tuned.swaps.length === 1 ? 'swap' : 'swaps'}: ${tuned.swaps.join(', ')}. Before: ${tuned.before.lines[0].toLowerCase()}.`
+                      : 'Tuning by playing found no swap that played better.'}
+                  </p>
+                )}
+              </>
+            )}
             <div className="deck-actions build-actions">
-              <button type="button" className="btn primary" disabled={saving} onClick={() => void keep()}>
+              <button type="button" className="btn primary" disabled={saving || !!tuning} onClick={() => void keep()}>
                 Keep this deck
               </button>
-              <button type="button" className="btn" disabled={building} onClick={another}>
+              {play && canTune(ev) && (
+                <button type="button" className="btn" disabled={!!tuning || building} onClick={tune}>
+                  {tuning ? `Playing… round ${tuning.round} of ${TUNE_ROUNDS}, ${tuning.swaps} ${tuning.swaps === 1 ? 'swap' : 'swaps'}` : tuned ? 'Tune again' : 'Tune by playing'}
+                </button>
+              )}
+              <button type="button" className="btn" disabled={building || !!tuning} onClick={another}>
                 {building ? 'Building…' : 'Build another'}
               </button>
             </div>
+            <PracticeBlock ev={ev} cards={result.cards} />
             <p className="deck-hint advisor-note">{SCORE_NOTE}</p>
           </section>
           <DeckSections game={game} cards={result.cards} index={index} collection={collection} />
