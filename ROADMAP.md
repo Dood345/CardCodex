@@ -42,6 +42,15 @@ suggestions panel on the deck page and a Build-a-deck page; Yu-Gi-Oh! and Magic 
 needs its own text file: YGOPRODeck `desc`, Scryfall Oracle text); a meta layer only if a source
 whose terms allow it turns up (Limitless TCG gives API keys to public-facing projects on request).
 
+Before any screen, the user asked (2026-11-09) for the means to tell good decks from bad and winning
+decks from losing ones. Landed: the deck benchmark (`npm run deck-bench`, `docs/deck-bench.md`),
+which rates decks and their known-worse copies with every judge and fails when a judge falls behind
+its recorded baseline. Its first run showed what the score cannot see: swapped Energy, and whether a
+deck's attackers and Trainers actually work together. In progress: the rule gaps (ACE SPEC, Radiant,
+Prism Star, Special Energy), a seeded playtest simulator (practice draws, then a head-to-head race)
+whose results become judges and ground truth in the benchmark, and a search for deck lists with real
+results whose terms allow their use.
+
 ### Magic: The Gathering: the scanner and the rest
 
 Browsing, search, card pages, the collection and the binder work for Magic (`src/games/mtg/`, catalog

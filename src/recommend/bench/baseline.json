@@ -1,0 +1,320 @@
+{
+ "built": {
+  "corpus": "built",
+  "label": "Decks built from 40 seeds",
+  "decks": 40,
+  "repeats": 5,
+  "seed": 1,
+  "judges": [
+   {
+    "id": "total",
+    "label": "Score",
+    "mean": 98.67750000000002,
+    "pile": 1,
+    "damage": {
+     "swap-6": 1,
+     "swap-12": 1,
+     "swap-24": 1,
+     "trainers": 0.9825,
+     "energy": 0.7475,
+     "pokemon": 1
+    },
+    "order": 0.9933733971724047
+   },
+   {
+    "id": "part:rules",
+    "label": "Deck rules",
+    "mean": 1,
+    "pile": 0.5,
+    "damage": {
+     "swap-6": 0.51,
+     "swap-12": 0.505,
+     "swap-24": 0.5025,
+     "trainers": 0.53,
+     "energy": 0.5,
+     "pokemon": 0.5025
+    },
+    "order": -0.005303300858899106
+   },
+   {
+    "id": "part:basics",
+    "label": "Basic Pokémon",
+    "mean": 1,
+    "pile": 0.5,
+    "damage": {
+     "swap-6": 0.5225,
+     "swap-12": 0.525,
+     "swap-24": 0.505,
+     "trainers": 0.5,
+     "energy": 0.5,
+     "pokemon": 0.6675
+    },
+    "order": -0.011400244426555801
+   },
+   {
+    "id": "part:lines",
+    "label": "Evolution lines",
+    "mean": 1,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.97,
+     "swap-12": 0.995,
+     "swap-24": 1,
+     "trainers": 0.52,
+     "energy": 0.5,
+     "pokemon": 0.995
+    },
+    "order": 0.9713218512123433
+   },
+   {
+    "id": "part:energy",
+    "label": "Energy",
+    "mean": 0.9368334858519042,
+    "pile": 1,
+    "damage": {
+     "swap-6": 1,
+     "swap-12": 1,
+     "swap-24": 1,
+     "trainers": 0.75,
+     "energy": 0.5525,
+     "pokemon": 1
+    },
+    "order": 0.9425000000000011
+   },
+   {
+    "id": "part:draw",
+    "label": "Draw and search",
+    "mean": 1,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.7075,
+     "swap-12": 0.8225,
+     "swap-24": 0.9025,
+     "trainers": 0.7775,
+     "energy": 0.525,
+     "pokemon": 0.5
+    },
+    "order": 0.8504131798335487
+   },
+   {
+    "id": "part:power",
+    "label": "Power",
+    "mean": 0.9618725410392075,
+    "pile": 0.98,
+    "damage": {
+     "swap-6": 0.5625,
+     "swap-12": 0.6425,
+     "swap-24": 0.725,
+     "trainers": 0.5,
+     "energy": 0.5,
+     "pokemon": 0.715
+    },
+    "order": 0.6661321376767788
+   },
+   {
+    "id": "part:synergy",
+    "label": "Synergy",
+    "mean": 1,
+    "pile": 0.5825,
+    "damage": {
+     "swap-6": 0.555,
+     "swap-12": 0.5825,
+     "swap-24": 0.5875,
+     "trainers": 0.8175,
+     "energy": 0.5775,
+     "pokemon": 0.5375
+    },
+    "order": 0.1399032684333622
+   },
+   {
+    "id": "part:focus",
+    "label": "Focus",
+    "mean": 1,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.995,
+     "swap-12": 1,
+     "swap-24": 1,
+     "trainers": 0.5,
+     "energy": 0.5,
+     "pokemon": 1
+    },
+    "order": 0.9977467943448091
+   },
+   {
+    "id": "part:era",
+    "label": "Era",
+    "mean": 1,
+    "pile": 0.615,
+    "damage": {
+     "swap-6": 0.66,
+     "swap-12": 0.795,
+     "swap-24": 0.8775,
+     "trainers": 0.91,
+     "energy": 0.7,
+     "pokemon": 0.715
+    },
+    "order": 0.2866129346000612
+   }
+  ]
+ },
+ "pokemon-tcg-data": {
+  "corpus": "pokemon-tcg-data",
+  "label": "pokemon-tcg-data",
+  "decks": 186,
+  "repeats": 5,
+  "seed": 1,
+  "judges": [
+   {
+    "id": "total",
+    "label": "Score",
+    "mean": 75.55806451612905,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9715053763440861,
+     "swap-12": 0.9870967741935484,
+     "swap-24": 0.9935483870967742,
+     "trainers": 0.774731182795699,
+     "energy": 0.896774193548387,
+     "pokemon": 0.9827956989247312
+    },
+    "order": 0.9263616251827145
+   },
+   {
+    "id": "part:rules",
+    "label": "Deck rules",
+    "mean": 0.9931003584229391,
+    "pile": 0.48655913978494625,
+    "damage": {
+     "swap-6": 0.5053763440860215,
+     "swap-12": 0.5010752688172043,
+     "swap-24": 0.4967741935483871,
+     "trainers": 0.5,
+     "energy": 0.49838709677419357,
+     "pokemon": 0.5021505376344086
+    },
+    "order": -0.021699442992734082
+   },
+   {
+    "id": "part:basics",
+    "label": "Basic Pokémon",
+    "mean": 0.999845354224059,
+    "pile": 0.49731182795698925,
+    "damage": {
+     "swap-6": 0.49838709677419357,
+     "swap-12": 0.5010752688172043,
+     "swap-24": 0.4978494623655914,
+     "trainers": 0.5,
+     "energy": 0.5,
+     "pokemon": 0.5043010752688172
+    },
+    "order": -0.003762836127787634
+   },
+   {
+    "id": "part:lines",
+    "label": "Evolution lines",
+    "mean": 0.948252688172043,
+    "pile": 0.9586021505376344,
+    "damage": {
+     "swap-6": 0.9408602150537635,
+     "swap-12": 0.9704301075268817,
+     "swap-24": 0.9698924731182795,
+     "trainers": 0.5010752688172043,
+     "energy": 0.5,
+     "pokemon": 0.9736559139784946
+    },
+    "order": 0.8957737733264759
+   },
+   {
+    "id": "part:energy",
+    "label": "Energy",
+    "mean": 0.49659193981790634,
+    "pile": 0.9978494623655914,
+    "damage": {
+     "swap-6": 0.9612903225806452,
+     "swap-12": 0.9435483870967742,
+     "swap-24": 0.6913978494623656,
+     "trainers": 0.5,
+     "energy": 0.4978494623655914,
+     "pokemon": 0.9924731182795699
+    },
+    "order": 0.7168834763169166
+   },
+   {
+    "id": "part:draw",
+    "label": "Draw and search",
+    "mean": 0.3731182795698924,
+    "pile": 0.6306451612903226,
+    "damage": {
+     "swap-6": 0.5478494623655914,
+     "swap-12": 0.5650537634408602,
+     "swap-24": 0.5747311827956989,
+     "trainers": 0.6956989247311828,
+     "energy": 0.45161290322580644,
+     "pokemon": 0.4774193548387097
+    },
+    "order": 0.18356584701327405
+   },
+   {
+    "id": "part:power",
+    "label": "Power",
+    "mean": 0.655034224439244,
+    "pile": 0.4591397849462366,
+    "damage": {
+     "swap-6": 0.49032258064516127,
+     "swap-12": 0.5129032258064516,
+     "swap-24": 0.5134408602150538,
+     "trainers": 0.5,
+     "energy": 0.5,
+     "pokemon": 0.6021505376344086
+    },
+    "order": -0.0396471524092176
+   },
+   {
+    "id": "part:synergy",
+    "label": "Synergy",
+    "mean": 0.9060864016509177,
+    "pile": 0.6096774193548387,
+    "damage": {
+     "swap-6": 0.5413978494623656,
+     "swap-12": 0.5629032258064516,
+     "swap-24": 0.5596774193548387,
+     "trainers": 0.6838709677419355,
+     "energy": 0.8881720430107527,
+     "pokemon": 0.4661290322580645
+    },
+    "order": 0.13268582365358178
+   },
+   {
+    "id": "part:focus",
+    "label": "Focus",
+    "mean": 0.7637246513496936,
+    "pile": 1,
+    "damage": {
+     "swap-6": 0.9962365591397849,
+     "swap-12": 1,
+     "swap-24": 1,
+     "trainers": 0.5,
+     "energy": 0.5,
+     "pokemon": 1
+    },
+    "order": 0.9937089880311409
+   },
+   {
+    "id": "part:era",
+    "label": "Era",
+    "mean": 0.9852007854576499,
+    "pile": 0.5693548387096774,
+    "damage": {
+     "swap-6": 0.5338709677419354,
+     "swap-12": 0.5155913978494624,
+     "swap-24": 0.5317204301075269,
+     "trainers": 0.6645161290322581,
+     "energy": 0.682258064516129,
+     "pokemon": 0.4978494623655914
+    },
+    "order": 0.09231805935973761
+   }
+  ]
+ }
+}

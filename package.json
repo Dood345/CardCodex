@@ -22,7 +22,9 @@
     "hashes": "node scripts/build-hashes.mjs",
     "hashes:ygo": "node scripts/build-hashes.mjs --game ygo",
     "decks:ygo": "node scripts/decks-ygo.mjs",
-    "text": "node scripts/build-text.mjs"
+    "text": "node scripts/build-text.mjs",
+    "deck-bench": "vitest run --config vitest.bench.config.ts",
+    "deck-bench:update": "vitest run --config vitest.bench.config.ts"
   },
   "dependencies": {
     "@capacitor-mlkit/text-recognition": "^8.2.2",
