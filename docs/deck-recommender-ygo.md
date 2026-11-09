@@ -220,9 +220,25 @@ What it shows:
 - The TCG list is a snapshot of the cache; no Traditional, OCG, GOAT or Speed Duel formats.
 - Only the opening five are modelled; who goes first, and the draw on later turns, are not.
 
+## Registering it (not done on this branch)
+
+- npm script: `"text:ygo": "node scripts/build-ygo-text.mjs"`, run after `catalog:ygo`.
+- Data file `ygo/text.json`: add it to `DATA_FILES` in `scripts/data-manifest.mjs`, to the exact key
+  list in `src/data/manifest.test.ts`, regenerate `public/data/manifest.json`, and have the script
+  call `writeDataManifest()` at its end like the other builders (it does not yet, so this branch does
+  not touch the manifest).
+- Loader: `loadCardText` in `card-text.ts` runs the Pokémon `buildTextIndex`, which would fail on
+  this file (it has no `ids`). Load it with `fetchDataJson<YgoTextFile>('ygo/text.json')` and
+  `buildYgoTextIndex`, in a Yu-Gi-Oh! loader or a per-game builder; do not just point `textFileFor`
+  at it.
+- Evaluator: `createYgoEvaluator({ index, text, format })`, `index` the Yu-Gi-Oh! `CatalogIndex`;
+  formats `tcg` (default) and `any`, one evaluator per format.
+- Benchmark: the full run lives in `ygo.test.ts` behind `YGO_BENCH=1`; it can move into
+  `src/recommend/bench/local.bench.ts` with `YGO_DAMAGES`.
+
 ## What the builder would need
 
-Nothing blocks the Yu-Gi-Oh! evaluator today, but three things would make it whole:
+Nothing blocks the Yu-Gi-Oh! evaluator today, but five things would make it whole:
 
 1. **Call `complete`.** `buildDeck` ends after its swap loop; the contract says it calls
    `ev.complete?.(cards, options, pool)` once at the end. Until it does, callers (and the tests here)
@@ -234,3 +250,13 @@ Nothing blocks the Yu-Gi-Oh! evaluator today, but three things would make it who
 3. **Kind shares.** `candidateMoves` gives 15% of the breadth to "energy"; with no Energy kind it is
    unused (half monsters, a third Spells and Traps). A per-evaluator share table, or redistributing an
    empty kind's share, would let Yu-Gi-Oh! (and Magic) use the whole breadth.
+4. **Swaps stay within a section.** `contributions` and `suggestSwaps` treat every line without a zone
+   alike, Extra Deck lines included. On a completed deck with one Extra monster the Main Deck cannot
+   make, every suggested swap was "−that Extra monster, +a Main Deck card" (checked 2026-11-09:
+   −Flame Swordsman +Dragon Capture Jar, +1.4), which leaves 41 Main Deck cards and 14 Extra. Swaps
+   should pair a removal with an add of the same section (`rules.sectionOf`), and `buildDeck`'s
+   `count()` should count the first section only.
+5. **Extra Deck seeds.** `buildDeck` finds a seed in the pool (or by name in it), and the pool holds
+   Main Deck cards only, so seeding with an Extra Deck monster drops it (Stardust Dragon came back in
+   `dropped`). The builder could keep such a seed aside and hand it to `complete`, which would then
+   need to steer the Main Deck towards its materials (relevance from the seed's materials line).
