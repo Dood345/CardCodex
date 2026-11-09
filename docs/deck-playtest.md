@@ -24,6 +24,9 @@ createPokemonSimulator(evaluator);    // the same behind the game-neutral DeckSi
 - **Determinism.** Each game draws from its own random stream, `mixSeed(seed, gameNumber)`, using
   mulberry32 with one 32-bit word of state. The same seed gives the same report, and any single game
   can be replayed.
+- **Deck order.** Lists are normalized before compiling: side-zone lines are dropped, lines are
+  merged per card id, and the result is sorted by id. The same 60 cards in any order, or split over
+  several lines, play the same games.
 - **Practice draws.** The practice-draw functions keep the random state in the returned deal and
   never mutate their input.
 - **Who goes first.** `first` decides it. By default it alternates by game number. Turns are the
@@ -45,6 +48,7 @@ opening its combo, and a Magic one as casting on curve.
 | `deadTurnRate` | Share of turns with nothing played: no card from hand, no Ability, no retreat |
 | `keyPieceStuckRate` | Share of games where every copy of something the plan needs is prized (see below) |
 | `unread`, `unreadCopies`, `unreadDrawsPerGame` | Cards the pilot cannot read, with the kind of effect; how often one is in hand |
+| `partlyRead` | Cards it plays without using them in full: Pokémon whose Ability it does not use (passive ones, or activated ones whose text was not read), such as Radiant Charizard's cost reduction |
 | `meanDamagePerTurn`, `damageByTurn` | Pokémon only: printed damage per own turn, mean over the first six turns |
 
 **What counts as a stuck key piece.** Any one of these, in the Prize cards from the start of the game:
@@ -321,13 +325,13 @@ head-to-head.
 
 | Number | Value |
 | --- | --- |
-| Mulligan rate | 25.7% (hypergeometric: 25.9%) |
-| Main attacker attacked by own turn 1 / 2 / 3 / 4 / 5 / 6 | 0 / 49.9 / 80.1 / 89.2 / 92.6 / 94.7% |
-| Going first / second, by turn 2 | 44.5% / 55.6% |
-| Mean first attack (never attacking counts as turn 7) | turn 2.94 |
+| Mulligan rate | 27.2% (hypergeometric: 25.9%; 1.9 standard errors off) |
+| Main attacker attacked by own turn 1 / 2 / 3 / 4 / 5 / 6 | 0 / 50.5 / 81.2 / 89.7 / 93.3 / 95.2% |
+| Going first / second, by turn 2 | 44.9% / 55.0% |
+| Mean first attack (never attacking counts as turn 7) | turn 2.90 |
 | Mean damage per turn, turns 1–6 | 124 |
-| Dead turns | 16.3% |
-| Key piece stuck in Prize cards | 0.08% |
+| Dead turns | 16.1% |
+| Key piece stuck in Prize cards | 0.13% |
 | Unread copies | 9 (Boss's Orders ×3, Counter Catcher, Pokémon Catcher, Defiance Band, Technical Machine: Evolution, Lost Vacuum, Super Rod) |
 | Unread cards drawn per game | 4.5 |
 
@@ -337,8 +341,8 @@ A Stage 2 cannot attack on turn 1, so turn 1 is 0 whoever goes first.
 
 | Copy | Attacked by turn 3 | Mean first attack | Dead turns | Damage per turn | Key piece stuck |
 | --- | --- | --- | --- | --- | --- |
-| Without its draw and search Trainers¹ | 16.4% | turn 5.92 | 45% | 48 | — |
-| Without Rare Candy | 48.9% | turn 4.39 | 22% | 85 | 10% (the lone Charmeleon prized) |
+| Without its draw and search Trainers¹ | 16.7% | turn 5.88 | 45% | 49 | — |
+| Without Rare Candy | 49.2% | turn 4.37 | 23% | 86 | 10% (the lone Charmeleon prized) |
 
 ¹ Ultra Ball, Nest Ball, Poffin, Arven, Iono, Professor's Research, Forest Seal Stone.
 
@@ -353,16 +357,15 @@ in six turns, and have dead turns about 68% of the time.
 
 | A vs B | A's win rate (95% CI) | First player wins | Mean turns | Prize difference | Endings |
 | --- | --- | --- | --- | --- | --- |
-| Charizard vs itself | 48.6% (45.5–51.7) | 56.6% | 14.7 | −0.18 | 912 prizes, 85 no Pokémon, 3 deck out |
-| Charizard vs itself, seed 2 | 47.6% (44.5–50.7) | 54.8% | 14.6 | −0.15 | — |
-| Charizard vs random pile (3 piles) | 99.3–99.5% | — | 13.7–14.9 | +5.5 | losses are deck-outs |
-| Charizard vs no-Rare-Candy copy | 87.3% (85.1–89.2) | — | — | +3.98 | — |
-| No-Rare-Candy copy vs Charizard | 12.3% | — | — | — | — |
-| Charizard vs no-draw/search copy | 88.0% | — | — | — | — |
-| No-draw/search copy vs Charizard | 15.0% | — | — | — | — |
+| Charizard vs itself | 51.3% (48.2–54.4) | 54.1% | 14.6 | +0.03 | 903 prizes, 96 no Pokémon, 1 deck out |
+| Charizard vs itself, seed 2 | 50.5% (47.4–53.6) | 53.5% | 14.6 | +0.06 | — |
+| Charizard vs random pile (3 piles) | 99.5% each | — | 13.4–14.6 | +5.5 | the 5 losses per pile are deck-outs |
+| Charizard vs no-Rare-Candy copy | 88.6% (86.5–90.4) | — | — | +4.12 | — |
+| No-Rare-Candy copy vs Charizard | 11.3% | — | — | — | — |
+| Charizard vs no-draw/search copy | 88.8% | — | — | — | — |
+| No-draw/search copy vs Charizard | 11.0% | — | — | — | — |
 
-A over B plus B over A: 0.996 for the no-Rare-Candy pair and 1.03 for the no-draw/search pair,
-both within sampling error of 1.
+A over B plus B over A: 0.999 for the no-Rare-Candy pair and 0.998 for the no-draw/search pair.
 
 The pilot's mistakes in duels were found by tracing lost games (`duelGame(…, trace)`), not by
 tuning to the tests. Before the stuck-Active and deck-reserve rules, the Charizard deck decked out
@@ -386,8 +389,9 @@ The parser reads these shares of Trainers and Abilities, by catalog slice (one p
 - hand-size disruption;
 - searches tied to a Pokémon in play (Salvatore, Grand Tree).
 
-Gust (Boss's Orders) counts low here only because the kinds are assigned from the evaluator's
-roles first.
+A card's kind is the first of the evaluator's roles gust, heal, recover and disrupt that it has.
+Only a card with none of those is classed by its text (tool, stadium, condition, coin flips,
+other).
 
 ### Computed here, not in the evaluator
 
@@ -395,13 +399,20 @@ These belong in `PokemonFeatures` later:
 
 - **Effect amounts and targets.** How many cards a draw draws; what a search fetches and where it
   puts it; discard costs; coin flips; Ability triggers and per-turn limits; VSTAR Powers.
-- **Iono and Arven.** The evaluator's `draw` role misses Iono ("draws a card for each of their
-  remaining Prize cards") and has no role for Arven's Item-and-Tool search. The simulator reads
-  both.
 - **The catalog evolution map,** name → what it evolves from. It is needed for Stage 2 lines that
   skip their Stage 1.
 - **Prize value per Pokémon.**
 - **Weakness and Resistance values** (`×2`, `+20`, `-30`).
-- **The suffix of space-written GX and EX names.** The evaluator's suffix pattern reads only `-GX`
-  and `-EX` with a hyphen, which misses the ~860 TCGdex names written "Charizard EX" and "Pikachu
-  GX".
+
+### Evaluator bugs found on the way
+
+These are in `src/recommend/pokemon.ts` today; the simulator works around them.
+
+- **Space-written suffixes.** The suffix pattern (`-(GX|EX)$`) reads only the hyphen form. That
+  misses about 860 TCGdex names written with a space: 551 "… GX" and 307 "… EX". Synergy mentions
+  of EX and GX, and anything else keyed on `suffix`, skip those cards.
+- **Iono.** The `draw` role misses it. Its text says "draws a card for each of their remaining
+  Prize cards", and the pattern wants "draw N cards".
+- **Arven.** It gets no role: "search your deck for an Item card and a Pokémon Tool card" matches
+  none of the search patterns. The Charizard fixture's static draw part therefore undercounts
+  eight of its cards.

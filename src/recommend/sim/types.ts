@@ -53,6 +53,8 @@ export interface PlaytestReport {
   unreadCopies: number;
   /** Unread cards drawn per game (opening hand included): how often a blind spot is in hand. */
   unreadDrawsPerGame: number;
+  /** Cards the pilot plays but cannot use in full (Pokémon: Abilities it does not read, passive ones included), by copies. */
+  partlyRead: UnreadCard[];
   /** Wall time of the run. */
   ms: number;
 }

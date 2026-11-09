@@ -49,6 +49,7 @@ describe('duel', () => {
     expect({ ...a, ms: 0 }).toEqual({ ...b, ms: 0 });
     expect({ ...c, ms: 0 }).not.toEqual({ ...a, ms: 0 });
     expect(duelGame(ev, cards, noCandy, 9, 17)).toEqual(duelGame(ev, cards, noCandy, 9, 17));
+    expect({ ...duel(ev, [...cards].reverse(), noCandy, { games: 200, seed: 9 }), ms: 0 }).toEqual({ ...a, ms: 0 });
   });
 
   it('alternates who goes first and ends games by the rules', LONG, () => {
