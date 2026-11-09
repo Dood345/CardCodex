@@ -3,7 +3,8 @@
  * a search box that adds cards straight into it, one tap to put every
  * missing card on the wishlist, and sharing as a small file that opens in a
  * friend's CardCodex (src/data/deck-file.ts) or as a message (the deck list
- * plus a code any CardCodex can import, src/data/deck-code.ts).
+ * plus a code any CardCodex can import, src/data/deck-code.ts). Games with a
+ * recommender also get the deck check (src/pages/deck/DeckAdvisor.tsx).
  */
 import { useMemo, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
@@ -21,6 +22,7 @@ import { gameById } from '@/games';
 import { EmptyState, Sheet, Toast, TopBar, useToast } from '@/ui/components';
 import { BinderIcon, HeartIcon, ShareIcon } from '@/ui/icons';
 import { navigate } from '@/ui/router';
+import { DeckAdvisor } from './deck/DeckAdvisor';
 import { FromBinderSheet } from './deck/FromBinderSheet';
 import type { CatalogIndex } from '@/data/catalog';
 import { DeckRow, DeckSections } from './DeckSections';
@@ -191,6 +193,7 @@ export default function DeckPage({ id }: { id: string }) {
           Delete
         </button>
       </section>
+      <DeckAdvisor deck={deck} />
       <DeckSections
         game={game}
         cards={deck.cards}

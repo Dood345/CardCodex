@@ -88,6 +88,8 @@ export interface DeckEvaluator {
    * Yu-Gi-Oh! Extra Deck). The builder calls it once, after its last swap.
    */
   complete?(cards: readonly DeckCard[], options: BuildOptions, pool: readonly CatalogCard[]): DeckCard[];
+  /** Cards of `pool` worth building a deck around, best first: what "Build a deck" offers before the user has picked a seed. */
+  seedIdeas?(pool: readonly CatalogCard[], count: number): CatalogCard[];
   /** The catalog card behind a deck line's id. */
   card(id: string): CatalogCard | undefined;
   score(cards: readonly DeckCard[]): DeckScore;

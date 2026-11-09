@@ -11,6 +11,7 @@ import { findDeckCode } from '@/data/deck-code';
 import { DECK_FILE_ROUTE, holdDeckFile } from '@/data/deck-file';
 import { createDeck, summarizeDeck, useDecks } from '@/data/decks';
 import { rankStarterDecks, useStarterDecks } from '@/data/starter-decks';
+import { hasRecommender } from '@/recommend';
 import { cardImageUrl } from '@/data/types';
 import { EmptyState, Img, Sheet } from '@/ui/components';
 import { DeckIcon, PlusIcon } from '@/ui/icons';
@@ -75,11 +76,20 @@ export function DecksTab() {
         <button type="button" className="btn" onClick={() => setImportOpen(true)}>
           Import
         </button>
+        {hasRecommender(game.id) && (
+          <a className="btn" href={href('/decks/build')}>
+            Build one for me
+          </a>
+        )}
       </form>
       {decks.length === 0 ? (
         <EmptyState
           title="No decks yet"
-          hint="Build a deck from cards you own and cards you are still after, put what is missing on your wishlist in one tap, and share it with a friend as a message."
+          hint={
+            hasRecommender(game.id)
+              ? 'Build a deck from cards you own and cards you are still after, or let “Build one for me” grow one from a card you pick. Put what is missing on your wishlist in one tap, and share a deck with a friend as a message.'
+              : 'Build a deck from cards you own and cards you are still after, put what is missing on your wishlist in one tap, and share it with a friend as a message.'
+          }
         />
       ) : (
         <div className="deck-list">

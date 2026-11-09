@@ -2650,3 +2650,209 @@ textarea:focus {
 .sprite-missing {
   opacity: 0.35;
 }
+
+/* Deck check and Build a deck (src/pages/deck/DeckAdvisor.tsx, src/pages/DeckBuildPage.tsx). */
+.advisor-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.advisor-head.static {
+  cursor: default;
+}
+.advisor-title {
+  font-weight: 700;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.advisor-open {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.advisor-total {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.advisor-total small {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+.advisor-chevron {
+  color: var(--fg-muted);
+  transition: transform 0.15s;
+}
+.advisor-chevron.up {
+  transform: rotate(180deg);
+}
+.advisor-body .deck-hint,
+.build-result .deck-hint,
+.build-setup .deck-hint {
+  margin: 10px 0 0;
+}
+.advisor-issues {
+  margin: 10px 0 0;
+  padding: 8px 10px 8px 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border));
+  font-size: 13px;
+}
+.advisor-warn {
+  color: var(--warn);
+}
+.advisor-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px 16px;
+  margin-top: 12px;
+}
+.advisor-part-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.advisor-part-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+.advisor-part .progress-fill.low {
+  background: var(--warn);
+}
+.advisor-detail {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.advisor-sub {
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
+.advisor-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.advisor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.advisor-list.busy {
+  opacity: 0.6;
+}
+.advisor-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+.advisor-thumb {
+  flex: none;
+  width: 40px;
+  height: 56px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg-hover);
+}
+.advisor-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.advisor-row-body {
+  flex: 1;
+  min-width: 0;
+}
+.advisor-row-body .cand-name {
+  font-weight: 600;
+}
+.advisor-row-body .cand-sub {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.advisor-row-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+.advisor-delta {
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ok);
+}
+.advisor-note {
+  font-size: 12px;
+}
+.build-seeds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.build-seed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  font-size: 14px;
+}
+.build-seed button {
+  display: inline-flex;
+  padding: 4px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  cursor: pointer;
+}
+.build-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 14px;
+}
+.build-actions {
+  padding: 12px 0 0;
+}
+.build-pick {
+  color: var(--fg);
+  font: inherit;
+}
+.build-steps summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.build-steps ol {
+  margin: 8px 0 0;
+  padding-left: 24px;
+  font-size: 13px;
+}
+.build-steps .cand-sub {
+  color: var(--fg-muted);
+}
