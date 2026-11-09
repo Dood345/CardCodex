@@ -21,7 +21,8 @@
     "android:debug": "node scripts/android-release.mjs --debug",
     "hashes": "node scripts/build-hashes.mjs",
     "hashes:ygo": "node scripts/build-hashes.mjs --game ygo",
-    "decks:ygo": "node scripts/decks-ygo.mjs"
+    "decks:ygo": "node scripts/decks-ygo.mjs",
+    "text": "node scripts/build-text.mjs"
   },
   "dependencies": {
     "@capacitor-mlkit/text-recognition": "^8.2.2",
