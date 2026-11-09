@@ -28,7 +28,7 @@ of sample API responses (about 10 calls in total to the Limitless API, against i
 | 1 | **Limitless platform API** (`play.limitlesstcg.com/api`) | Pokémon (and many other games) | Online tournaments: standings with full decklists, W/L/T records, archetype per deck, round-by-round pairings with game winners. Well over 5,000 events (page 5,000 at one per page is September 2025) | Open API, **no key**, 50 requests / 5 min | No licence, no API terms; ToS covers user content only | **Yes** | **Ask** |
 | 2 | Limitless major-event pages (`limitlesstcg.com/tournaments`) | Pokémon | Regionals, Internationals, Worlds: Day 2 standings and decklists only | Pages only, no API | Copyright notice; no data terms | **Ask** | **No** |
 | 3 | TopDeck.gg API | Magic first; also Pokémon and Yu-Gi-Oh! | Standings, win rates, pairings with game scores, decklists (after the event) | Free key from a logged-in account, 50 to 100 requests / min | Developer Terms: no commercialising, credit required, derived data not addressed | **Yes** (needs a free account) | **Ask** |
-| 4 | 17Lands public datasets | Magic Arena Limited | Draft picks, per-game rows (deck, opening hand, win/loss), per-turn replay rows | Bulk gzip files, open | **CC BY 4.0** "unless otherwise noted" | **Yes** | **Yes** (Limited only, attribution) |
+| 4 | 17Lands public datasets | Magic Arena Limited | Draft picks, per-game rows (deck, opening hand, win/loss), per-turn replay rows | Bulk gzip files, open | **CC BY 4.0** unless otherwise noted | **Yes** | **Yes** (Limited only, attribution) |
 | 5 | RK9 (`rk9.gg`) | Pokémon | Official Play! Pokémon rosters, pairings, decklists | Pages | ToS bans scraping; robots disallow pairings and decklists | **No** | **No** |
 | 6 | pokedata.ovh | Pokémon | Standings built from RK9 pairings | Pages | None found | **No** | **No** |
 | 7 | pokemon.com Play! Pokémon results | Pokémon | Top-cut placings and lists per event | Pages behind a bot wall | Unreadable | **No** (unverified) | **No** (unverified) |
@@ -41,7 +41,7 @@ of sample API responses (about 10 calls in total to the Limitless API, against i
 | 14 | MTGGoldfish | Magic | Metagame, decks, prices | Pages | Personal, non-commercial use only; AI-training signal `no` | **No** | **No** |
 | 15 | Melee.gg | Magic | Tournament results and decks | Pages; `robots.txt` returns 403 | Not read; no public API docs found | **No** (unverified) | **No** (unverified) |
 | 16 | YGOPRODeck tournaments | Yu-Gi-Oh! | Placings and decklists of major events, archetype per deck; no match records | Pages only (API has no deck endpoints) | © notice only; no terms page | **Ask** | **No** |
-| 17 | YGOPRODeck API | Yu-Gi-Oh! | Cards only | Open API | "free to use", no hotlinking, 20 req/s | n/a: no outcomes | n/a |
+| 17 | YGOPRODeck API | Yu-Gi-Oh! | Cards only | Open API | free, no hotlinking, 20 req/s | n/a: no outcomes | n/a |
 
 ## Recommendation
 
@@ -58,8 +58,7 @@ label per deck, a documented machine interface, and no key to obtain.
     "Showdowns", Friday events), not Regionals. The largest of the 50 most recent Standard events had 494
     players and the fourth largest 121; most are far smaller. Filter on `players` (for example at least 64) before
     treating a record as skill evidence.
-  - Records are Swiss results with dropouts; a 0-2 record with `drop: 2` is a player who left, not a
-    losing deck. Use pairings, not standings, for deck-versus-deck results, and drop rounds with
+  - Standings records are cut short by dropouts (a player who left after two losses shows 0-2). Use pairings, not standings, for deck-versus-deck results, and drop rounds with
     `winner: -1` (byes).
   - Lists use **PTCGL set codes** (`TWM`, `MEG`, `MEE`, `POR`) and collector numbers, not TCGdex ids.
     The harness needs a code-to-set mapping which is a small
@@ -90,8 +89,7 @@ label per deck, a documented machine interface, and no key to obtain.
 3. Keep the answer in the repo (a short `docs/limitless-reply.md`), because the project rule is that the
    source and its terms are recorded.
 
-Limitless says keys are "not meant for private use" and go only to public-facing projects with a
-legitimate use-case. The request is therefore written about the public app and the aggregates it
+Limitless says keys are "not meant for private use"; they go only to public-facing projects. The request is therefore written about the public app and the aggregates it
 would ship, not about the private harness. It says the app will never contain a key.
 
 ## Draft request to Limitless (not sent)
@@ -106,7 +104,7 @@ Hello Limitless team,
 
 I maintain CardCodex, a free and open-source (GPL-3.0) Android app that helps collectors track their
 Pokémon TCG, Yu-Gi-Oh! and Magic collections: https://github.com/Dood345/CardCodex. It is free to use
-and free of ads. Today it has no income of any kind. If we ever charge for the app or for a service
+and free of ads. If we ever charge for the app or for a service
 around it, we will come back to you first.
 
 The app has a deck builder with suggestions that explain themselves ("replace this card with that one,
@@ -115,9 +113,10 @@ suggestion, how the archetype it resembles has actually performed. For that we w
 data of your public tournament API (`play.limitlesstcg.com/api`):
 
 1. **Locally, for validation.** We fetch standings, decklists and pairings for a chosen set of
-   Standard tournaments into a private cache on a developer's machine, within the published rate limit
-   (50 requests per 5 minutes), one request at a time, and keep only aggregate numbers in the
-   repository. We do not republish tournament lists, and we do not keep or publish player names.
+   Standard tournaments into a private cache on a developer's machine, within the rate limit your API reports,
+   one request at a time, and keep only aggregate numbers in the repository. Player handles stay in
+   that private cache only, to join pairings to decklists; they are never committed or published,
+   and we do not republish tournament lists.
 2. **In the app, as derived data.** At most a small static file produced at build time: for each
    archetype, a match count and a win rate, and card co-occurrence counts ("this card appears in N% of
    the winning lists of this archetype"). It contains no player names, no tournament names and no
@@ -125,8 +124,8 @@ data of your public tournament API (`play.limitlesstcg.com/api`):
    in the app.
 
 We would credit Limitless in the app's Settings screen and README, next to our existing credits for
-TCGdex, YGOPRODeck and Scryfall, in whatever wording you prefer, and we would link to the tournaments
-the numbers come from.
+TCGdex, YGOPRODeck and Scryfall, in whatever wording you prefer, and we would link to Limitless
+from there.
 
 Could you tell us, in writing:
 
@@ -174,8 +173,8 @@ https://github.com/Dood345/CardCodex
 - **Access:** open, no key. Keys can be sent as `?key=` or `X-Access-Key`. Response header
   `RateLimit: "50-in-5min"` was measured. Browsers may call it directly (`Access-Control-Allow-Origin: *`),
   which the harness does not need.
-- **Terms:** the developer page says no key is needed except for deck rules, "rate limits apply",
-  and keys "are not meant for private use". It states no licence, no attribution rule and no
+- **Terms:** the developer page says no key is needed except for deck rules, rate limits apply, and
+  keys are for public-facing projects with a legitimate use. It states no licence, no attribution rule and no
   restriction on storing or deriving data. The platform's Terms of Service
   (<https://play.limitlesstcg.com/tos>, last updated 2021-02-28) cover users' own content only (users
   keep their rights and grant Limitless a licence to show it on the service); they do not mention the
@@ -195,7 +194,7 @@ https://github.com/Dood345/CardCodex
 
 - **URL:** <https://limitlesstcg.com/tournaments>. The page lists Regionals (for example Puebla,
   2,234 players, and Gdańsk, 1,739 players, both October 2026), Internationals and Worlds.
-- **Holds:** results and decklists "from every major tournament"; per its About page
+- **Holds:** results and decklists of every major tournament it can obtain; per its About page
   (<https://limitlesstcg.com/about>) the data is taken from official sources like RK9 and pokemon.com
   where available, otherwise crowdsourced from players. Standings cover Day 2 players, not the whole
   field, and there are no match records.
@@ -214,7 +213,7 @@ https://github.com/Dood345/CardCodex
 - **Holds:** the official registration and pairing system for Play! Pokémon events: Regionals,
   Internationals, Worlds, Professor Cups; rosters, pairings, decklists per event.
 - **Access:** pages; no API, no key process.
-- **Terms:** §5.3 bans "screen scraping" and other automation, commercial or not, and using Service
+- **Terms:** §5.3 bans screen scraping and other automation, commercial or not, and using Service
   data for one's own commercial gain; §3.2 reserves everything not granted. The `robots.txt` disallows
   `/roster/`, `/pairings/` and `/decklist/public/`.
 - **Verdict (a): no, (b): no.** Both the terms and the robots file say no.
@@ -279,9 +278,9 @@ https://github.com/Dood345/CardCodex
   standings, rounds), 100 (rest); 1,000,000 document reads per day. I could not test it: that needs an
   account, which I may not create.
 - **Terms (Developer Terms):** a visible credit and link to TopDeck.gg wherever users see the data
-  (§6.1); selling, licensing or "commercializing" API data is banned (§7); store data only as long as
+  (§6.1); selling, licensing or otherwise commercialising API data is banned (§7); store data only as long as
   the app needs it, delete personal data when asked (§§5.5, 8.2, 12.3); access can be revoked at any
-  time (§12.2); the API "is currently free" but fees may follow (§10). Derived data and machine
+  time (§12.2); the API is free for now but fees may follow (§10). Derived data and machine
   learning are not addressed.
 - **Verdict (a): yes**, with a free account made by the user and the key kept out of the repo.
   **(b): ask**: a free app is not commercialising, but redistributing derived aggregates is not
@@ -297,9 +296,8 @@ https://github.com/Dood345/CardCodex
   drawn, win/loss) and replay data (one row per turn). Per set, updated as sets release. Anonymised.
   Size not measured (gzip files per set, known to be large; do not download them all).
 - **Access:** bulk CSV or JSON gzip files, open, no key.
-- **Terms:** "Unless otherwise noted, these data sets are licensed under a Creative Commons
-  Attribution 4.0 International License"; the site's terms exclude the Public Datasets page from their
-  "do not republish" guidance and call it "typically released under a CC BY 4.0 license". Attribution
+- **Terms:** the page says the data sets are licensed CC BY 4.0 unless otherwise noted, and the
+  site's data guidelines name the Public Datasets page as released under CC BY 4.0. Attribution
   required. The FSF licence list
   (<https://www.gnu.org/licenses/license-list.html>) says CC BY 4.0 is compatible with all versions of
   the GPL, with a note against using it for software; here it covers data, which is fine as a
@@ -311,7 +309,7 @@ https://github.com/Dood345/CardCodex
 
 - **URL:** <https://mtgjson.com/downloads/all-files/> (`AllDeckFiles`, `DeckList.json`);
   licence <https://mtgjson.com/license/>.
-- Product decks (precons and similar), which are what a collector buys; no tournament results. MIT
+- By its own description, product decks (precons and similar), which are what a collector buys; no tournament results. MIT
   licence (copyright Zach Halpern), shipping with attribution is allowed.
 - **Verdict:** useful as prebuilt decks (the earlier "starter decks" question, not this one); for
   ground truth, **no outcomes, so not applicable**.
@@ -336,8 +334,8 @@ https://github.com/Dood345/CardCodex
 ### 14. MTGGoldfish
 
 - **URL:** <https://www.mtggoldfish.com/>; terms <https://www.mtggoldfish.com/policies/terms-of-use>
-  (version 1.1, 2016). Site content is "intended solely for personal, non-commercial use"; copying only
-  for personal use, no republishing; `robots.txt` carries `Content-Signal: ai-train=no`.
+  (version 1.1, 2016). Site content is "personal, non-commercial use"; copying only
+  for personal use, no republishing (paraphrased); `robots.txt` carries `Content-Signal: ai-train=no`.
 - **Verdict (a): no, (b): no.**
 
 ### 15. Melee.gg
@@ -358,8 +356,8 @@ https://github.com/Dood345/CardCodex
   records or whole-field results: weak ground truth.
 - **Access:** pages only. The API (row 17) has no deck or tournament endpoint.
 - **Terms:** no terms page is linked in the footer; the notices say card text and images belong to
-  4K Media / Konami and "all other content" is © YGOPRODeck. The earlier hotlinking rule for images
-  stands (do not hotlink images; see the API guide).
+  4K Media / Konami and all other content is © YGOPRODeck. User-submitted decks on the site carry no outcomes, so they
+  do not apply here. The image rule stands: do not hotlink (see the API guide).
 - **Verdict (a): ask. (b): no.**
 
 ### 17. YGOPRODeck API
@@ -379,7 +377,9 @@ Limitless major-event pages. Melee.gg and pokemon.com are closed only for lack o
 ## Hand-over for the harness
 
 - Put the cache under `scripts/.cache/limitless/` (`.cache/` is gitignored).
-- Never commit tournament ids with player names, or any `decklist` payload; commit aggregates only.
+- Player handles are needed in the private cache to join pairings to standings and decklists; they
+  never go into a committed file, a shipped aggregate or a log. Never commit any `decklist` payload;
+  commit aggregates only.
 - Use a clear `User-Agent` such as `CardCodex-validation/0.1` with no contact details, one request at
   a time, and watch the `RateLimit` header (`r=` is requests left in the window, `t=` seconds to reset).
 - Map `set` + `number` to TCGdex ids with a small table; PTCGL set codes differ from TCGdex ids, and
