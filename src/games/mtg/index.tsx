@@ -8,7 +8,7 @@ import { loadCatalog, type CatalogIndex } from '@/data/catalog';
 import { normalizeText } from '@/data/normalize';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import { BinderIcon } from '@/ui/icons';
-import { MTG_DECK_RULES } from '../deck-rules';
+import { MTG_DECK_RULES, MTG_RULE_SETS } from '../deck-rules';
 import type { Fact, GameProfile, QuickGroup } from '../types';
 import { ManaIcon, ManaWheelIcon } from './icons';
 import { createMtgMatcher } from './match';
@@ -102,6 +102,7 @@ export const mtg: GameProfile = {
       'CardCodex is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. ©Wizards of the Coast LLC.',
   },
   deckRules: MTG_DECK_RULES,
+  deckRuleSets: MTG_RULE_SETS,
   // The scanner's seam: a name + collector-number matcher until the real one exists (see ./match.ts).
   createMatcher: (index) => createMtgMatcher(index.catalog),
 };

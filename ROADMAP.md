@@ -31,25 +31,37 @@ source whose terms allow it), real quantities, and the card suggestions below.
 
 ### In-house deck recommender
 
-Set 2026-11-09, started the same day: a deck-building engine of our own that scores a deck on rules
-of thumb read from the cards' own text (Basics for the opening hand, evolution lines, Energy of the
-attackers' types, draw and search, power for the era, synergy, shape, era) and uses the score to
-suggest cards while building, swaps for an existing deck, and whole decks grown from a seed, from
-the collection only or from the whole catalog. Phase 1 landed for Pokémon: `public/data/text.json`
-(`npm run text`, the rules text from TCGdex) and `src/recommend/` (evaluator, builder, tests); see
-`docs/deck-recommender.md` for the parts, weights, validation and known gaps. Still to do: the
-suggestions panel on the deck page and a Build-a-deck page; Yu-Gi-Oh! and Magic evaluators (each
-needs its own text file: YGOPRODeck `desc`, Scryfall Oracle text); a meta layer only if a source
-whose terms allow it turns up (Limitless TCG gives API keys to public-facing projects on request).
+Set 2026-11-09 and landed in 1.9.0 for all three games: a deck-building engine of our own that
+scores a deck on rules of thumb read from the cards' own text and uses the score to suggest cards
+while building, swaps for a full deck, and whole decks grown from a seed, from the collection only
+or from the whole catalog (`docs/deck-recommender.md`, `deck-recommender-ygo.md`,
+`deck-recommender-mtg.md`). In the app it is the "Deck check" on every deck page and Decks → "Build
+one for me".
 
-Before any screen, the user asked (2026-11-09) for the means to tell good decks from bad and winning
-decks from losing ones. Landed: the deck benchmark (`npm run deck-bench`, `docs/deck-bench.md`),
-which rates decks and their known-worse copies with every judge and fails when a judge falls behind
-its recorded baseline. Its first run showed what the score cannot see: swapped Energy, and whether a
-deck's attackers and Trainers actually work together. In progress: the rule gaps (ACE SPEC, Radiant,
-Prism Star, Special Energy), a seeded playtest simulator (practice draws, then a head-to-head race)
-whose results become judges and ground truth in the benchmark, and a search for deck lists with real
-results whose terms allow their use.
+For Pokémon the engine also plays: a seeded simulator (`docs/deck-playtest.md`) gives practice
+draws and head-to-head duels, the deck check shows how a full deck played, and "Tune by playing"
+improves a built deck swap by swap. The benchmark (`npm run deck-bench`, `docs/deck-bench.md`) rates
+decks and their known-worse copies with every judge and fails when a judge falls behind its
+recorded baseline; its corpora include tournament lists with real win rates, fetched for local
+validation only (`docs/deck-results-sources.md`).
+
+Still open:
+
+- **Predicting real results.** Among tournament lists neither the score nor solo play follows the
+  real win rates; simulated duels are the first judge that can, and the test pilot does not yet read
+  disruption, gust effects or most Abilities. Better piloting is the lever, and the benchmark's
+  strength column is the measure.
+- **A meta layer** (how the archetype a deck resembles has done, cards the winning lists share)
+  needs Limitless's written yes to ship derived data; the request is drafted in
+  `docs/deck-results-sources.md` for the project owner to send.
+- **Playtest simulators for Yu-Gi-Oh! and Magic** (opening a starter without bricking; casting on
+  curve), which would bring them tuning by play. Their decks are scored only.
+- **Combinations nobody has played**: a synergy graph over the pool (cards that name, power or
+  evolve into each other) whose clusters become Build-a-deck ideas, and a shopping list from the
+  difference between the best deck from the collection and the best from the catalog.
+- Smaller: Yu-Gi-Oh! ideas by archetype and Extra Deck monsters as seeds; adding cards a playset at
+  a time; Magic sideboard advice and a Commander check; learning from the suggestions a user
+  accepts or dismisses.
 
 ### Magic: The Gathering: the scanner and the rest
 
@@ -63,11 +75,11 @@ gzipped, loaded like the other games). Still to do:
   per frame) and `createMatcher` in the profile is where the real one plugs in.
 - Artwork hashes: `hashFileFor` (`src/scanner/artwork.ts`) has no Magic case yet; a table over ~98k
   printings is about 3 MB, or hash per illustration id to share pictures between reprints.
-- Decks: `MTG_DECK_RULES` (`src/games/deck-rules.ts`) gives one main deck of at least 60 cards with
-  four copies of a card except basic lands. Still open: a sideboard (the existing side zone, at most
-  15) and 100-card singleton commander decks as a second rule set.
-- Oracle text is left out of the catalog (it would add 6 MB raw, 1.5 MB gzipped). If rules text is
-  wanted on the card page or in search, ship it as a separate file loaded on demand.
+- Decks: done in 1.9.0. A Magic deck has 60 cards or more and a sideboard of up to 15, or follows
+  Commander rules (100 cards, one of each; `GameProfile.deckRuleSets`, `Deck.rules`). Still open:
+  naming the commander and checking colour identity.
+- Oracle text ships as `mtg/text.json` (1.4 MB gzipped), loaded by the deck recommender only. Showing
+  it on the card page and searching by it are still open.
 - Set symbols: Scryfall serves one SVG per set (`icon_svg_uri` in `/sets`); the Sets list shows the
   set code instead for now.
 - Size on phones: the Magic index takes ~100 MB of JS heap on desktop Chrome and about 0.7 s to

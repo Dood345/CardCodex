@@ -16,6 +16,11 @@
       "bytes": 4616484,
       "builtAt": "2026-11-09T20:25:42.943Z"
     },
+    "ygo/text.json": {
+      "hash": "4d664e6184ab",
+      "bytes": 4778224,
+      "builtAt": "2026-11-09T22:34:54.868Z"
+    },
     "ygo/catalog.json": {
       "hash": "68ec865fe080",
       "bytes": 3632363,
@@ -25,6 +30,11 @@
       "hash": "e4d2251dd7d8",
       "bytes": 11454125,
       "builtAt": "2026-11-03T01:30:34.324Z"
+    },
+    "mtg/text.json": {
+      "hash": "c659c96c4887",
+      "bytes": 6177011,
+      "builtAt": "2026-11-09T22:32:16.972Z"
     },
     "hashes.json": {
       "hash": "ffc67648d080",

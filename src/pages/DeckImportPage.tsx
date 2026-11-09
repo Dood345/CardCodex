@@ -88,7 +88,7 @@ export default function DeckImportPage({ code }: { code: string }) {
   const s = summarizeDeck(known, collection);
   const save = async () => {
     setSaving(true);
-    const deck = await createDeck(share.game, share.name, known);
+    const deck = await createDeck(share.game, share.name, known, share.rules);
     navigate(`/decks/${deck.id}`, true);
   };
 

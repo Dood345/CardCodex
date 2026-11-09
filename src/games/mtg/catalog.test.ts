@@ -3,11 +3,11 @@ import { buildIndex } from '@/data/catalog';
 import { groupsOf } from '@/data/collection';
 import { decodeDeck, encodeDeck, DECK_LINK_PREFIX } from '@/data/deck-code';
 import { decodeDeckText, encodeDeckFile } from '@/data/deck-file';
-import { limitHint, overLimit } from '@/data/decks';
+import { limitHint, overLimit, parseExportedDecks } from '@/data/decks';
 import { routeForUrl } from '@/app/deepLinks';
 import { searchCards } from '@/data/search';
 import { cardImageUrl } from '@/data/types';
-import { MTG_DECK_RULES, sectionHint } from '../deck-rules';
+import { isDefaultRules, MTG_COMMANDER_RULES, MTG_DECK_RULES, POKEMON_DECK_RULES, rulesFor, sectionHint } from '../deck-rules';
 import { gameOfId, isGameId } from '../ids';
 import { expandMtgCatalog, isBasicLand, mtgCategory } from './catalog';
 import { scryfallCards, scryfallSets } from './fixture.test-util';
@@ -229,10 +229,15 @@ describe('deck rules', () => {
   const forest = { ...byId.get('mtg:m10-146')!, id: 'mtg:m10-246', name: 'Forest', cat: 'Land' as const, sub: 'Basic Land — Forest' };
   index.cardsById.set(forest.id, forest);
 
-  it('gives Magic one deck of at least 60 cards', () => {
+  it('gives Magic a deck of at least 60 cards and a sideboard of at most 15', () => {
     expect(mtg.deckRules).toBe(MTG_DECK_RULES);
-    const [main] = MTG_DECK_RULES.sections;
-    expect(MTG_DECK_RULES.sections).toHaveLength(1);
+    const [main, side] = MTG_DECK_RULES.sections;
+    expect(MTG_DECK_RULES.sections).toHaveLength(2);
+    expect(MTG_DECK_RULES.side).toBe(true);
+    expect(MTG_DECK_RULES.sectionOf(undefined, {})).toBe('main');
+    expect(MTG_DECK_RULES.sectionOf(undefined, { zone: 'side' })).toBe('side');
+    expect(sectionHint(side, 15)).toBeNull();
+    expect(sectionHint(side, 16)).toBe('A sideboard has at most 15 cards: 1 over.');
     expect(sectionHint(main, 59)).toBe('A Magic deck has at least 60 cards: 1 to go.');
     expect(sectionHint(main, 60)).toBeNull();
     expect(sectionHint(main, 75)).toBeNull();
@@ -246,6 +251,40 @@ describe('deck rules', () => {
     ];
     expect(MTG_DECK_RULES.copyLimit(forest)).toBe(Infinity);
     expect(limitHint(MTG_DECK_RULES, overLimit(MTG_DECK_RULES, cards, index))).toBe('4 copies at most: Lightning Bolt ×5.');
+    // The sideboard counts toward the limit.
+    const split = [
+      { cardId: 'mtg:lea-161', qty: 3 },
+      { cardId: 'mtg:lea-161', qty: 2, zone: 'side' as const },
+    ];
+    expect(limitHint(MTG_DECK_RULES, overLimit(MTG_DECK_RULES, split, index))).toBe('4 copies at most: Lightning Bolt ×5.');
+  });
+
+  it('offers Commander as a second rule set: exactly 100 cards, one copy of each, any number of basic lands', () => {
+    expect(mtg.deckRuleSets?.map((r) => r.id)).toEqual(['constructed', 'commander']);
+    expect(rulesFor(mtg, undefined)).toBe(MTG_DECK_RULES);
+    expect(rulesFor(mtg, 'constructed')).toBe(MTG_DECK_RULES);
+    expect(rulesFor(mtg, 'commander')).toBe(MTG_COMMANDER_RULES);
+    expect(rulesFor(mtg, 'no-such-set')).toBe(MTG_DECK_RULES);
+    expect(rulesFor({ deckRules: POKEMON_DECK_RULES }, 'commander')).toBe(POKEMON_DECK_RULES);
+    expect(isDefaultRules(mtg, undefined)).toBe(true);
+    expect(isDefaultRules(mtg, 'constructed')).toBe(true);
+    expect(isDefaultRules(mtg, 'commander')).toBe(false);
+    expect(isDefaultRules(mtg, 'no-such-set')).toBe(true);
+    expect(isDefaultRules({}, 'commander')).toBe(true);
+
+    const [main] = MTG_COMMANDER_RULES.sections;
+    expect(MTG_COMMANDER_RULES.sections).toHaveLength(1);
+    expect(MTG_COMMANDER_RULES.side).toBe(false);
+    expect(sectionHint(main, 99)).toBe('A Commander deck has exactly 100 cards, the commander included: 1 to go.');
+    expect(sectionHint(main, 100)).toBeNull();
+    expect(sectionHint(main, 101)).toBe('A Commander deck has exactly 100 cards, the commander included: 1 over.');
+    const cards = [
+      { cardId: 'mtg:lea-161', qty: 1 },
+      { cardId: 'mtg:m10-146', qty: 1 },
+      { cardId: forest.id, qty: 30 },
+    ];
+    expect(MTG_COMMANDER_RULES.copyLimit(forest)).toBe(Infinity);
+    expect(limitHint(MTG_COMMANDER_RULES, overLimit(MTG_COMMANDER_RULES, cards, index))).toBe('1 copy of each card: Lightning Bolt ×2.');
   });
 });
 
@@ -268,5 +307,22 @@ describe('deck sharing', () => {
     const link = `${DECK_LINK_PREFIX}${code}`;
     expect(routeForUrl(link)).toBe(`/decks/import/${code}`);
     expect(await decodeDeckText(encodeDeckFile(deck))).toEqual(deck);
+  });
+
+  it('carries the rule set in the deck file and the backup, and drops a malformed one', async () => {
+    const commander = { ...deck, rules: 'commander' };
+    expect(await decodeDeckText(encodeDeckFile(commander))).toEqual(commander);
+    expect(encodeDeckFile(deck)).not.toContain('"rules"');
+    const bad = JSON.parse(encodeDeckFile(commander)) as Record<string, unknown>;
+    bad.rules = 'Not A Rule Set!';
+    expect(await decodeDeckText(JSON.stringify(bad))).toEqual(deck);
+    const [kept, plain, dropped] = parseExportedDecks([
+      { id: 'a', game: 'mtg', name: 'A', cards: deck.cards.map((c) => ({ ...c })), rules: 'commander', createdAt: 1, updatedAt: 2 },
+      { id: 'b', game: 'mtg', name: 'B', cards: [], createdAt: 1, updatedAt: 2 },
+      { id: 'c', game: 'mtg', name: 'C', cards: [], rules: 42, createdAt: 1, updatedAt: 2 },
+    ]);
+    expect(kept.rules).toBe('commander');
+    expect('rules' in plain).toBe(false);
+    expect('rules' in dropped).toBe(false);
   });
 });

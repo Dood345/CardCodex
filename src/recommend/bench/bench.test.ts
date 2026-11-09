@@ -15,6 +15,7 @@ import { compareReports, formatReport, roundRobin, runBench, scoreJudges, type B
 import { builtCorpus, pokemonSeeds } from './built';
 import { copiesOf, DAMAGES, eraPool, linesOf, randomPile, swapAny, swapKind } from './damage';
 import { auc, mean, pairedWins, ranks, spearman } from './metrics';
+import { duelJudge, playtestJudges, simulatedDuel } from './sim-judges';
 import { mulberry32, shuffled } from './rng';
 
 const dataDir = new URL('../../../public/data/', import.meta.url);
@@ -162,6 +163,36 @@ describe('benchmark run', () => {
     const r = runBench(ev, index, ranked, [echo], { repeats: 1 });
     expect(r.judges[0].strength).toBeCloseTo(1);
     expect(total.strength).toBeUndefined();
+  });
+
+  it('runs on an even sample when asked to', () => {
+    const r = runBench(ev, index, corpus, judges.slice(0, 1), { repeats: 1, maxDecks: 3 });
+    expect(r.decks).toBeGreaterThan(1);
+    expect(r.decks).toBeLessThanOrEqual(Math.ceil(corpus.decks.length / Math.ceil(corpus.decks.length / 3)));
+  });
+
+  it('takes the playtest simulator as judges: a built deck plays better than a pile', { timeout: 60_000 }, () => {
+    const played = playtestJudges(ev, { games: 100, seed: 1 });
+    expect(played.map((j) => j.id)).toEqual(['sim:online3', 'sim:online4', 'sim:damage', 'sim:live']);
+    const r = runBench(ev, index, corpus, played, { repeats: 2, maxDecks: 6 });
+    const damage = r.judges.find((j) => j.id === 'sim:damage')!;
+    // Twelve pairs only, so the floor is loose; the full run (npm run deck-bench) holds the real numbers.
+    expect(damage.pile).toBeGreaterThan(0.6);
+    expect(damage.mean).toBeGreaterThan(20);
+    expect(damage.order).toBeGreaterThan(0.5);
+  });
+
+  it('takes simulated duels as a judge and as round-robin strength', { timeout: 120_000 }, () => {
+    const few: Corpus = { ...corpus, decks: corpus.decks.slice(0, 4) };
+    const judge = duelJudge(ev, few, { field: 4, games: 10 });
+    const r = runBench(ev, index, few, [judge], { repeats: 1 });
+    expect(r.judges[0].id).toBe('sim:duel');
+    // A built deck beats a random pile of its years at winning, too.
+    expect(r.judges[0].pile).toBeGreaterThan(0.7);
+    const strengths = roundRobin(few.decks, simulatedDuel(ev, { games: 10 }));
+    expect(strengths).toHaveLength(4);
+    expect(strengths.reduce((a, b) => a + b, 0)).toBeCloseTo(2, 5);
+    for (const s of strengths) expect(s).toBeGreaterThanOrEqual(0);
   });
 
   it('prints a table and names what fell behind a baseline', () => {

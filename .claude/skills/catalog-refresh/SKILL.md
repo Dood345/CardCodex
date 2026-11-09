@@ -12,6 +12,8 @@ Two builders, Node 22+, built-ins only, run from the repo root (details: `script
 | `npm run catalog` | `public/data/catalog.json` (~3.3 MB, all English Pokémon sets and cards), `public/data/species.json` (~61 KB, species 1–1025) | TCGdex GraphQL (bulk cards) + REST (per-set details), PokéAPI CSVs on GitHub |
 | `npm run catalog:ygo` | `public/data/ygo/catalog.json` (~3.6 MB; cards by passcode + printings by set code) | YGOPRODeck API v7 `cardinfo.php` + `cardsets.php` |
 | `npm run text` (after `npm run catalog`) | `public/data/text.json` (~4.6 MB; rules text, regulation mark and legality per Pokémon card, for the deck recommender; only cards in the catalog are kept, so rebuild it whenever the catalog changes) | TCGdex GraphQL (bulk cards), REST for the few cards GraphQL rejects |
+| `npm run text:ygo` (after `npm run catalog:ygo`) | `public/data/ygo/text.json` (~4.8 MB; effect text, Extra Deck materials and the TCG Forbidden & Limited list per card, for the deck recommender) | the cached YGOPRODeck `cardinfo.php` download |
+| `npm run text:mtg` (after `npm run catalog:mtg`) | `public/data/mtg/text.json` (~6.2 MB; Oracle text, keywords, colour identity, produced mana and format legality per card, for the deck recommender) | Scryfall bulk data (`oracle_cards`) |
 | `npm run deck-bench` (after `npm run text`) | nothing shipped: `scripts/.cache/deck-bench/report.md`, checked against `src/recommend/bench/baseline.json` (see `docs/deck-bench.md`; built decks change with the pool, so read the report and, if the change is expected, `npm run deck-bench:update`) | the catalog and card text just built, plus local deck corpora |
 
 Both also rewrite `public/data/manifest.json` (content hash, size and `builtAt` per data file; see

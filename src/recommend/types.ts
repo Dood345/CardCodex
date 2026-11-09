@@ -33,7 +33,20 @@ export interface DeckScore {
   issues: string[];
 }
 
-export type DeckFormat = 'standard' | 'expanded' | 'any';
+/**
+ * A format id the game's evaluator understands: "standard", "expanded" and
+ * "any" for Pokémon; other games name their own. "any" (no format limit)
+ * exists in every game.
+ */
+export type DeckFormat = string;
+
+/** A format the user can pick, in the evaluator's display order. */
+export interface FormatOption {
+  id: DeckFormat;
+  label: string;
+  /** The format the screens start on; without one they start on "any". */
+  default?: boolean;
+}
 
 export interface BuildOptions {
   /** Where cards may come from: the collection only, the whole catalog, or the catalog with owned cards preferred. */
@@ -66,9 +79,60 @@ export interface Suggestion {
   partId: string;
 }
 
+export interface PlayOptions {
+  games: number;
+  seed: number;
+}
+
+/** What playing a deck some hundred times showed. */
+export interface PlaySummary {
+  /** One number, higher is better, comparable between decks of the game: what tuning climbs. */
+  value: number;
+  /** What the test pilot plays toward, one line ("Charizard ex's Burning Darkness"); "" when the deck cannot play. */
+  plan: string;
+  /** The findings, one line each, most important first. */
+  lines: string[];
+  games: number;
+}
+
+/** A practice deal: the opening hand of a shuffled deck, for trying a deck out by hand. Plain data, so a screen can keep it. */
+export interface PracticeHand {
+  /** Card ids in hand, in the order drawn. */
+  hand: string[];
+  /** Cards set aside face down at the start (Pokémon: the six Prize cards); empty in games without any. */
+  aside: string[];
+  /** What the set-aside cards are called ("Prize cards"). */
+  asideLabel: string;
+  /** The rest of the deck, top card first. */
+  library: string[];
+  /** Opening hands that had to be shuffled back (Pokémon: no Basic Pokémon). */
+  redraws: number;
+  /** A line about the deal when there is something to say ("Redrawn twice: no Basic Pokémon"). */
+  note: string;
+}
+
 export interface DeckEvaluator {
   game: GameId;
   rules: DeckRules;
+  /** The formats `BuildOptions.format` may name, "any" included; a game without formats leaves this out. */
+  formats?: readonly FormatOption[];
+  /**
+   * Finishes a deck the builder filled section by section: given the built
+   * main deck, returns the deck with whatever else the game wants (a
+   * Yu-Gi-Oh! Extra Deck). The builder calls it once, after its last swap.
+   */
+  complete?(cards: readonly DeckCard[], options: BuildOptions, pool: readonly CatalogCard[]): DeckCard[];
+  /**
+   * The evaluator to score and build with under a format, for a game whose rules change with it (the Yu-Gi-Oh!
+   * Forbidden & Limited list sets the copy limits). Games whose formats only limit the pool leave this out.
+   */
+  forFormat?(format: DeckFormat): DeckEvaluator;
+  /** Plays the deck against nobody, seeded, and reports how it went; only games with a simulator have it (src/recommend/sim). */
+  playtest?(cards: readonly DeckCard[], options: PlayOptions): PlaySummary;
+  /** Shuffles the deck from a seed and deals an opening hand by the game's rules. */
+  practice?(cards: readonly DeckCard[], seed: number): PracticeHand;
+  /** Cards of `pool` worth building a deck around, best first: what "Build a deck" offers before the user has picked a seed. */
+  seedIdeas?(pool: readonly CatalogCard[], count: number): CatalogCard[];
   /** The catalog card behind a deck line's id. */
   card(id: string): CatalogCard | undefined;
   score(cards: readonly DeckCard[]): DeckScore;
