@@ -59,6 +59,11 @@ describe('reading the fixture deck', () => {
     expect(reasons.get("Boss's Orders")).toBe('gust');
     expect(reasons.get('Defiance Band')).toBe('tool');
     expect(reasons.has('Iono')).toBe(false);
+    // Played, but with an Ability the pilot does not use.
+    const partly = new Map(d.partlyRead.map((u) => [u.name, u.reason]));
+    expect(partly.get('Radiant Charizard: Excited Heart')).toBe('passive Ability');
+    expect(partly.get('Manaphy: Wave Veil')).toBe('passive Ability');
+    expect([...partly.keys()].some((n) => n.startsWith('Pidgeot ex'))).toBe(false);
   });
 
   it('reads a coin flip and a condition as such', () => {
@@ -91,6 +96,9 @@ describe('playtest', () => {
     const c = playtest(ev, cards, { games: 300, seed: 12 });
     expect(strip(a)).toEqual(strip(b));
     expect(strip(c)).not.toEqual(strip(a));
+    // The same cards in another order, or split over more lines, play the same games.
+    const reordered = [...cards].reverse().flatMap((l) => (l.qty > 1 ? [{ ...l, qty: 1 }, { ...l, qty: l.qty - 1 }] : [l]));
+    expect(strip(playtest(ev, reordered, { games: 300, seed: 11 }))).toEqual(strip(a));
   });
 
   it('mulligans as often as the hypergeometric chance says', LONG, () => {

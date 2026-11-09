@@ -6,7 +6,7 @@
  */
 import type { DeckCard } from '@/data/db';
 import type { PokemonEvaluator } from '../pokemon';
-import { compileDeck, type CompiledDeck } from './cards';
+import { compileDeck, normalizeDeck, type CompiledDeck } from './cards';
 import { attack, beginTurn, keyPieceStuck, mainPhase, newPlayer, setup, type Game } from './engine';
 import { mixSeed } from './rng';
 import { POKEMON_RULES_PAR_2023, type PokemonRuleSet } from './rules';
@@ -14,11 +14,13 @@ import type { PlaytestOptions, PokemonPlaytestReport } from './types';
 
 const compiled = new WeakMap<PokemonEvaluator, Map<string, CompiledDeck>>();
 
-/** Compile a deck once per evaluator and list (keyed by the list's ids and counts). */
+/** Compile a deck once per evaluator and list (keyed by the normalized list: order and line splits do not matter). */
 export function compiledDeck(ev: PokemonEvaluator, cards: readonly DeckCard[]): CompiledDeck {
   let m = compiled.get(ev);
   if (!m) compiled.set(ev, (m = new Map()));
-  const key = cards.map((c) => `${c.cardId}:${c.qty}${c.zone ? `:${c.zone}` : ''}`).join(',');
+  const key = normalizeDeck(cards)
+    .map((c) => `${c.cardId}:${c.qty}`)
+    .join(',');
   let d = m.get(key);
   if (!d) {
     d = compileDeck(ev, cards);
@@ -53,6 +55,7 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
     keyPieceStuckRate: 0,
     unread: d.unread,
     unreadCopies: d.unread.reduce((n, u) => n + u.copies, 0),
+    partlyRead: d.partlyRead,
     unreadDrawsPerGame: 0,
     ms: 0,
     meanDamagePerTurn: 0,

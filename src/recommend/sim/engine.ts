@@ -109,6 +109,9 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
 
 const cardOf = (p: Player, i: number) => p.d.cards[i];
 
+/** Draw effects are passed up when they would leave fewer cards than this in the deck. */
+const DECK_RESERVE = 6;
+
 function draw(p: Player, n: number): number {
   let k = 0;
   for (; k < n && p.deck.length; k++) {
@@ -186,7 +189,15 @@ function targetAttack(p: Player, m: Mon): SimAttack | null {
   return best ?? m.c.attacks[0] ?? null;
 }
 
+/** An Active off the main line, short of its Retreat Cost, with the line waiting on the Bench: Energy on it buys the retreat. */
+function payingRetreat(p: Player, m: Mon): boolean {
+  const plan = p.d.plan;
+  if (!plan || m !== p.active || plan.line.includes(m.c.key) || m.energy.length >= m.c.retreat || bestPayable(m)) return false;
+  return p.bench.some((b) => plan.line.includes(b.c.key));
+}
+
 function needs(p: Player, m: Mon, e: SimCard): boolean {
+  if (payingRetreat(p, m)) return true;
   const a = targetAttack(p, m);
   if (!a) return false;
   const miss = missing(a.cost, m.energy);
@@ -253,6 +264,14 @@ const isCandy = (c: SimCard) => c.kind === 'trainer' && !!c.fx?.effects.some((e)
 const isSwitchCard = (c: SimCard) => c.kind === 'trainer' && !c.unread && !!c.fx && isSwitchOnly(c.fx);
 const isSupporter = (c: SimCard) => c.tt === 'Supporter' && !c.unread && !!c.fx;
 
+/** A better attacker waits on the Bench and the Active can neither retreat (too little Energy) nor be switched from the hand. */
+function retreatBlocked(p: Player): boolean {
+  const a = p.active;
+  if (!a || a.energy.length >= a.c.retreat) return false;
+  if (p.hand.some((i) => isSwitchCard(cardOf(p, i)))) return false;
+  return !!switchTarget(p, null);
+}
+
 /**
  * How much the plan wants `c` now, 0..100: searches take the most wanted
  * card from the deck, discards drop the least wanted card of the hand.
@@ -287,6 +306,7 @@ export function want(p: Player, c: SimCard, inHand = false, shallow = false): nu
     return hasInPlay(p, c.from) ? 20 : 5;
   }
   if (c.kind === 'energy') {
+    if (retreatBlocked(p) && !handCount(p, (h) => h.kind === 'energy' && h !== c)) return 85;
     const need = energyNeed(p, inHand ? c : null);
     if (!need) return 20;
     for (const ch of need) if (ch !== 'C' && covers(c, ch)) return 85;
@@ -303,6 +323,7 @@ export function want(p: Player, c: SimCard, inHand = false, shallow = false): nu
   }
   if (isSwitchCard(c)) {
     if (others(isSwitchCard)) return 15;
+    if (!inHand && retreatBlocked(p)) return 95;
     return switchTarget(p, null) || (p.active && plan && !plan.line.includes(p.active.c.key)) ? 70 : 30;
   }
   if (isSupporter(c)) return others(isSupporter) ? 25 : 55;
@@ -361,9 +382,9 @@ function attachTargets(p: Player, t: AttachTarget, self: Mon | null): Mon[] {
     if (t.where === 'any' && p.active && ok(p.active)) out.push(p.active);
     for (const m of p.bench) if (ok(m)) out.push(m);
   }
-  // The main line first, most advanced first.
+  // The main line first, most advanced first; an Active paying its retreat right after the line's lead.
   const plan = p.d.plan;
-  const depth = (m: Mon) => (plan ? (plan.line.indexOf(m.c.key) + 1 || 99) : 99);
+  const depth = (m: Mon) => (plan ? (plan.line.indexOf(m.c.key) + 1 || (payingRetreat(p, m) ? 1.5 : 99)) : 99);
   out.sort((a, b) => depth(a) - depth(b));
   return out;
 }
@@ -528,10 +549,10 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
   for (const e of fx.effects) {
     switch (e.k) {
       case 'draw':
-        if (p.deck.length > 0) return true;
+        if (p.deck.length - e.n >= DECK_RESERVE) return true;
         break;
       case 'drawUntil':
-        if (p.hand.length < e.n - 1 && p.deck.length > 0) return true;
+        if (p.hand.length < e.n - 1 && p.deck.length - (e.n - p.hand.length) >= DECK_RESERVE) return true;
         break;
       case 'discardHandDraw':
       case 'shuffleHandDraw':
@@ -550,7 +571,7 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
         break;
       }
       case 'recover':
-        if (energyNeed(p) && p.discard.some((i) => matches(cardOf(p, i), e.f))) return true;
+        if ((energyNeed(p) || retreatBlocked(p)) && p.discard.some((i) => matches(cardOf(p, i), e.f))) return true;
         break;
       case 'switch':
         if (switchTarget(p, o)) return true;
@@ -564,6 +585,9 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
 
 /** Cards gained by a hand-replacing draw, less what the hand already held that the plan wants. */
 function drawValue(p: Player, e: Effect): number {
+  // Drawing the deck thin loses the game at the start of a later turn (rules: deckOutLoses).
+  const drawn = e.k === 'shuffleHandDraw' ? (e.n < 0 ? p.prizes.length : e.n) - p.hand.length : e.k === 'drawUntil' ? e.n - p.hand.length : 'n' in e ? e.n : 0;
+  if (p.deck.length - drawn < DECK_RESERVE) return -1;
   let keep = 0;
   for (const i of p.hand) if (want(p, cardOf(p, i), true) >= 40) keep++;
   const bonus = stuck(p) ? 4 : 0;
@@ -1040,7 +1064,7 @@ function knockOut(g: Game, p: Player, o: Player): void {
   promote(o, p);
 }
 
-/** After a knockout: the ready main attacker, else the hardest hitter, else the main line, else the most HP left. */
+/** After a knockout: the ready main attacker, else the hardest hitter, else the main line, else the most HP left, a multi-Prize Pokémon counting 100 HP less per extra Prize. */
 function promote(o: Player, p: Player): void {
   let at = 0;
   let best = -Infinity;
@@ -1051,7 +1075,7 @@ function promote(o: Player, p: Player): void {
       ? 10000
       : atk
         ? 5000 + damageAgainst(m, p.active, atk.damage)
-        : (o.d.plan?.line.includes(m.c.key) ? 3000 : 0) + m.c.hp - m.dmg;
+        : (o.d.plan?.line.includes(m.c.key) ? 3000 : 0) + m.c.hp - m.dmg - 100 * (m.c.prize - 1);
     if (s > best) {
       best = s;
       at = j;

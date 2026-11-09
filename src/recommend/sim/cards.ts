@@ -83,6 +83,8 @@ export interface CompiledDeck {
   basics: number;
   rareCandy: number;
   unread: UnreadCard[];
+  /** Pokémon played whose Ability the pilot cannot use: passive ones, and activated ones whose text was not read. */
+  partlyRead: UnreadCard[];
   /** Deck lines whose card id the catalog does not know. */
   unknown: number;
 }
@@ -169,13 +171,25 @@ function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCar
 }
 
 /** Compile a deck list. Side-zone lines and ids the catalog lacks are left out. */
+/**
+ * The main deck as one line per card id, sorted by id: the same cards in any
+ * order or split over several lines compile to the same table, so a seed
+ * gives the same games whatever order a list arrives in.
+ */
+export function normalizeDeck(deck: readonly DeckCard[]): DeckCard[] {
+  const qty = new Map<string, number>();
+  for (const line of deck) if (line.zone !== 'side' && line.qty > 0) qty.set(line.cardId, (qty.get(line.cardId) ?? 0) + line.qty);
+  return [...qty]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map(([cardId, n]) => ({ cardId, qty: n }));
+}
+
 export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[]): CompiledDeck {
   const cards: SimCard[] = [];
   const byId = new Map<string, SimCard>();
   const list: number[] = [];
   let unknown = 0;
-  for (const line of deck) {
-    if (line.zone === 'side' || line.qty <= 0) continue;
+  for (const line of normalizeDeck(deck)) {
     const card = ev.card(line.cardId);
     if (!card) {
       unknown++;
@@ -246,6 +260,18 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[]): Co
     else unreadMap.set(c.card.id, { id: c.card.id, name: c.name, copies: 1, reason: c.unread });
   }
 
+  const partly = new Map<string, UnreadCard>();
+  for (const i of list) {
+    const c = cards[i];
+    for (const ab of c.abilities) {
+      if (ab.trigger !== 'passive' && ab.fx.effects.length) continue;
+      const key = `${c.card.id}:${ab.name}`;
+      const u = partly.get(key);
+      if (u) u.copies++;
+      else partly.set(key, { id: c.card.id, name: `${c.name}: ${ab.name}`, copies: 1, reason: ab.trigger === 'passive' ? 'passive Ability' : `Ability: ${ab.fx.unread}` });
+    }
+  }
+
   return {
     cards,
     list,
@@ -254,6 +280,7 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[]): Co
     basics: list.filter((i) => cards[i].basic).length,
     rareCandy: list.filter((i) => cards[i].fx?.effects.some((e) => e.k === 'rareCandy')).length,
     unread: [...unreadMap.values()].sort((a, b) => b.copies - a.copies || a.name.localeCompare(b.name)),
+    partlyRead: [...partly.values()].sort((a, b) => b.copies - a.copies || a.name.localeCompare(b.name)),
     unknown,
   };
 }

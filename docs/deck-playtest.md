@@ -12,16 +12,21 @@ rules text. Nothing is learned from published decks.
 ## API
 
 ```ts
-import { playtest, dealOpening, drawNext } from '@/recommend/sim';
+import { playtest, duel, dealOpening, drawNext, createPokemonSimulator } from '@/recommend/sim';
 
 playtest(evaluator, cards, { games: 1000, seed: 1, turns: 6, first: 'alternate' }); // PokemonPlaytestReport
+duel(evaluator, deckA, deckB, { games: 1000, seed: 1, maxTurns: 60 });             // DuelReport
 dealOpening(evaluator, cards, seed);  // { hand, prizes, library, mulligans, rng, ok }
 drawNext(deal, 1);                    // a new deal with the next card in hand
+createPokemonSimulator(evaluator);    // the same behind the game-neutral DeckSimulator interface
 ```
 
 - **Determinism.** Each game draws from its own random stream, `mixSeed(seed, gameNumber)`, using
   mulberry32 with one 32-bit word of state. The same seed gives the same report, and any single game
   can be replayed.
+- **Deck order.** Lists are normalized before compiling: side-zone lines are dropped, lines are
+  merged per card id, and the result is sorted by id. The same 60 cards in any order, or split over
+  several lines, play the same games.
 - **Practice draws.** The practice-draw functions keep the random state in the returned deal and
   never mutate their input.
 - **Who goes first.** `first` decides it. By default it alternates by game number. Turns are the
@@ -43,6 +48,7 @@ opening its combo, and a Magic one as casting on curve.
 | `deadTurnRate` | Share of turns with nothing played: no card from hand, no Ability, no retreat |
 | `keyPieceStuckRate` | Share of games where every copy of something the plan needs is prized (see below) |
 | `unread`, `unreadCopies`, `unreadDrawsPerGame` | Cards the pilot cannot read, with the kind of effect; how often one is in hand |
+| `partlyRead` | Cards it plays without using them in full: Pokémon whose Ability it does not use (passive ones, or activated ones whose text was not read), such as Radiant Charizard's cost reduction |
 | `meanDamagePerTurn`, `damageByTurn` | Pokémon only: printed damage per own turn, mean over the first six turns |
 
 **What counts as a stuck key piece.** Any one of these, in the Prize cards from the start of the game:
@@ -159,6 +165,11 @@ support lines.
 - **Energy** goes to the main line's most advanced Pokémon that still needs it, and to other
   Pokémon only while they are Active. When a ready attacker waits on the Bench, the Energy pays the
   retreat first.
+- **A stuck Active.** When the Active is off the main line and short of its Retreat Cost while the
+  line waits on the Bench, Energy (manual or accelerated, such as Infernal Reign's third Energy)
+  goes to it right after the line's lead. Searches then rank Energy and Switch at the top.
+- **Deck reserve.** Draw effects are passed up when they would leave fewer than 6 cards in the
+  deck, because decking out loses.
 - **The attack** is the hardest-hitting payable attack. A setup attack (Pidgey's Call for Family) is
   used instead when the damage would be under 50 and would not knock out.
 
@@ -215,6 +226,58 @@ example Mega Mawile ex, me01) as Bulbapedia's Rule Box page lists it, which make
 source. Replace it with the newer rulebook when pokemon.com publishes one at a predictable address.
 LEGEND cards (2010) count 1, which is not checked.
 
+### Head-to-head race (`duel.ts`)
+
+`duel` seats two pilots at one table. Each game gives each seat its own random stream,
+`mixSeed(seed, game, seat)`. Deck A goes first in even-numbered games.
+
+**Setup.** Both players set up. The player who took fewer mulligans then draws one card per extra
+mulligan the other took (p. 18).
+
+**Turns.** The players alternate turns. On each turn the pilot runs its main phase against the
+opponent, then attacks.
+
+- **Damage.** Attack damage, after Weakness and Resistance, lands on the opposing Active.
+- **Knock Out.** A Knock Out discards the Pokémon with everything attached. The attacker takes as
+  many Prize cards as `prizeValue` gives, into hand.
+- **Promotion.** The knocked-out player promotes, in this order of preference:
+  1. a ready main attacker;
+  2. the hardest hitter it can pay for;
+  3. the main line;
+  4. the most HP left, counting a multi-Prize Pokémon as 100 HP less per extra Prize.
+- **Choosing an attack.** The pilot picks the attack with the most damage against the defender. A
+  setup attack yields to any attack that knocks out.
+
+**How a game ends.**
+
+| Ending | Rule |
+| --- | --- |
+| Prizes | The player takes their last Prize card |
+| No Pokémon | The opponent has no Pokémon to promote |
+| Deck out | A player cannot draw at the start of their turn and loses |
+| Turn limit | After `maxTurns` turns (both players together, default 60) the game is a draw |
+| No Basic | A deck with no Basic loses before play |
+
+**The report** gives:
+
+- deck A's wins, losses and draws;
+- the win rate, with draws counting half;
+- its 95% Wilson interval;
+- the win rate of whoever went first;
+- the mean game length;
+- the mean Prize difference (A − B);
+- the endings by kind.
+
+**What this cut leaves out:**
+
+- **Gust.** Boss's Orders, Counter Catcher and Pokémon Catcher stay unread.
+- **Disruption.** Iono resolves only for the player who plays it.
+- **Damage to the Bench.**
+- **Special Conditions.**
+
+Shared Stadiums ("once during each player's turn") can be used by both players. Playing a Stadium
+discards the one in play.
+
 ## What is not simulated
 
 **Gaps that matter for this deck:**
@@ -227,8 +290,9 @@ LEGEND cards (2010) count 1, which is not checked.
   that change damage are ignored. Attack drawbacks are ignored ("can't attack next turn", discarding
   Energy, self-damage), as are Special Conditions.
 - **Special Energy conditions.** A Special Energy provides what `features.provides` says.
-- **Duels.** Milestone 2 has no disruption and no gust: Iono resolves only for the player who plays
-  it, and Boss's Orders is unread.
+- **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
+  and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This
+  favours slow Stage 2 decks.
 
 **Rules not modelled:**
 
@@ -244,9 +308,16 @@ Run on an AMD Ryzen 7 3700X with Node 24 under vitest.
 
 ### Speed
 
-1,000 games of the 60-card Charizard ex deck, six turns each, take about 145–165 ms after warm-up,
-well inside the one-second target. Compiling a deck the first time takes a few milliseconds. The
-first deck that needs a catalog lookup for a skipped stage pays about 100 ms, once per evaluator.
+| Run | Time |
+| --- | --- |
+| 1,000 solo games of the 60-card Charizard ex deck, six own turns each | 155–180 ms after warm-up |
+| 1,000 duels of the same deck against itself (about 15 turns each) | 370–420 ms |
+| Compiling a deck | about 1 ms |
+| The first deck that needs a catalog lookup for a skipped stage | about 90 ms, once per evaluator |
+| Loading catalog and card text (tests) | about 200 ms |
+
+The one-second target is met: 1,000 games of a 60-card deck take well under a second, solo or
+head-to-head.
 
 ### Charizard ex fixture
 
@@ -254,21 +325,24 @@ first deck that needs a catalog lookup for a skipped stage pays about 100 ms, on
 
 | Number | Value |
 | --- | --- |
-| Mulligan rate | 25.7% (hypergeometric: 25.9%) |
-| Main attacker attacked by own turn 1 / 2 / 3 / 4 / 5 / 6 | 0 / 41.0 / 70.9 / 82.1 / 87.1 / 90.0% |
-| Mean first attack (never attacking counts as turn 7) | turn 3.29 |
-| Mean damage per turn, turns 1–6 | 113 |
-| Dead turns | 15.7% |
-| Key piece stuck in Prize cards | 0.08% |
+| Mulligan rate | 27.2% (hypergeometric: 25.9%; 1.9 standard errors off) |
+| Main attacker attacked by own turn 1 / 2 / 3 / 4 / 5 / 6 | 0 / 50.5 / 81.2 / 89.7 / 93.3 / 95.2% |
+| Going first / second, by turn 2 | 44.9% / 55.0% |
+| Mean first attack (never attacking counts as turn 7) | turn 2.90 |
+| Mean damage per turn, turns 1–6 | 124 |
+| Dead turns | 16.1% |
+| Key piece stuck in Prize cards | 0.13% |
 | Unread copies | 9 (Boss's Orders ×3, Counter Catcher, Pokémon Catcher, Defiance Band, Technical Machine: Evolution, Lost Vacuum, Super Rod) |
-| Unread cards drawn per game | 4.6 |
+| Unread cards drawn per game | 4.5 |
+
+A Stage 2 cannot attack on turn 1, so turn 1 is 0 whoever goes first.
 
 **Damaged copies.** Each change pads the deck back to 60 with off-type Water Energy:
 
 | Copy | Attacked by turn 3 | Mean first attack | Dead turns | Damage per turn | Key piece stuck |
 | --- | --- | --- | --- | --- | --- |
-| Without its draw and search Trainers¹ | 16.4% | turn 5.92 | 45% | 48 | — |
-| Without Rare Candy | 45.2% | turn 4.50 | — | — | 10% (the lone Charmeleon prized) |
+| Without its draw and search Trainers¹ | 16.7% | turn 5.88 | 45% | 49 | — |
+| Without Rare Candy | 49.2% | turn 4.37 | 23% | 86 | 10% (the lone Charmeleon prized) |
 
 ¹ Ultra Ball, Nest Ball, Poffin, Arven, Iono, Professor's Research, Forest Seal Stone.
 
@@ -276,6 +350,26 @@ Without Rare Candy the deck never attacks on turn 2, because a Stage 2 cannot ge
 
 **Random piles.** Random piles of 60 distinct cards printed in 2023–2024 (three seeds) never attack
 in six turns, and have dead turns about 68% of the time.
+
+### Duels
+
+1,000 games each, seed 1:
+
+| A vs B | A's win rate (95% CI) | First player wins | Mean turns | Prize difference | Endings |
+| --- | --- | --- | --- | --- | --- |
+| Charizard vs itself | 51.3% (48.2–54.4) | 54.1% | 14.6 | +0.03 | 903 prizes, 96 no Pokémon, 1 deck out |
+| Charizard vs itself, seed 2 | 50.5% (47.4–53.6) | 53.5% | 14.6 | +0.06 | — |
+| Charizard vs random pile (3 piles) | 99.5% each | — | 13.4–14.6 | +5.5 | the 5 losses per pile are deck-outs |
+| Charizard vs no-Rare-Candy copy | 88.6% (86.5–90.4) | — | — | +4.12 | — |
+| No-Rare-Candy copy vs Charizard | 11.3% | — | — | — | — |
+| Charizard vs no-draw/search copy | 88.8% | — | — | — | — |
+| No-draw/search copy vs Charizard | 11.0% | — | — | — | — |
+
+A over B plus B over A: 0.999 for the no-Rare-Candy pair and 0.998 for the no-draw/search pair.
+
+The pilot's mistakes in duels were found by tracing lost games (`duelGame(…, trace)`), not by
+tuning to the tests. Before the stuck-Active and deck-reserve rules, the Charizard deck decked out
+in 9% of mirror games and lost 3–5% to random piles, stalled behind a Manaphy with no Energy.
 
 ### Blind spots across the catalog
 
@@ -295,8 +389,9 @@ The parser reads these shares of Trainers and Abilities, by catalog slice (one p
 - hand-size disruption;
 - searches tied to a Pokémon in play (Salvatore, Grand Tree).
 
-Gust (Boss's Orders) counts low here only because the kinds are assigned from the evaluator's
-roles first.
+A card's kind is the first of the evaluator's roles gust, heal, recover and disrupt that it has.
+Only a card with none of those is classed by its text (tool, stadium, condition, coin flips,
+other).
 
 ### Computed here, not in the evaluator
 
@@ -304,13 +399,20 @@ These belong in `PokemonFeatures` later:
 
 - **Effect amounts and targets.** How many cards a draw draws; what a search fetches and where it
   puts it; discard costs; coin flips; Ability triggers and per-turn limits; VSTAR Powers.
-- **Iono and Arven.** The evaluator's `draw` role misses Iono ("draws a card for each of their
-  remaining Prize cards") and has no role for Arven's Item-and-Tool search. The simulator reads
-  both.
 - **The catalog evolution map,** name → what it evolves from. It is needed for Stage 2 lines that
   skip their Stage 1.
 - **Prize value per Pokémon.**
 - **Weakness and Resistance values** (`×2`, `+20`, `-30`).
-- **The suffix of space-written GX and EX names.** The evaluator's suffix pattern reads only `-GX`
-  and `-EX` with a hyphen, which misses the ~860 TCGdex names written "Charizard EX" and "Pikachu
-  GX".
+
+### Evaluator bugs found on the way
+
+These are in `src/recommend/pokemon.ts` today; the simulator works around them.
+
+- **Space-written suffixes.** The suffix pattern (`-(GX|EX)$`) reads only the hyphen form. That
+  misses about 860 TCGdex names written with a space: 551 "… GX" and 307 "… EX". Synergy mentions
+  of EX and GX, and anything else keyed on `suffix`, skip those cards.
+- **Iono.** The `draw` role misses it. Its text says "draws a card for each of their remaining
+  Prize cards", and the pattern wants "draw N cards".
+- **Arven.** It gets no role: "search your deck for an Item card and a Pokémon Tool card" matches
+  none of the search patterns. The Charizard fixture's static draw part therefore undercounts
+  eight of its cards.
