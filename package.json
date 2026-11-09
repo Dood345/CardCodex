@@ -24,6 +24,7 @@
     "decks:ygo": "node scripts/decks-ygo.mjs",
     "text": "node scripts/build-text.mjs",
     "text:ygo": "node scripts/build-ygo-text.mjs",
+    "text:mtg": "node scripts/build-mtg-text.mjs",
     "deck-bench": "vitest run --config vitest.bench.config.ts",
     "deck-bench:update": "vitest run --config vitest.bench.config.ts"
   },

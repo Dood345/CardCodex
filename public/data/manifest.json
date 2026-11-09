@@ -31,6 +31,11 @@
       "bytes": 11454125,
       "builtAt": "2026-11-03T01:30:34.324Z"
     },
+    "mtg/text.json": {
+      "hash": "c659c96c4887",
+      "bytes": 6177011,
+      "builtAt": "2026-11-09T22:32:16.972Z"
+    },
     "hashes.json": {
       "hash": "ffc67648d080",
       "bytes": 643538,

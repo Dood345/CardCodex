@@ -38,6 +38,30 @@ const LOADERS: Partial<Record<GameId, Loader>> = {
     };
     return make('tcg');
   },
+  mtg: async (index) => {
+    const [textMod, mod, practice] = await Promise.all([import('./mtg-text'), import('./mtg'), import('./practice')]);
+    const text = await textMod.loadMtgText();
+    if (!text) return null;
+    // Legality and the restricted list follow the format, so each format has its own evaluator (caches shared).
+    const base = mod.createMtgEvaluator({ index, text, format: 'any' });
+    const made = new Map<string, DeckEvaluator>();
+    const make = (format: string): DeckEvaluator => {
+      let ev = made.get(format);
+      if (!ev) {
+        const forFormat = base.withFormat(format);
+        ev = {
+          ...forFormat,
+          forFormat: make,
+          // An opening hand of seven; mulligans are the player's call, so none is taken here.
+          practice: (cards, seed) => practice.dealPlain(forFormat, cards, seed, 7),
+          seedIdeas: (pool, count) => mod.mtgSeeds(forFormat, pool, 2).slice(0, count),
+        };
+        made.set(format, ev);
+      }
+      return ev;
+    };
+    return make('any');
+  },
 };
 
 /** True when the game has an evaluator, so the deck screens can offer the check and the builder. */

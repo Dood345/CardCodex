@@ -24,7 +24,7 @@ export const DATA_DIR = path.join(ROOT, 'public', 'data');
 export const MANIFEST = path.join(DATA_DIR, 'manifest.json');
 
 /** Data files relative to public/data, in the order they are listed. */
-export const DATA_FILES = ['catalog.json', 'species.json', 'text.json', 'ygo/text.json', 'ygo/catalog.json', 'mtg/catalog.json', 'hashes.json', 'ygo/hashes.json', 'ygo/decks.json'];
+export const DATA_FILES = ['catalog.json', 'species.json', 'text.json', 'ygo/text.json', 'ygo/catalog.json', 'mtg/catalog.json', 'mtg/text.json', 'hashes.json', 'ygo/hashes.json', 'ygo/decks.json'];
 
 /** Manifest schema version (the app ignores manifests it does not understand). */
 export const MANIFEST_VERSION = 1;
