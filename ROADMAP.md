@@ -29,6 +29,19 @@ source whose terms allow it), real quantities, and the card suggestions below.
   licence, and Bulbapedia is CC BY-NC-SA, which a GPL-3.0 app cannot carry. See
   `docs/pokemon-deck-sources.md`.
 
+### In-house deck recommender
+
+Set 2026-11-09, started the same day: a deck-building engine of our own that scores a deck on rules
+of thumb read from the cards' own text (Basics for the opening hand, evolution lines, Energy of the
+attackers' types, draw and search, power for the era, synergy, shape, era) and uses the score to
+suggest cards while building, swaps for an existing deck, and whole decks grown from a seed, from
+the collection only or from the whole catalog. Phase 1 landed for Pokémon: `public/data/text.json`
+(`npm run text`, the rules text from TCGdex) and `src/recommend/` (evaluator, builder, tests); see
+`docs/deck-recommender.md` for the parts, weights, validation and known gaps. Still to do: the
+suggestions panel on the deck page and a Build-a-deck page; Yu-Gi-Oh! and Magic evaluators (each
+needs its own text file: YGOPRODeck `desc`, Scryfall Oracle text); a meta layer only if a source
+whose terms allow it turns up (Limitless TCG gives API keys to public-facing projects on request).
+
 ### Magic: The Gathering: the scanner and the rest
 
 Browsing, search, card pages, the collection and the binder work for Magic (`src/games/mtg/`, catalog

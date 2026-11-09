@@ -11,6 +11,7 @@ Two builders, Node 22+, built-ins only, run from the repo root (details: `script
 |---|---|---|
 | `npm run catalog` | `public/data/catalog.json` (~3.3 MB, all English Pokémon sets and cards), `public/data/species.json` (~61 KB, species 1–1025) | TCGdex GraphQL (bulk cards) + REST (per-set details), PokéAPI CSVs on GitHub |
 | `npm run catalog:ygo` | `public/data/ygo/catalog.json` (~3.6 MB; cards by passcode + printings by set code) | YGOPRODeck API v7 `cardinfo.php` + `cardsets.php` |
+| `npm run text` (after `npm run catalog`) | `public/data/text.json` (~4.6 MB; rules text, regulation mark and legality per Pokémon card, for the deck recommender; only cards in the catalog are kept, so rebuild it whenever the catalog changes) | TCGdex GraphQL (bulk cards), REST for the few cards GraphQL rejects |
 
 Both also rewrite `public/data/manifest.json` (content hash, size and `builtAt` per data file; see
 `scripts/data-manifest.mjs`), which the deployed web app uses to notice a rebuilt catalog. The

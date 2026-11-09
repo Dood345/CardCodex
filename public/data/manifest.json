@@ -11,6 +11,11 @@
       "bytes": 60832,
       "builtAt": "2026-11-08T17:56:21.331Z"
     },
+    "text.json": {
+      "hash": "c524bdc15318",
+      "bytes": 4616484,
+      "builtAt": "2026-11-09T20:25:42.943Z"
+    },
     "ygo/catalog.json": {
       "hash": "68ec865fe080",
       "bytes": 3632363,
