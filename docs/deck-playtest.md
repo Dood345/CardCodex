@@ -46,6 +46,7 @@ opening its combo, and a Magic one as casting on curve.
 | `onlineBy[t-1]` | Share of games where the main attacker had attacked by own turn t |
 | `meanOnlineTurn` | Mean own turn of its first attack; games where it never attacks count as `turns + 1` |
 | `deadTurnRate` | Share of turns with nothing played: no card from hand, no Ability, no retreat |
+| `guards` | How often a loop guard fired over all games (a main phase of 200 actions, damage counters that found nothing to land on): zero in a sound engine; `DuelReport.guards` likewise |
 | `keyPieceStuckRate` | Share of games where every copy of something the plan needs is prized (see below) |
 | `unread`, `unreadCopies`, `unreadDrawsPerGame` | Cards the pilot cannot read, with the kind of effect; how often one is in hand |
 | `partlyRead` | Cards it plays without using them in full: Pokémon whose Ability it does not use (passive ones, or activated ones whose text was not read), such as Radiant Charizard's cost reduction |
@@ -102,7 +103,11 @@ those from `features(card).text`.
 | Tools | Air Balloon, Hero's Cape, Brave Bangle, Maximum Belt, Lillie's Pearl, Lucky Helmet, Rescue Board | static effects on the Pokémon the Tool is attached to (`statics`): Retreat Cost, HP, damage to the opponent's Active (only against a Pokémon ex, only on a holder without a Rule Box), a Prize card withheld on its Knock Out, cards drawn when damaged in the Active Spot, a cheaper attack; attached to the plan's lead, or to the Active for a Retreat Cost it needs |
 | Stadiums with a standing effect | Gravity Mountain, Lively Stadium, N's Castle, Postwick, Team Rocket's Watchtower, Jamming Tower, Risky Ruins, Forest of Vitality, Full Metal Lab | the same effects on every Pokémon the Stadium names, both players'; Abilities or Tools turned off, damage counters on a Basic benched, a kind evolving the turn it is played, less damage taken; played when it favours the pilot's side (its Pokémon in play or in the deck against the opponent's in play) |
 | Stadiums each player may use | Prism Tower, Lumiose City, Spikemuth Gym | "Once during each player's turn, that player may …" read like a Trainer, "their" as "your": Prism Tower pays two cards for one, Lumiose City ends the turn |
+| Gust | Boss's Orders, Pokémon Catcher | in a duel, the opponent's Benched Pokémon the pilot's Active can Knock Out comes up (else the most damaged one its attack hurts most); "Switch out your opponent's Active Pokémon to the Bench" lets the opponent promote; in a solo game the card sits idle and the report says so |
+| Disruption of the opponent | Crushing Hammer, Special Red Card | an Energy off one of the opponent's Pokémon (the one holding the most), their hand to the bottom of their deck and a draw, their hand discarded down to a number, cards off the top of their deck, cards of a kind discarded from their revealed hand; in a duel only |
 | Attack costs (attacks only) | Draconic Buster, Bellowing Thunder, Icicle Loop, Tuck Tail | Energy discarded from the attacker (a number, all, a type), "any amount" from any of your Pokémon, Energy put back into the hand or shuffled into the deck, the top of the deck or cards from the hand discarded, damage to itself or to its own Bench, the attacker returned to the hand; optional ("You may …") with a bonus "and have this attack do N more damage" or "If you do, …" |
+
+| Effects on the opponent (attacks and Abilities) | Munkidori's Mind Bend, Dragapult ex's Phantom Dive, Budew's Itchy Pollen, Dusknoir's Shadow Bind and Cursed Blast, Dunsparce's Dig, Munkidori's Adrena-Brain | a Special Condition on the opponent's Active (or on the attacker), damage or damage counters to the opponent's Bench (one, two, each, or counters spread over the Pokémon they Knock Out first), "can't retreat", "can't attack" and "can't play Item cards" during the opponent's next turn, no damage (or less) to the attacker during the opponent's next turn, damage counters moved across the table, an Ability that Knocks its user Out; "Flip a coin. If heads, …" rolled once before the damage and kept for the effects after it; in a duel only |
 
 `{R}` symbols are read as type names.
 
@@ -114,7 +119,7 @@ those from `features(card).text`.
 | When it is benched from hand | Lumineon V's Luminous Sign, Chien-Pao's Snow Sink | — |
 | Once during your turn | Pidgeot ex's Quick Search | Honours "can't use more than 1 Quick Search Ability each turn" |
 | As often as you like | — | — |
-| Passive | Latias ex's Skyliner, Meganium's Wild Growth, Lillie's Clefairy ex's Fairy Zone | A standing effect (`statics`, as for Tools): free retreat, HP, damage added, a cheaper attack (per Prize card taken for Bloodmoon Ursaluna ex), Energy doubled, the opponent's Weakness changed, damage from a kind of attacker prevented; "As long as this Pokémon is in the Active Spot" honoured |
+| Passive | Latias ex's Skyliner, Meganium's Wild Growth, Lillie's Clefairy ex's Fairy Zone, Poltchageist's Hide 'n' Sneak | A standing effect (`statics`, as for Tools): free retreat, HP, damage added, a cheaper attack (per Prize card taken for Bloodmoon Ursaluna ex), Energy doubled, the opponent's Weakness changed, damage from a kind of attacker prevented, effects of the opponent's attacks prevented (Special Conditions, locks, counters placed), damage to the Bench prevented; "As long as this Pokémon is in the Active Spot" honoured |
 
 An activated Ability's "if …, you may …" is a condition the engine checks (Fezandipiti ex's Flip the
 Script after a Knock Out, Lunatone's Lunar Cycle with Solrock in play), "You must discard … in order
@@ -207,7 +212,9 @@ when no sentence is left unread:
   (`that doesn't have a Rule Box`, `of different types`, `Team Rocket's`, `or`). Clauses the engine
   does honour are taken out before the check: a discard cost, `Flip a coin. If heads,`, `your turn
   ends`, Rare Candy's own rules, an Ability's trigger, its Active-only clause and its per-turn limit,
-  and an attack's "can't attack next turn".
+  an attack's "can't attack next turn", and the sentences that need an opponent, each read whole
+  (gust, a Special Condition, damage to the Bench, a lock, protection, an Energy or cards taken from
+  the opponent).
 - **noop**: on the explicit list `NOOP` in `effects.ts`, each entry with its reason: "Then, shuffle
   your deck" (a search already shuffles), "Shuffle the other cards back into your deck" (a look at
   the top cards already does), the rule-box reminder, "Damage is not an effect", "Don't apply
@@ -387,12 +394,46 @@ opponent, then attacks.
 - the mean Prize difference (A − B);
 - the endings by kind.
 
-**What this cut leaves out:**
+**What needs an opponent** (since 2026-11-10) runs in a duel and sits idle in a solo game, where the
+report says so in plain words:
 
-- **Gust.** Boss's Orders, Counter Catcher and Pokémon Catcher stay unread.
-- **Disruption.** Iono resolves only for the player who plays it.
-- **Damage to the Bench.**
-- **Special Conditions.**
+- **Gust.** Boss's Orders and Pokémon Catcher bring up the Benched Pokémon the pilot's Active can
+  Knock Out this turn, else the most damaged one its attack hurts most; the pilot plays them only
+  with such a target. "Switch out your opponent's Active Pokémon to the Bench" lets the opponent
+  promote as after a Knock Out.
+- **Special Conditions** (rulebook p. 15–16). An attack's "is now Poisoned/Burned/Asleep/Paralyzed/
+  Confused" lands on the Defending Pokémon (Asleep, Confused and Paralyzed replace one another).
+  Pokémon Checkup runs after each attack for both Actives: Poison a damage counter, Burn two and a
+  coin to recover, Asleep a coin to wake, Paralysis lifting at the end of its owner's next turn; a
+  Knock Out there gives the other side its Prize cards. Asleep and Paralyzed Pokémon neither attack
+  nor retreat; a Confused one flips before attacking and on tails takes three damage counters
+  instead. Going to the Bench clears them.
+- **Damage to the Bench.** "N damage to one / two / each of your opponent's Benched Pokémon" and "N
+  damage counters … in any way you like" go where they Knock Out first, then where they hurt most;
+  Bench protection ("Prevent all damage done to your Benched Pokémon …") and "prevent all effects"
+  (Hide 'n' Sneak, Mist Energy) are honoured.
+- **Locks and protection.** "Can't retreat", "can't attack" and "can't play any Item cards" during
+  the opponent's next turn are enforced; "prevent all damage done to this Pokémon" (or N less) during
+  the opponent's next turn too.
+- **Disruption.** Crushing Hammer takes an Energy from the opponent's Pokémon that holds the most,
+  Special Red Card puts their hand under their deck and they draw, the other wordings discard down
+  to a number, mill their deck or discard a kind from their revealed hand; Judge and Iono shuffle
+  both hands.
+- **Choosing an attack.** An attack's effects on the opponent are worth damage when choosing it: a
+  turn the opponent loses (Paralyzed or Asleep 60, Confused 40, another condition 30), a lock
+  (20–25), protection (60 or the amount), Bench damage that lands, a gust (20). An attack that puts
+  its own user to sleep (Wailord ex's Falling Down) or confuses it costs a share of its next turns,
+  so its sustained figure divides by 1 + that share (`AttackFeature.miss`: Asleep a quarter, Confused
+  a half, Paralyzed one).
+- **Sweeping.** Before every attack and at every checkup, a Pokémon whose damage has reached its HP
+  is Knocked Out, Bench included: the HP a Tool or Stadium gave can leave after the damage landed
+  (Jamming Tower, a replaced Stadium). The counters loop above and the main phase (200 actions) are
+  bounded, and `guards` in the reports counts how often a bound was hit, so no card text can hang a
+  deck check; one run of the duel judge spun for hours on Phantom Dive against a Manaphy-protected
+  Bench holding a Chansey past its HP before this.
+
+Still unread in duels: conditions and effects that last beyond the next turn, two-coin wordings,
+"If tails, …" branches, and the opponent's hand being seen (a no-op).
 
 Shared Stadiums ("once during each player's turn") can be used by both players. Playing a Stadium
 discards the one in play.
@@ -401,20 +442,20 @@ discards the one in play.
 
 **Gaps that matter for this deck:**
 
-- **Cards whose text is not read.** The pilot never plays them. That covers gust, hand and Energy
-  disruption of the opponent, "only if" conditions about things the card data does not carry (a Tera
-  Pokémon in play: the catalog has no Tera marker), Tools and Stadiums tied to Special Conditions or
-  to the opponent's attacks (Binding Mochi, Punk Helmet, Battle Cage), Area Zero Underdepths (Tera),
-  multi-coin effects, and a few wordings (Salvatore's evolve-from-deck, Naveen, Kieran's "Choose 1",
-  Academy at Night). The report names them in two groups: cards that need an opponent to matter (gust,
-  disruption, and healing that sat idle) and cards the pilot does not know how to play.
+- **Cards whose text is not read.** The pilot never plays them. That covers "only if" conditions
+  about things the card data does not carry (a Tera Pokémon in play: the catalog has no Tera
+  marker), Tools and Stadiums tied to the opponent's attacks in wordings not yet read (Binding Mochi,
+  Punk Helmet), Area Zero Underdepths (Tera), multi-coin effects, "If tails, …" branches, and a few
+  wordings (Salvatore's evolve-from-deck, Naveen, Kieran's "Choose 1", Academy at Night). The report
+  names them in two groups: cards that need an opponent to matter (gust, disruption, Special
+  Conditions and healing that sat idle in a solo game) and cards the pilot does not know how to play.
 - **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
   Stadiums that change damage are not. Still unread in attack text: a count the parser does not
   model (Benched Pokémon by HP, damage counters on an owner's Pokémon), a bonus tied to a Special
   Condition, a Tool attached, a healed Pokémon or a named Special Energy. Of the attack drawbacks,
   "can't attack next turn", "not on your first turn going second", Energy discarded or returned,
-  damage to itself and to its own Bench are played (see Attack costs below); Special Conditions are
-  not.
+  damage to itself and to its own Bench are played (see Attack costs below), and Special Conditions
+  on the attacker itself.
 - **Attack costs** (`damage-text.ts` `parseCost`, since 2026-11-10). The costs run before the
   attack's damage, the own-side damage after it. "Any amount" of Energy (Raging Bolt ex) is as many
   as a Knock Out needs (the mirror's HP in a solo game), taken from the Bench first and the attacker
@@ -435,11 +476,11 @@ discards the one in play.
   Darkness, attached only to Team Rocket's Pokémon; Legacy Energy any one type. Enriching Energy draws
   when attached from the hand; Spiky Energy's counters land on the attacker (and can Knock it Out);
   Legacy Energy withholds a Prize card once per game; Boomerang Energy comes back after its holder's
-  own attack discards it. Mist Energy's "prevent all effects of attacks" stays unread while the
-  engine has no attack effects to prevent.
-- **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
-  and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This
-  favours slow Stage 2 decks.
+  own attack discards it. Mist Energy's "prevent all effects of attacks" is a standing effect that
+  keeps Special Conditions, locks and placed counters off its holder.
+- **Solo games.** Everything that needs an opponent (gust, disruption, Special Conditions, Bench
+  damage, locks, protection) does nothing in a solo game: the cards sit idle and the report says
+  so. The duel plays them (see Head-to-head race).
 
 **Rules not modelled:**
 

@@ -29,7 +29,7 @@ import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-
 import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, ScorePart } from './types';
 import { expectedDamage, pokeMatches, staticView, sustainedOf, type DamageMod, type DeckSupply, type PokeLike } from './sim/damage';
-import { attackDrain, attackRest, parseAttackText } from './sim/effects';
+import { attackDrain, attackMiss, attackRest, parseAttackText } from './sim/effects';
 
 /* ---------- features ---------- */
 
@@ -71,6 +71,8 @@ export interface AttackFeature {
   expected: number;
   /** Energy its own text takes from its user each time (a mandatory discard, or Energy put back): `sustained` divides by max(1, drain) (sim/effects.ts). */
   drain: number;
+  /** The share of its next turns a Special Condition on its user costs (Wailord ex's Falling Down: Asleep, a quarter): `sustained` divides by 1 + miss. */
+  miss: number;
   /** 1: its user cannot attack next turn; 2: it cannot use this attack next turn; 0: neither (sim/effects.ts). */
   rest: 0 | 1 | 2;
   /**
@@ -575,7 +577,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       const fx = damage > 0 && a.e ? parseAttackText(a.e) : null;
       const mods = fx?.mods ?? [];
       const expected = damage > 0 ? expectedDamage(damage, mods, staticView(costCount(a.c))) : 0;
-      return { name: a.n, cost: a.c, costN: costCount(a.c), types: costTypes(a.c), damage, printed: a.d ?? '', effect: a.e ?? '', mods, expected, drain: attackDrain(fx, costCount(a.c)), rest: attackRest(a.e ?? ''), sustained: expected };
+      return { name: a.n, cost: a.c, costN: costCount(a.c), types: costTypes(a.c), damage, printed: a.d ?? '', effect: a.e ?? '', mods, expected, drain: attackDrain(fx, costCount(a.c)), miss: attackMiss(fx), rest: attackRest(a.e ?? ''), sustained: expected };
     });
     for (const a of attacks) a.sustained = sustainedOf(a, attacks);
     // The best attack is the one that does the most turn after turn, not the biggest number on the card.

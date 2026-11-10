@@ -14,7 +14,7 @@
  */
 import { normalizeText } from '@/data/normalize';
 import { COST_LETTERS } from '../card-text';
-import type { CardTest, Cond, Count, DamageMod, PokeTest, StaticEffect } from './damage';
+import type { CardTest, Cond, Count, DamageMod, PokeTest, SpecialCondition, StaticEffect } from './damage';
 import type { Effect } from './effects';
 
 const TYPE_NAMES = Object.keys(COST_LETTERS).filter((t) => t !== 'Colorless');
@@ -46,6 +46,10 @@ export function parsePokeTest(raw: string): PokeTest | null {
   if ((m = /^(.+?), except any (.+)$/.exec(s))) {
     s = m[1];
     t.notNames = m[2].split(/,? (?:and|or) /).map((x) => normalizeText(x));
+  }
+  if ((m = /^(.+?) that (?:doesn't|don't) have a Rule Box$/.exec(s))) {
+    s = m[1];
+    t.ruleBox = false;
   }
   if ((m = /^(.+?) Pokémon$/.exec(s)) && (m[1] === 'Basic' || m[1] === 'Evolution' || m[1] === 'Evolved')) {
     if (m[1] === 'Basic') t.basic = true;
@@ -158,6 +162,8 @@ export function parseCond(raw: string): Cond | null {
     return cs.length === 1 ? cs[0] : { k: 'any', cs };
   }
   if ((m = /^(?:your opponent's Active Pokémon|the Defending Pokémon) (?:already )?has (any|no) damage counters on it$/.exec(s))) return { k: 'opponentActiveDamaged', not: m[1] === 'no' || undefined };
+  if ((m = /^(?:your opponent's Active Pokémon|the Defending Pokémon|this Pokémon) is (Asleep|Burned|Confused|Paralyzed|Poisoned)$/.exec(s))) return { k: 'condition', on: /^this/.test(s) ? 'self' : 'opponentActive', c: m[1] as SpecialCondition };
+  if ((m = /^(?:your opponent's Active Pokémon|the Defending Pokémon|this Pokémon) is affected by a Special Condition$/.exec(s))) return { k: 'condition', on: /^this/.test(s) ? 'self' : 'opponentActive', c: 'any' };
   if ((m = /^this Pokémon has (any|no) damage counters on it$/.exec(s))) return { k: 'selfDamaged', not: m[1] === 'no' || undefined };
   if ((m = /^this Pokémon has at least (\d+) extra Energy attached \(in addition to this attack's cost\)$/.exec(s))) return { k: 'selfEnergy', extra: N(m[1]) };
   if ((m = /^this Pokémon has any (?:(Special|Basic) )?(?:([A-Z][a-z]+) )?Energy attached$/.exec(s))) {
@@ -288,6 +294,16 @@ export function parseStatic(sentence: string): StaticEffect[] {
     const from = parsePokeTest(m[1]);
     return from ? [{ k: 'preventDamage', from, scope: 'self' }] : [];
   }
+  if (/^Prevent all effects of (?:your opponent's Pokémon's attacks and Abilities|attacks used by your opponent's Pokémon) done to (?:this Pokémon|the (?:[A-Z][a-z]+ )?Pokémon this card is attached to)\.$/.test(s)) return [{ k: 'preventEffects', scope: 'self' }];
+  if ((m = /^Prevent all effects of attacks used by your opponent's Pokémon done to your (.+?)\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'preventEffects', scope: 'own', t } as StaticEffect] : [];
+  }
+  if ((m = /^Prevent all damage done to your Benched (.+?) by attacks from your opponent's Pokémon\.$/.exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? [{ k: 'preventBenchDamage', t, scope: 'own' }] : [];
+  }
+  if (/^Prevent all damage counters from being placed on Benched Pokémon \(both yours and your opponent's\) by effects of attacks and Abilities from the opponent's Pokémon\.$/.test(s)) return [{ k: 'preventBenchDamage', scope: 'both' }];
   if ((m = /^(.+?) used by this Pokémon costs Colorless less for each (.+?)\.$/.exec(s))) {
     const per = parseCount(m[2], null);
     return per ? [{ k: 'costLess', n: 1, attack: m[1], per, scope: 'self' }] : [];

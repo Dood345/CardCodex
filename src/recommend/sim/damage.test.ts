@@ -42,7 +42,7 @@ function compiled(ids: string[]) {
   return { d, card: (id: string): SimCard => d.cards.find((c) => c.card.id === id)! };
 }
 
-const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' });
+const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 });
 const mon = (c: SimCard, energy: SimCard[] = [], dmg = 0): Mon => ({ c, under: [], energy, dmg, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 });
 
 /** A player on turn 3 with `active` up and `bench` behind it; energy is Fire. */

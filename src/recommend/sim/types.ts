@@ -46,6 +46,8 @@ export interface PlaytestReport {
   meanOnlineTurn: number;
   /** Share of turns in which the pilot had nothing to play (no card from the hand, no Ability). */
   deadTurnRate: number;
+  /** How often a loop guard fired over all games (a main phase of 200 actions, counters that could not be placed): zero in a sound engine. */
+  guards: number;
   /** Share of games where a card the plan needs was out of reach from the start (Pokémon: every copy in the Prize cards). */
   keyPieceStuckRate: number;
   /** Cards the pilot cannot read, by copies. */
@@ -96,6 +98,8 @@ export interface DuelReport {
   meanScoreDiff: number;
   /** How games ended, by reason. */
   endings: Record<string, number>;
+  /** How often a loop guard fired over all games (a main phase of 200 actions, counters that could not be placed): zero in a sound engine. */
+  guards: number;
   planA: string;
   planB: string;
   ms: number;

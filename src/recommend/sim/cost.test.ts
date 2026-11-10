@@ -38,7 +38,7 @@ function compiled(ids: string[]) {
   const d = compileDeck(ev, ids.map((cardId) => ({ cardId, qty: 1 })));
   return { d, card: (id: string): SimCard => d.cards.find((c) => c.card.id === id)! };
 }
-const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' });
+const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 });
 const mon = (c: SimCard, energy: SimCard[] = [], dmg = 0): Mon => ({ c, under: [], energy, dmg, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 });
 function seat(d: ReturnType<typeof compileDeck>, active: Mon | null, bench: Mon[] = []): Player {
   const p = newPlayer(d, 7, false, 6, 5);
@@ -64,8 +64,8 @@ describe('reading attack costs', () => {
     expect(atk(IDS.meowth, 'Tuck Tail').fx?.effects).toEqual([{ k: 'selfToHand' }]);
     expect(atk(IDS.chienpao, 'Icicle Loop').fx?.effects).toMatchObject([{ k: 'energyToHand', n: 1 }]);
     const pump = atk(IDS.ogerpon, 'Torrential Pump').fx!;
-    expect(pump.effects).toMatchObject([{ k: 'energyToDeck', n: 3, may: true }]);
-    expect(pump.sentences.map((s) => s.status)).toEqual(['read', 'unread', 'noop']);
+    expect(pump.effects).toMatchObject([{ k: 'energyToDeck', n: 3, may: true }, { k: 'benchDamage', n: 120, how: 'one', ifPaid: true }]);
+    expect(pump.sentences.map((s) => s.status)).toEqual(['read', 'read', 'noop']);
     const blast = atk(IDS.manectric, 'Riotous Blasting').fx!;
     expect(blast.effects).toMatchObject([{ k: 'discardSelfEnergy', all: true, may: true }]);
     expect(blast.mods).toEqual([{ k: 'bonus', n: 130, if: { k: 'paid' } }]);
