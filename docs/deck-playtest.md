@@ -133,6 +133,39 @@ off Rare Candy), the compiler looks up what the missing stage evolves from in th
 **Support lines.** Pokémon whose Abilities the pilot can use, plus what they evolve from, form the
 support lines.
 
+### What the pilot follows: the coverage measure (`coverage.ts`)
+
+A pattern that matched is not a text obeyed. Since 2026-11-10 every text the parser reads is also
+accounted for sentence by sentence (`ParsedText.sentences`), and a card counts as **followed** only
+when no sentence is left unread:
+
+- **read**: an effect the engine applies was taken from the sentence, and nothing in it was skipped.
+  A sentence is not read when it carries a condition (`if`, `unless`, `only`, `as long as`, `while`,
+  `except`, `otherwise`), an `instead`, a `for each`, a clause about the opponent (`your opponent`,
+  `each player`, `their hand`), a `Choose 1:` or a search clause with words the filter does not model
+  (`that doesn't have a Rule Box`, `of different types`, `Team Rocket's`, `or`). Clauses the engine
+  does honour are taken out before the check: a discard cost, `Flip a coin. If heads,`, `your turn
+  ends`, Rare Candy's own rules, an Ability's trigger, its Active-only clause and its per-turn limit,
+  and an attack's "can't attack next turn".
+- **noop**: on the explicit list `NOOP` in `effects.ts`, each entry with its reason: "Then, shuffle
+  your deck" (a search already shuffles), "Shuffle the other cards back into your deck" (a look at
+  the top cards already does), the rule-box reminder, "Damage is not an effect", "Don't apply
+  Weakness and Resistance for Benched Pokémon" (the engine applies them to the Active only), "Apply
+  Weakness as ×2", "You still need the necessary Energy", the one-VSTAR-Power note, "The effect of X
+  doesn't stack", "This includes new Pokémon that come into play", "Your opponent chooses the new
+  Active Pokémon" (the engine lets the switched-out player promote), the first-turn evolution
+  reminder, "Damage from attacks is still taken", "Shuffle your deck afterward" and "You can play only
+  one Supporter card each turn" (older printings).
+- **unread**: everything else.
+
+Four shares come out of it, by copies over a corpus and by name over the Standard pool: Trainer
+copies played with every sentence followed, Ability copies used the same way, Special Energy copies
+whose text is followed beyond the type it provides (the "provides" sentence is read through the
+evaluator's `provides`), and damaging attack copies whose text is fully acted on (an attack with no
+text counts). What is not followed is grouped by the kind of its first unread sentence
+(`kindOf`), with example card names, so the report says what to read next. The benchmark records the
+shares in its baseline and fails on any drop (`docs/deck-bench.md`).
+
 ### The pilot (`engine.ts`)
 
 **Setup.**

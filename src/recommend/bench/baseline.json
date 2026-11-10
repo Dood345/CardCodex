@@ -156,6 +156,40 @@
     },
     "order": 0.3109840116255637
    }
+  ],
+  "coverage": [
+   {
+    "id": "trainers",
+    "label": "Trainer copies played with every sentence followed",
+    "copies": 1092,
+    "followed": 382,
+    "share": 0.3498168498168498,
+    "groups": []
+   },
+   {
+    "id": "abilities",
+    "label": "Ability copies used with every sentence followed",
+    "copies": 168,
+    "followed": 44,
+    "share": 0.2619047619047619,
+    "groups": []
+   },
+   {
+    "id": "energy",
+    "label": "Special Energy copies whose text is followed",
+    "copies": 46,
+    "followed": 0,
+    "share": 0,
+    "groups": []
+   },
+   {
+    "id": "attacks",
+    "label": "Damaging attack copies whose text is fully acted on",
+    "copies": 932,
+    "followed": 504,
+    "share": 0.5407725321888412,
+    "groups": []
+   }
   ]
  },
  "pokemon-tcg-data": {
@@ -168,17 +202,17 @@
    {
     "id": "total",
     "label": "Score",
-    "mean": 74.06505376344087,
+    "mean": 74.07043010752689,
     "pile": 1,
     "damage": {
-     "swap-6": 0.9344086021505377,
+     "swap-6": 0.9354838709677419,
      "swap-12": 0.9704301075268817,
      "swap-24": 0.9672043010752688,
      "trainers": 0.771505376344086,
      "energy": 0.9016129032258065,
      "pokemon": 0.9849462365591398
     },
-    "order": 0.8940330190894035
+    "order": 0.8941628929406594
    },
    {
     "id": "part:rules",
@@ -258,17 +292,17 @@
    {
     "id": "part:power",
     "label": "Power",
-    "mean": 0.46381358678610857,
-    "pile": 0.5172043010752688,
+    "mean": 0.46436699594166825,
+    "pile": 0.513978494623656,
     "damage": {
-     "swap-6": 0.5096774193548387,
-     "swap-12": 0.5419354838709678,
-     "swap-24": 0.5596774193548387,
+     "swap-6": 0.5075268817204301,
+     "swap-12": 0.539247311827957,
+     "swap-24": 0.5559139784946237,
      "trainers": 0.5,
      "energy": 0.5,
-     "pokemon": 0.6403225806451613
+     "pokemon": 0.635483870967742
     },
-    "order": 0.03946998523946951
+    "order": 0.034165533606929685
    },
    {
     "id": "part:synergy",
@@ -314,6 +348,40 @@
      "pokemon": 0.4978494623655914
     },
     "order": 0.09231805935973761
+   }
+  ],
+  "coverage": [
+   {
+    "id": "trainers",
+    "label": "Trainer copies played with every sentence followed",
+    "copies": 2257,
+    "followed": 688,
+    "share": 0.30482941958351795,
+    "groups": []
+   },
+   {
+    "id": "abilities",
+    "label": "Ability copies used with every sentence followed",
+    "copies": 446,
+    "followed": 44,
+    "share": 0.09865470852017937,
+    "groups": []
+   },
+   {
+    "id": "energy",
+    "label": "Special Energy copies whose text is followed",
+    "copies": 79,
+    "followed": 0,
+    "share": 0,
+    "groups": []
+   },
+   {
+    "id": "attacks",
+    "label": "Damaging attack copies whose text is fully acted on",
+    "copies": 6223,
+    "followed": 2715,
+    "share": 0.43628475012052065,
+    "groups": []
    }
   ]
  },
@@ -484,6 +552,40 @@
     "order": 0.04773688929933444,
     "strength": -0.09544388438753883
    }
+  ],
+  "coverage": [
+   {
+    "id": "trainers",
+    "label": "Trainer copies played with every sentence followed",
+    "copies": 1467,
+    "followed": 463,
+    "share": 0.3156100886162236,
+    "groups": []
+   },
+   {
+    "id": "abilities",
+    "label": "Ability copies used with every sentence followed",
+    "copies": 438,
+    "followed": 96,
+    "share": 0.2191780821917808,
+    "groups": []
+   },
+   {
+    "id": "energy",
+    "label": "Special Energy copies whose text is followed",
+    "copies": 132,
+    "followed": 0,
+    "share": 0,
+    "groups": []
+   },
+   {
+    "id": "attacks",
+    "label": "Damaging attack copies whose text is fully acted on",
+    "copies": 913,
+    "followed": 475,
+    "share": 0.52026286966046,
+    "groups": []
+   }
   ]
  },
  "limitless-lists": {
@@ -496,18 +598,18 @@
    {
     "id": "total",
     "label": "Score",
-    "mean": 89.564161849711,
+    "mean": 89.57456647398845,
     "pile": 1,
     "damage": {
      "swap-6": 0.953757225433526,
-     "swap-12": 0.991907514450867,
+     "swap-12": 0.9913294797687862,
      "swap-24": 1,
      "trainers": 0.88121387283237,
      "energy": 0.9447976878612717,
      "pokemon": 0.9855491329479769
     },
-    "order": 0.9772296159839503,
-    "strength": 0.13701905015866597
+    "order": 0.9772296159839502,
+    "strength": 0.13588999441837576
    },
    {
     "id": "part:rules",
@@ -592,18 +694,18 @@
    {
     "id": "part:power",
     "label": "Power",
-    "mean": 0.7185926778091188,
-    "pile": 0.8179190751445087,
+    "mean": 0.7196257321498161,
+    "pile": 0.8190751445086705,
     "damage": {
-     "swap-6": 0.4864161849710983,
-     "swap-12": 0.5580924855491329,
-     "swap-24": 0.6953757225433526,
+     "swap-6": 0.48294797687861274,
+     "swap-12": 0.5566473988439307,
+     "swap-24": 0.6939306358381503,
      "trainers": 0.5,
      "energy": 0.5,
-     "pokemon": 0.680635838150289
+     "pokemon": 0.6797687861271676
     },
-    "order": 0.4411816136656433,
-    "strength": 0.10686517504350698
+    "order": 0.4422825879223836,
+    "strength": 0.1063099544918397
    },
    {
     "id": "part:synergy",
@@ -652,6 +754,40 @@
     },
     "order": 0.048219247178103906,
     "strength": -0.012839062795322837
+   }
+  ],
+  "coverage": [
+   {
+    "id": "trainers",
+    "label": "Trainer copies played with every sentence followed",
+    "copies": 10678,
+    "followed": 3236,
+    "share": 0.3030530061809328,
+    "groups": []
+   },
+   {
+    "id": "abilities",
+    "label": "Ability copies used with every sentence followed",
+    "copies": 3682,
+    "followed": 861,
+    "share": 0.2338403041825095,
+    "groups": []
+   },
+   {
+    "id": "energy",
+    "label": "Special Energy copies whose text is followed",
+    "copies": 843,
+    "followed": 0,
+    "share": 0,
+    "groups": []
+   },
+   {
+    "id": "attacks",
+    "label": "Damaging attack copies whose text is fully acted on",
+    "copies": 7142,
+    "followed": 3738,
+    "share": 0.5233828059367124,
+    "groups": []
    }
   ]
  },
@@ -930,14 +1066,14 @@
     "mean": 74.49516129032257,
     "pile": 1,
     "damage": {
-     "swap-6": 0.9193548387096774,
+     "swap-6": 0.9166666666666666,
      "swap-12": 0.9731182795698925,
      "swap-24": 0.989247311827957,
      "trainers": 0.771505376344086,
      "energy": 0.9086021505376344,
      "pokemon": 0.9731182795698925
     },
-    "order": 0.8956745275061788
+    "order": 0.8955383954334954
    },
    {
     "id": "sim:online3",
@@ -1158,6 +1294,48 @@
      "pokemon": 0.881578947368421
     },
     "order": 0.8956255752029129
+   }
+  ]
+ },
+ "standard-pool": {
+  "corpus": "standard-pool",
+  "label": "Standard pool, one printing per name",
+  "decks": 1433,
+  "repeats": 0,
+  "seed": 0,
+  "judges": [],
+  "coverage": [
+   {
+    "id": "trainers",
+    "label": "Trainer copies played with every sentence followed",
+    "copies": 229,
+    "followed": 33,
+    "share": 0.14410480349344978,
+    "groups": []
+   },
+   {
+    "id": "abilities",
+    "label": "Ability copies used with every sentence followed",
+    "copies": 229,
+    "followed": 27,
+    "share": 0.11790393013100436,
+    "groups": []
+   },
+   {
+    "id": "energy",
+    "label": "Special Energy copies whose text is followed",
+    "copies": 18,
+    "followed": 0,
+    "share": 0,
+    "groups": []
+   },
+   {
+    "id": "attacks",
+    "label": "Damaging attack copies whose text is fully acted on",
+    "copies": 1448,
+    "followed": 646,
+    "share": 0.44613259668508287,
+    "groups": []
    }
   ]
  }

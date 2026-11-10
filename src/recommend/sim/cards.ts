@@ -10,7 +10,7 @@ import type { CatalogCard } from '@/data/types';
 import { COST_LETTERS } from '../card-text';
 import type { PokemonEvaluator } from '../pokemon';
 import type { UnreadCard } from './types';
-import { parseAbility, parseText, type ParsedAbility, type ParsedText } from './effects';
+import { parseAbility, parseAttackText, parseEnergyText, parseText, type ParsedAbility, type ParsedText } from './effects';
 import { prizeValue } from './rules';
 
 export interface SimAttack {
@@ -51,6 +51,7 @@ export interface SimCard {
   suffix: string;
   /** Trainer subtype: Item, Supporter, Stadium, Tool. */
   tt: string;
+  /** A Trainer's text, or a Special Energy's (whose effects the pilot does not act on: `provides` is what it reads). */
   fx: ParsedText | null;
   /** Energy: type letters provided, "*" for any; "" for non-Energy. */
   provides: string;
@@ -117,12 +118,13 @@ function parsePairs(xs: string[] | undefined): [string, string][] {
 
 const NOT_FROM_HAND = new Set(['V-UNION', 'RESTORED', 'LEVEL-UP', 'BREAK', 'MEGA']);
 
-function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCard {
+/** One card of the table; `i` is its index. Exported for the coverage measure, which compiles a pool one card at a time. */
+export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCard {
   const f = ev.features(card);
   const t = f.text;
   const kind = f.isPokemon ? 'pokemon' : f.isEnergy ? 'energy' : 'trainer';
   // A braced unknown symbol in a cost counts as one Colorless.
-  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, fx: a.effect ? parseText(a.effect) : null, rest: a.rest, sustained: a.sustained }));
+  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, fx: a.effect ? parseAttackText(a.effect) : null, rest: a.rest, sustained: a.sustained }));
   const abilities = (t?.b ?? []).map((b) => parseAbility(b.k, b.n, b.e));
   let fx: ParsedText | null = null;
   let unread = '';
@@ -141,6 +143,9 @@ function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCar
       const roles = [...f.roles];
       unread = roles.find((r) => r === 'gust' || r === 'heal' || r === 'recover' || r === 'disrupt') ?? (fx.unread || 'other');
     }
+  } else if (kind === 'energy' && !f.isBasicEnergy) {
+    // What a Special Energy provides comes from the features; its text is kept for the coverage measure.
+    fx = parseEnergyText(t?.fx ?? '');
   }
   const w = parsePairs(t?.w);
   const r = parsePairs(t?.r);

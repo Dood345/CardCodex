@@ -18,6 +18,7 @@ import type { Catalog, SpeciesFile } from '@/data/types';
 import type { SuggestOptions } from '../builder';
 import { buildTextIndex, type CardTextFile } from '../card-text';
 import { createPokemonEvaluator } from '../pokemon';
+import { coverageOfDecks, coverageOfPool } from '../sim/coverage';
 import { compareReports, formatReport, runBench, scoreJudges, type BenchReport, type Corpus } from './bench';
 import { builtCorpus, pokemonSeeds } from './built';
 import { readCorpora } from './local';
@@ -45,6 +46,8 @@ it('deck benchmark', { timeout: 30 * 60_000 }, () => {
   const played = [judges[0], ...playtestJudges(ev, { games: 200, seed: 1 })];
   for (const corpus of corpora) {
     reports[corpus.id] = runBench(ev, index, corpus, judges, { seed: 1, repeats: 5 });
+    // How much of the corpus's card text the pilot follows, by copies; a drop fails the run.
+    reports[corpus.id].coverage = coverageOfDecks(ev, corpus.decks.map((d) => d.cards));
     const id = `${corpus.id}:playtest`;
     reports[id] = runBench(ev, index, { ...corpus, id, label: `${corpus.label}, played` }, played, { seed: 1, repeats: 3, maxDecks: 80 });
     // Winning: 40 decks, and one damaged copy of each kind, against a field of six of the corpus's own decks.
@@ -52,6 +55,9 @@ it('deck benchmark', { timeout: 30 * 60_000 }, () => {
     const dueling = { ...corpus, id: duelId, label: `${corpus.label}, duels` };
     reports[duelId] = runBench(ev, index, dueling, [judges[0], duelJudge(ev, dueling, { field: 6, games: 20, seed: 1 })], { seed: 1, repeats: 1, maxDecks: 40 });
   }
+
+  // The same over the Standard pool, one printing per name: what the pilot could meet in any deck.
+  reports['standard-pool'] = { corpus: 'standard-pool', label: 'Standard pool, one printing per name', decks: new Set(pool.map((c) => c.name)).size, repeats: 0, seed: 0, judges: [], coverage: coverageOfPool(ev, pool) };
 
   let baseline: Record<string, BenchReport> = {};
   try {
@@ -83,8 +89,9 @@ it('deck benchmark', { timeout: 30 * 60_000 }, () => {
   writeFileSync(new URL('report.json', outDir), JSON.stringify(reports, null, 1));
 
   if (update) {
-    // Keep baselines of corpora this machine does not have.
-    writeFileSync(baselineFile, `${JSON.stringify({ ...baseline, ...reports }, null, 1)}\n`);
+    // Keep baselines of corpora this machine does not have; the coverage groups (examples) stay in the report only.
+    const slim = Object.fromEntries(Object.entries(reports).map(([id, r]) => [id, { ...r, coverage: r.coverage?.map((m) => ({ ...m, groups: [] })) }]));
+    writeFileSync(baselineFile, `${JSON.stringify({ ...baseline, ...slim }, null, 1)}\n`);
     return;
   }
   expect(regressions, `see scripts/.cache/deck-bench/report.md`).toEqual([]);

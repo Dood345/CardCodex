@@ -22,6 +22,7 @@ import type { CatalogIndex } from '@/data/catalog';
 import type { DeckCard } from '@/data/db';
 import type { DeckEvaluator, DeckScore } from '../types';
 import { copiesOf, DAMAGES, eraPool, randomPile, type Damage } from './damage';
+import { formatCoverage, type Coverage } from '../sim/coverage';
 import { mean, pairedWins, spearman } from './metrics';
 import { mulberry32 } from './rng';
 
@@ -83,6 +84,8 @@ export interface BenchReport {
   repeats: number;
   seed: number;
   judges: JudgeResult[];
+  /** How much of the cards' text the pilot follows over this corpus (sim/coverage.ts), when measured. */
+  coverage?: Coverage;
 }
 
 export interface BenchOptions {
@@ -193,12 +196,10 @@ export function formatReport(report: BenchReport): string {
   return [
     `## ${report.label}`,
     '',
-    `${report.decks} decks, ${report.repeats} damaged copies of each, seed ${report.seed}.`,
-    '',
-    `| ${head.join(' | ')} |`,
-    `| ${head.map(() => '---').join(' | ')} |`,
-    ...rows.map((r) => `| ${r.join(' | ')} |`),
-    '',
+    ...(report.judges.length
+      ? [`${report.decks} decks, ${report.repeats} damaged copies of each, seed ${report.seed}.`, '', `| ${head.join(' | ')} |`, `| ${head.map(() => '---').join(' | ')} |`, ...rows.map((r) => `| ${r.join(' | ')} |`), '']
+      : [`${report.decks} names.`, '']),
+    ...(report.coverage ? [formatCoverage(report.coverage)] : []),
   ].join('\n');
 }
 
@@ -219,6 +220,12 @@ export function compareReports(now: BenchReport, baseline: BenchReport, toleranc
     check('order', j.order, base.order);
     check('strength', j.strength, base.strength);
     for (const [d, b] of Object.entries(base.damage)) check(d, j.damage[d], b);
+  }
+  // Coverage is deterministic: any drop is a card the pilot stopped following.
+  for (const base of baseline.coverage ?? []) {
+    const c = now.coverage?.find((x) => x.id === base.id);
+    if (!c) out.push(`${now.corpus}: coverage ${base.id} is missing`);
+    else if (c.share < base.share - 0.0005) out.push(`${now.corpus}: coverage ${base.id} fell from ${(base.share * 100).toFixed(1)}% to ${(c.share * 100).toFixed(1)}%`);
   }
   return out;
 }
