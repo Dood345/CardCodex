@@ -555,6 +555,12 @@ export default function ScanPage() {
         )}
         {!still && !cameraLive && <CameraPlaceholder Icon={game.Icon} text={statusText} live={scanner.status === 'starting'} />}
         {!still && cameraLive && scanner.results.length === 0 && <div className="scan-guide" />}
+        {still?.busy && (
+          <div className="scan-busy" role="status">
+            <div className="spinner-ring" />
+            <div>Reading the card…</div>
+          </div>
+        )}
         <div className="scan-overlay">
           {/* Nothing is drawn until the view has a size: boxes mapped onto a 0×0 view all land in the corner. */}
           {(viewSize.w > 0 ? results : []).map((r) => {
