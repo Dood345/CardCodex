@@ -35,6 +35,9 @@ const IDS = {
   fighting: 'sve-006',
   darkness: 'sve-007',
   metal: 'sve-008',
+  magcargo: 'sv06-029', // Magcargo ex: Ground Burn 140+, the top card of each deck discarded, 140 more per Energy card among them
+  gouging: 'sv05-038', // Gouging Fire ex: Blaze Blitz 260, not again until it leaves the Active Spot; Heat Blast 60
+  ultraBall: 'sv04.5-091',
 };
 
 function compiled(ids: string[]) {
@@ -42,7 +45,7 @@ function compiled(ids: string[]) {
   return { d, card: (id: string): SimCard => d.cards.find((c) => c.card.id === id)! };
 }
 
-const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' });
+const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 });
 const mon = (c: SimCard, energy: SimCard[] = [], dmg = 0): Mon => ({ c, under: [], energy, dmg, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 });
 
 /** A player on turn 3 with `active` up and `bench` behind it; energy is Fire. */
@@ -207,5 +210,37 @@ describe('in a game', () => {
     expect(sol.active?.c.attacks[0].cost).toBe('F');
     // Without Lunatone the attack does nothing whatever the Weakness; the ignore flag is tested on damageAgainst through the view.
     expect(attack(g, sol, defender)).toBe(0);
+  });
+
+  it('counts the Energy an attack mills from the top of the decks, and uses a once-per-stay attack once', () => {
+    // Ground Burn on the static board: each deck gives up a card, a third of a deck is Energy (the deck's own share when known).
+    const { d, card } = compiled([IDS.magcargo, IDS.gouging, IDS.charizard, IDS.charmander, IDS.fire, IDS.ultraBall]);
+    const ground = card(IDS.magcargo).attacks.find((a) => a.name === 'Ground Burn')!;
+    expect(ground.fx).toMatchObject({ effects: [{ k: 'millSelf', n: 1 }, { k: 'millOpp', n: 1 }], mods: [{ k: 'plus', n: 140, per: { k: 'milledEnergy', n: 1, both: true } }], followed: true });
+    expect(expectedDamage(140, ground.fx!.mods, staticView(3))).toBeCloseTo(140 + 140 * (2 / 3), 6);
+    // In a game the real top cards count: an Energy on each deck is two, 420.
+    const fire = card(IDS.fire);
+    const g = game();
+    const me = seat(d, mon(card(IDS.magcargo), [fire, fire, fire]));
+    me.deck = [card(IDS.ultraBall).i, fire.i];
+    const them = seat(d, mon(card(IDS.charizard)));
+    them.deck = [fire.i];
+    expect(attack(g, me, them)).toBe(420);
+    expect(me.deck.length + them.deck.length).toBe(1);
+    expect(me.discard.includes(fire.i) && them.discard.includes(fire.i)).toBe(true);
+    // Blaze Blitz once, then Heat Blast while the Pokémon stays in the Active Spot; the figures say so.
+    const blitz = card(IDS.gouging).attacks.find((a) => a.name === 'Blaze Blitz')!;
+    expect(blitz).toMatchObject({ rest: 3, expected: 260, sustained: (260 + 2 * 60) / 3 });
+    expect(blitz.fx?.followed).toBe(true);
+    const g2 = game();
+    const gf = seat(d, mon(card(IDS.gouging), [fire, fire, fire]));
+    const wall = seat(d, mon(card(IDS.charizard)));
+    expect(attack(g2, gf, wall)).toBe(260);
+    expect(gf.active!.restTurn).toBe(Infinity);
+    gf.turn++;
+    wall.active!.dmg = 0;
+    expect(attack(g2, gf, wall)).toBe(60);
+    gf.turn++;
+    expect(attack(g2, gf, wall)).toBe(60);
   });
 });

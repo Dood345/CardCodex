@@ -26,7 +26,7 @@
  * (coverage.ts): a pattern that matched is not the same as a text obeyed.
  */
 import { COST_LETTERS } from '../card-text';
-import type { Cond, DamageMod, PokeTest, StaticEffect } from './damage';
+import type { Cond, DamageMod, PokeTest, SpecialCondition, StaticEffect } from './damage';
 import { parseCond, parseDamageMods, parsePokeTest, parseStatic } from './damage-text';
 
 export type CardFilter = (
@@ -111,6 +111,30 @@ export type Effect = {
   | { k: 'discardStadium' }
   /** A Special Energy attached from the hand does something (Enriching Energy draws, Telepathic Psychic Energy searches); `t`: only onto such a Pokémon. */
   | { k: 'onAttach'; t?: PokeTest; effects: Effect[] }
+  /* What needs an opponent (duel.ts); in a solo game these do nothing and the card sits idle. */
+  /** Switch in one of the opponent's Benched Pokémon: the player chooses (Boss's Orders) or the opponent does ("Switch out … to the Bench"). */
+  | { k: 'gust'; by: 'you' | 'opponent' }
+  /** Damage to the opponent's Bench: `n` to one, two or each Benched Pokémon, or `n` damage counters spread as the player likes; `any`: any of their Pokémon. */
+  | { k: 'benchDamage'; n: number; how: 'one' | 'two' | 'each' | 'counters'; any?: boolean; ifPaid?: boolean }
+  | { k: 'condition'; c: SpecialCondition; on: 'opponentActive' | 'self' }
+  /** During the opponent's next turn the Defending Pokémon can't retreat or attack, or the opponent can't play Items. */
+  | { k: 'lock'; what: 'retreat' | 'attack' | 'items' }
+  /** During the opponent's next turn this Pokémon takes no damage (or `less`) from attacks. */
+  | { k: 'shield'; less?: number }
+  | { k: 'millOpp'; n: number }
+  /** The opponent reveals their hand and the player discards `n` cards of the kind from it. */
+  | { k: 'discardOppHand'; n: number; f?: CardFilter }
+  /** The opponent discards down to `n` cards in hand. */
+  | { k: 'oppDiscardTo'; n: number }
+  /** The opponent puts their hand on the bottom of their deck and draws `n`. */
+  | { k: 'oppHandBottomDraw'; n: number }
+  | { k: 'discardOppEnergy'; n: number; special?: boolean; from: 'active' | 'any' }
+  /** `n` damage counters on one of the opponent's Pokémon (Cursed Blast). */
+  | { k: 'countersOpp'; n: number }
+  /** Up to `n` damage counters moved from one of the player's Pokémon to one of the opponent's (Adrena-Brain). */
+  | { k: 'moveCounters'; n: number }
+  /** "If you use this Ability, this Pokémon is Knocked Out." */
+  | { k: 'selfKO' }
 );
 
 export type SentenceStatus = 'read' | 'noop' | 'unread';
@@ -298,6 +322,7 @@ export const NOOP: readonly [RegExp, string][] = [
   [/^The effect of .+ doesn't stack\.$/i, 'the engine applies an Ability once'],
   [/^\(?This includes new Pokémon that come into play\.\)?$/i, 'a reminder'],
   [/^\(?Your opponent chooses the new Active Pokémon\.\)?$/i, 'the knocked-out or switched-out player promotes in the engine'],
+  [/^Your opponent reveals their hand\.?$/i, 'seeing a hand changes nothing for a pilot that does not plan around it'],
   [/^\(?Players can't evolve a Basic Pokémon during their first turn or a Basic Pokémon that was put into play this turn\.\)?$/i, 'the rules already say so'],
   [/^\(?Damage from attacks is still taken\.\)?$/i, 'a reminder'],
 ];
@@ -392,6 +417,27 @@ const RE_BOTH_THEN = /Each player shuffles their hand into their deck\. Then, yo
 const RE_ONLY_IF = /You can use this card only (?:if|when) ([^.]+?)\./i;
 const RE_NOT_FIRST = /You can't use this card during your first turn\./i;
 const RE_FIRST_OK = /If you go first, you may use this card during your first turn\./i;
+/** Sentences that need an opponent, each read whole. */
+const OPPONENT_SENTENCES: readonly [RegExp, (m: RegExpExecArray) => Effect | Effect[] | null][] = [
+  [/^Switch in 1 of your opponent's Benched Pokémon to the Active Spot\.$/i, () => ({ k: 'gust', by: 'you' })],
+  [/^Switch out your opponent's Active Pokémon to the Bench\.$/i, () => ({ k: 'gust', by: 'opponent' })],
+  [/^(If you do, )?[Tt]his attack (?:also )?does (\d+) damage to (1|2|each) of your opponent's (Benched )?Pokémon\.$/, (m) => ({ k: 'benchDamage', n: Number(m[2]), how: m[3] === 'each' ? 'each' : m[3] === '2' ? 'two' : 'one', any: m[4] ? undefined : true, ifPaid: m[1] ? true : undefined })],
+  [/^(?:Put|Place) (\d+) damage counters on your opponent's Benched Pokémon in any way you like\.$/i, (m) => ({ k: 'benchDamage', n: Number(m[1]), how: 'counters' })],
+  [/^(?:Put|Place) (\d+) damage counters on 1 of your opponent's (Benched )?Pokémon\.$/i, (m) => ({ k: 'countersOpp', n: Number(m[1]) * (m[2] ? 1 : 1), ...(m[2] ? {} : {}) })],
+  [/^(?:Your opponent's Active Pokémon|The Defending Pokémon) is now (Asleep|Burned|Confused|Paralyzed|Poisoned)(?: and (Asleep|Burned|Confused|Paralyzed|Poisoned))?\.$/, (m) => [{ k: 'condition', c: m[1] as SpecialCondition, on: 'opponentActive' }, ...(m[2] ? [{ k: 'condition' as const, c: m[2] as SpecialCondition, on: 'opponentActive' as const }] : [])]],
+  [/^This Pokémon is now (Asleep|Burned|Confused|Paralyzed|Poisoned)\.$/, (m) => ({ k: 'condition', c: m[1] as SpecialCondition, on: 'self' })],
+  [/^During your opponent's next turn, (?:the Defending Pokémon|that Pokémon|your opponent's Active Pokémon) can't (retreat|attack|use attacks)\.$|^(?:The Defending Pokémon|That Pokémon) can't (retreat|attack|use attacks) during your opponent's next turn\.$/, (m) => ({ k: 'lock', what: (m[1] ?? m[2]) === 'retreat' ? 'retreat' : 'attack' })],
+  [/^During your opponent's next turn, they can't play any Item cards from their hand\.$/, () => ({ k: 'lock', what: 'items' })],
+  [/^During your opponent's next turn, prevent all damage (?:from and effects of attacks done to this Pokémon|done to this Pokémon by attacks)\.$/, () => ({ k: 'shield' })],
+  [/^During your opponent's next turn, this Pokémon takes (\d+) less damage from attacks(?: \(after applying Weakness and Resistance\))?\.$/, (m) => ({ k: 'shield', less: Number(m[1]) })],
+  [/^Discard the top (\d+|card) cards? of your opponent's deck\.$/, (m) => ({ k: 'millOpp', n: m[1] === 'card' ? 1 : Number(m[1]) })],
+  [/^Your opponent reveals their hand, and you discard (a|an|\d+|up to \d+) (.+?) you find there\.$/, (m) => ({ k: 'discardOppHand', n: countOf(m[1]), f: /^cards?$/.test(m[2]) ? undefined : (parseFilter(m[2]) ?? undefined) })],
+  [/^Your opponent discards cards from their hand until they have (\d+) cards in their hand\.$/, (m) => ({ k: 'oppDiscardTo', n: Number(m[1]) })],
+  [/^[Dd]iscard (an?|\d+) (Special )?Energy(?: card)? from (your opponent's Active Pokémon|1 of your opponent's Pokémon|the Defending Pokémon)\.$/, (m) => ({ k: 'discardOppEnergy', n: countOf(m[1]), special: m[2] ? true : undefined, from: /1 of your opponent/.test(m[3]) ? 'any' : 'active' })],
+  [/^[Mm]ove up to (\d+) damage counters from 1 of your Pokémon to 1 of your opponent's Pokémon\.$/, (m) => ({ k: 'moveCounters', n: Number(m[1]) })],
+  [/^If you use this Ability, this Pokémon is Knocked Out\.$/, () => ({ k: 'selfKO' })],
+];
+
 const RE_COST = /only if you discard (another|\d+ other|a|an) cards? from your hand/i;
 const RE_ABILITY_COST = /(?:You must |you may )?discard (a|an|\d+) ([^.]*?)(?: cards?)? from your hand in order to use this Ability\.?/i;
 const RE_ABILITY_IF = /^if ([^.]+?), (?=you may |you can )/i;
@@ -450,9 +496,10 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   }
   if (/Flip (?:\d+|two|three) coins|until you get tails|for each heads/i.test(t)) return fail('coin flips');
   let m: RegExpExecArray | null;
-  if ((m = /^Flip a coin\. If heads,/i.exec(t))) {
+  if ((m = /^Flip a coin\. If heads,/i.exec(t0)) && /^Flip a coin\./i.test(t)) {
     out.chance = 0.5;
     marks.push({ start: 0, end: 'Flip a coin.'.length, exact: true });
+    t = ' '.repeat('Flip a coin.'.length) + t.slice('Flip a coin.'.length);
   } else if (/Flip a coin/i.test(t)) return fail('coin flips');
   const cost = RE_COST.exec(t);
   if (cost) {
@@ -476,6 +523,29 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
       out.cond = c;
       marks.push({ start: abIf.index, end: abIf.index + abIf[0].length, exact: true });
       t = t.slice(0, abIf.index) + ' '.repeat(abIf[0].length) + t.slice(abIf.index + abIf[0].length);
+    }
+  }
+  // Special Red Card's two sentences read together: the opponent's hand to the bottom, then a draw.
+  const red = /Your opponent shuffles their hand and puts it on the bottom of their deck\. If they put any cards on the bottom of their deck in this way, they draw (\d+) cards\./.exec(t);
+  if (red) {
+    ef.push({ at: red.index, e: { k: 'oppHandBottomDraw', n: Number(red[1]) } });
+    marks.push({ start: red.index, end: red.index + red[0].length, exact: true });
+    t = t.slice(0, red.index) + ' '.repeat(red[0].length) + t.slice(red.index + red[0].length);
+  }
+  // Sentences that need an opponent: each one whole, blanked once read.
+  for (const s of splitSentences(t)) {
+    // The sentence may follow a span already blanked ("Flip a coin." or an Ability's "if …,"), so trim it.
+    const lead = s.text.trim().replace(/^If heads, /i, '').replace(/^you may /i, '');
+    const text = lead.charAt(0).toUpperCase() + lead.slice(1);
+    for (const [re, make] of OPPONENT_SENTENCES) {
+      const x = re.exec(text);
+      if (!x) continue;
+      const made = make(x);
+      if (!made) break;
+      for (const e of Array.isArray(made) ? made : [made]) ef.push({ at: s.start, e });
+      marks.push({ start: s.start, end: s.end, exact: true });
+      t = t.slice(0, s.start) + ' '.repeat(s.end - s.start) + t.slice(s.end);
+      break;
     }
   }
   const rest = cost ? t.replace(RE_COST, '') : t;
@@ -745,7 +815,9 @@ export function parseEnergyText(raw: string, rule?: { only: unknown; upgrades: {
  * it cannot use that attack again, 0 when neither. A rest that hangs on a
  * coin flip is not counted.
  */
-export function attackRest(effect: string): 0 | 1 | 2 {
+export function attackRest(effect: string): 0 | 1 | 2 | 3 {
+  // "This Pokémon can't use Blaze Blitz again until it leaves the Active Spot": once per stay there.
+  if (/This Pokémon can't use [^.]+? again until it leaves the Active Spot/i.test(effect)) return 3;
   const m = /During your next turn, this Pokémon can't (attack|use attacks|use [^.]+)|This Pokémon can't (attack|use attacks|use [^.]+?) during your next turn/i.exec(effect);
   if (!m) return 0;
   if (/If (?:tails|heads),[^.]*$/i.test(effect.slice(0, m.index))) return 0;
@@ -767,11 +839,25 @@ export function attackDrain(fx: ParsedText | null, costN: number): number {
   return Math.min(n, costN);
 }
 
+/**
+ * The share of its next turns an attack costs its user through a Special Condition on itself
+ * ("This Pokémon is now Asleep"): Asleep a quarter (two coins before its next attack), Confused a
+ * half, Paralyzed the whole next turn. `sustained` divides by 1 + miss.
+ */
+export function attackMiss(fx: ParsedText | null): number {
+  let miss = 0;
+  for (const e of fx?.effects ?? []) {
+    if (e.k !== 'condition' || e.on !== 'self') continue;
+    miss = Math.max(miss, e.c === 'Asleep' ? 0.25 : e.c === 'Confused' ? 0.5 : e.c === 'Paralyzed' ? 1 : 0);
+  }
+  return miss * (fx?.chance ?? 1);
+}
+
 /** The rest sentence of an attack, which the engine honours (`attackRest`), is read. */
 export function parseAttackText(raw: string): ParsedText {
   const fx = parseText(raw, 'attack');
   if (!attackRest(raw)) return fx;
-  const re = /During your next turn, this Pokémon can't (?:attack|use attacks|use [^.]+)\.?|This Pokémon can't (?:attack|use attacks|use [^.]+?) during your next turn\.?/i;
+  const re = /During your next turn, this Pokémon can't (?:attack|use attacks|use [^.]+)\.?|This Pokémon can't (?:attack|use attacks|use [^.]+?) during your next turn\.?|This Pokémon can't use [^.]+? again until it leaves the Active Spot\.?/i;
   for (const s of fx.sentences) if (s.status === 'unread' && re.test(s.text) && !/^If (?:tails|heads),/i.test(s.text)) {
     s.status = 'read';
     s.why = '';

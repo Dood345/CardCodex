@@ -18,6 +18,9 @@
 
 export type Side = 'self' | 'opponent' | 'both';
 
+/** The five Special Conditions (rulebook p. 15–16). */
+export type SpecialCondition = 'Asleep' | 'Burned' | 'Confused' | 'Paralyzed' | 'Poisoned';
+
 /** A test on a Pokémon in play, as attack text names it ("Pokémon ex", "Basic Pokémon", "Fire Pokémon", "Lunatone"). */
 export interface PokeTest {
   basic?: boolean;
@@ -37,7 +40,12 @@ export interface PokeTest {
   notType?: string;
   /** Not these normalized names ("except any Iron Crown ex"). */
   notNames?: string[];
+  /** "that don't have a Rule Box": no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega Pokémon. */
+  ruleBox?: false;
 }
+
+/** ex, V, VMAX, VSTAR, GX, EX, Radiant and Mega Pokémon carry a Rule Box. */
+export const hasRuleBoxLike = (c: { suffix: string; name: string }) => !!c.suffix || /^Radiant |^Mega /.test(c.name);
 
 /**
  * What a Tool does to the Pokémon it is attached to, or a Stadium to every Pokémon matching `t`
@@ -69,6 +77,10 @@ export type StaticEffect = {
   | { k: 'boomerang' }
   /** The card is discarded at the end of its owner's turn (Ignition Energy). */
   | { k: 'discardAtTurnEnd' }
+  /** Effects of the opponent's attacks (Special Conditions, locks, counters placed) are not done to the holder (Hide 'n' Sneak, Mist Energy). */
+  | { k: 'preventEffects' }
+  /** Damage from the opponent's attacks to matching Benched Pokémon is prevented (Flower Curtain, Battle Cage). */
+  | { k: 'preventBenchDamage'; t?: PokeTest }
   /** The holder's owner draws `n` when it is damaged by an attack in the Active Spot. */
   | { k: 'drawWhenHit'; n: number }
   /** The holder's attacks (or the one named) cost `n` Colorless less, times `per` when given (Bloodmoon Ursaluna ex). */
@@ -114,7 +126,9 @@ export type Count =
   | { k: 'discard'; side: 'self' | 'opponent'; t: CardTest }
   | { k: 'retreatCost'; on: 'opponentActive' }
   /** Cards the attack's own text discarded "in this way" (engine.ts `Player.attackDiscarded`). */
-  | { k: 'discarded' };
+  | { k: 'discarded' }
+  /** Energy cards among the `n` cards the attack's own text discards from the top of a deck (`both`: one deck each): a deck's share of Energy on the static board. */
+  | { k: 'milledEnergy'; n: number; both?: boolean };
 
 export type Cond =
   /** Heads on one coin. */
@@ -149,6 +163,8 @@ export type Cond =
   | { k: 'lastCardInHand' }
   /** The effect before this one in the same text did something ("If you attached Energy in this way, …"). */
   | { k: 'did' }
+  /** The opponent's Active Pokémon (or this one) has the Special Condition ("affected by a Special Condition": any). */
+  | { k: 'condition'; on: 'opponentActive' | 'self'; c: SpecialCondition | 'any' }
   | { k: 'not'; c: Cond }
   | { k: 'any'; cs: Cond[] };
 
@@ -200,6 +216,7 @@ export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
   if (t.owner && !c.name.startsWith(t.owner)) return false;
   if (t.notType && c.types.includes(t.notType)) return false;
   if (t.notNames && t.notNames.includes(c.key)) return false;
+  if (t.ruleBox === false && hasRuleBoxLike(c)) return false;
   return true;
 }
 
@@ -315,6 +332,11 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
         return 2;
       case 'discarded':
         return 2;
+      case 'milledEnergy': {
+        // The deck's own share of Energy when known (a third of a typical deck); the opponent's a third.
+        const own = supply ? Math.min(1, supply.energy() / 60) : 1 / 3;
+        return c.both ? c.n * (own + 1 / 3) : c.n * own;
+      }
     }
   };
   const holds = (c: Cond): number => {
@@ -348,12 +370,15 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
  * Damage a turn an attack keeps up: its expected damage, halved for one that rests its user, with
  * half of the card's next attack (at no higher cost) when only the attack itself is barred.
  */
-export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number; drain: number }>(a: A, attacks: readonly A[]): number {
+export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2 | 3; costN: number; damage: number; drain: number; miss?: number }>(a: A, attacks: readonly A[]): number {
   // Energy the attack takes from its user comes back one card a turn, so the attack lands every max(1, drain)
   // turns: a one-Energy discard is covered by the turn's attachment, "discard all" of an FF attack waits a turn.
-  const own = a.expected / Math.max(1, a.drain);
+  // A Special Condition the attack puts on its user costs a share of its next turns (`miss`).
+  const own = a.expected / Math.max(1, a.drain) / (1 + (a.miss ?? 0));
   if (!a.rest || a.damage <= 0) return own;
   let other = 0;
-  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected / Math.max(1, b.drain));
+  if (a.rest >= 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected / Math.max(1, b.drain));
+  // Once per stay in the Active Spot (rest 3): one use, then the other attack over a stay of about three turns.
+  if (a.rest === 3) return (own + 2 * other) / 3;
   return (own + other) / 2;
 }

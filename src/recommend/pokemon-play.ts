@@ -13,8 +13,8 @@ import { dealOpening, playtest } from './sim';
 import type { DeckEvaluator, PlayOptions, PlaySummary, PracticeHand } from './types';
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
-/** Unread cards whose effect is aimed at the other player's side or at damage taken: nothing to do in a solo game. */
-const NEEDS_OPPONENT = new Set(['gust', 'heal', 'disrupt']);
+/** Cards whose effect is aimed at the other player's side or at damage taken: nothing to do in a solo game (unread kinds, and the effect kinds of readable cards that sat idle). */
+const NEEDS_OPPONENT = new Set(['gust', 'heal', 'disrupt', 'discardOppEnergy', 'oppHandBottomDraw', 'oppDiscardTo', 'discardOppHand', 'millOpp', 'countersOpp', 'moveCounters']);
 
 export function pokemonPlaytest(ev: PokemonEvaluator, cards: readonly DeckCard[], options: PlayOptions): PlaySummary {
   const r = playtest(ev, cards, { games: options.games, seed: options.seed });
@@ -30,7 +30,7 @@ export function pokemonPlaytest(ev: PokemonEvaluator, cards: readonly DeckCard[]
   if (r.keyPieceStuckRate >= 0.03) lines.push(`A piece the plan needs is stuck in the Prize cards in ${pct(r.keyPieceStuckRate)} of games`);
   // Two kinds of card do nothing in these games, for different reasons, and the report says which is which.
   // Healing is read now and sits idle in a solo game for want of damage: it joins the cards that need an opponent.
-  const solo = [...r.unread.filter((u) => NEEDS_OPPONENT.has(u.reason)), ...r.idle.filter((u) => u.reason === 'heal')];
+  const solo = [...r.unread.filter((u) => NEEDS_OPPONENT.has(u.reason)), ...r.idle.filter((u) => NEEDS_OPPONENT.has(u.reason))];
   const blind = r.unread.filter((u) => !NEEDS_OPPONENT.has(u.reason));
   const list = (us: typeof r.unread) => {
     const n = us.reduce((k, u) => k + u.copies, 0);

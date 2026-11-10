@@ -38,7 +38,7 @@ function compiled(ids: string[], qty = 1) {
   const d = compileDeck(ev, ids.map((cardId) => ({ cardId, qty })));
   return { d, card: (id: string): SimCard => d.cards.find((c) => c.card.id === id)! };
 }
-const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' });
+const game = (): Game => ({ rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 });
 const mon = (c: SimCard, energy: SimCard[] = [], dmg = 0): Mon => ({ c, under: [], energy, dmg, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 });
 function seat(g: Game, d: ReturnType<typeof compileDeck>, active: Mon | null, hand: SimCard[] = [], deck: SimCard[] = [], turn = 3): Player {
   const p = newPlayer(d, 7, false, 6, 5);
@@ -70,7 +70,9 @@ describe('reading Special Energy', () => {
     expect(card(IDS.spiky).fx?.statics).toEqual([{ k: 'hitBack', n: 2, t: undefined, scope: 'self' }]);
     expect(card(IDS.boomerang).fx?.statics).toEqual([{ k: 'boomerang', scope: 'self' }]);
     for (const id of [IDS.neoUpper, IDS.boomerang, IDS.legacy, IDS.enriching, IDS.spiky, IDS.rocket, IDS.telepathic, IDS.ignition, IDS.doubleTurbo, IDS.magnetic]) expect(card(id).fx?.followed, card(id).name).toBe(true);
-    expect(card(IDS.mist).fx?.followed).toBe(false);
+    // Mist Energy: "prevent all effects of attacks" is a standing effect now that attacks have effects.
+    expect(card(IDS.mist).fx?.statics).toEqual([{ k: 'preventEffects', scope: 'self' }]);
+    expect(card(IDS.mist).fx?.followed).toBe(true);
   });
 });
 

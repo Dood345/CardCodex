@@ -79,6 +79,16 @@ describe('Pokémon evaluator', () => {
     expect(cards.reduce((n, c) => n + c.qty, 0)).toBe(60);
   });
 
+  it('reads a printing with no text of its own from another printing of the name', () => {
+    // The 30th-anniversary Ultra Ball's entry says only "Item"; the text comes from the most recent Ultra Ball that has it.
+    expect(text.byId.get('30th-128')?.text.fx).toBeUndefined();
+    const f = ev.features(index.cardsById.get('30th-128')!);
+    expect(f.text?.fx).toBe(text.byId.get('sv04.5-091')?.text.fx);
+    expect(f.text?.fx).toMatch(/^You can use this card only if you discard 2 other cards from your hand/);
+    // Its own legality stays its own: Standard, unlike the 2023 printing it borrows from.
+    expect(text.byId.get('30th-128')?.standard).toBe(true);
+  });
+
   it('scores a coherent deck well above a random pile of 60 legal cards', () => {
     const good = ev.score(cards);
     expect(good.issues).toEqual([]);

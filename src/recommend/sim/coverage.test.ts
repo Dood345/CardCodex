@@ -60,20 +60,22 @@ describe('sentence accounting', () => {
     const iono = one('sv04.5-080');
     expect(iono.fx?.effects[0]).toMatchObject({ k: 'shuffleHandDraw', n: -1, both: true });
     expect(iono.fx?.followed).toBe(true);
-    // Boss's Orders: nothing of it is read yet.
-    const boss = one('sv02-172');
-    expect(boss.fx?.followed).toBe(false);
-    expect(boss.fx?.sentences[0].why).toBe('');
+    // Academy at Night: a card from the hand on top of the deck is a wording the pilot does not read.
+    const academy = one(index.cardsByName.get('academy at night')![0].id);
+    expect(academy.fx?.followed).toBe(false);
+    expect(academy.unread).toBe('other');
   });
 
   it('counts an unread Trainer by the kind of its first unread sentence', () => {
-    expect(one('sv02-172').unread).toBe('gust');
-    expect(kindOf(one('sv02-172').fx!)).toBe('gust');
-    expect(kindOf(one('sv01-187').fx!)).toBe('coin flips');
-    // Crushing Hammer: "If heads, discard an Energy from 1 of your opponent's Pokémon."
-    expect(kindOf(one('me03-071').fx!)).toBe('coin flips');
-    // Special Red Card: its "only if" is read; what the opponent does with their hand is not.
-    expect(kindOf(one('me04-082').fx!)).toBe("opponent's hand or deck");
+    expect(one('sv02-172').unread).toBe('');
+    expect(kindOf(one('sv02-172').fx!)).toBe('followed');
+    // Pokémon Catcher: one coin, then a gust on heads; Crushing Hammer: one coin, then an Energy off one of the opponent's Pokémon.
+    expect(one('sv01-187').fx).toMatchObject({ chance: 0.5, effects: [{ k: 'gust', by: 'you' }], followed: true });
+    expect(one('me03-071').fx).toMatchObject({ chance: 0.5, effects: [{ k: 'discardOppEnergy', n: 1, from: 'any' }], followed: true });
+    // Delivery Drone: two coins are not read.
+    expect(kindOf(one('sv02-178').fx!)).toBe('coin flips');
+    // Special Red Card: its "only if" and what the opponent does with their hand are both read.
+    expect(one('me04-082').fx).toMatchObject({ cond: { k: 'prizes', side: 'opponent', max: 3 }, effects: [{ k: 'oppHandBottomDraw', n: 3 }], followed: true });
     // Gravity Gemstone: "the Retreat Cost of both Active Pokémon is 1 more" while the holder is Active.
     expect(kindOf(one(index.cardsByName.get('gravity gemstone')![0].id).fx!)).toBe('Retreat Cost');
   });
@@ -103,14 +105,14 @@ describe('sentence accounting', () => {
     expect(umbreon.fx?.followed).toBe(true);
     const dreepy = one('sv06-128');
     for (const a of dreepy.attacks) expect(a.fx, a.name).toBeNull();
-    // Mist Energy: "Prevent all effects of attacks …" is not followed; only what it provides is read.
+    // Mist Energy: what it provides and "Prevent all effects of attacks …" are both read.
     const mist = one('sv05-161');
     expect(mist.fx?.sentences[0].status).toBe('read');
-    expect(mist.fx?.followed).toBe(false);
-    // Phantom Dive puts damage counters on the Bench: unread until duels model it.
+    expect(mist.fx?.followed).toBe(true);
+    // Phantom Dive puts damage counters on the opponent's Bench: read, applied in duels.
     const dragapult = one('sv06-130').attacks.find((a) => a.name === 'Phantom Dive')!;
-    expect(dragapult.fx?.followed).toBe(false);
-    expect(kindOf(dragapult.fx!)).toBe('hits the Bench');
+    expect(dragapult.fx?.followed).toBe(true);
+    expect(dragapult.fx?.effects).toEqual([{ k: 'benchDamage', n: 6, how: 'counters' }]);
   });
 
   it('keeps the no-op list explicit, with a reason for every entry', () => {
@@ -128,7 +130,8 @@ describe('coverage over decks and pools', () => {
     expect(by.trainers.copies).toBe(38);
     expect(by.trainers.followed).toBeGreaterThan(15);
     expect(by.trainers.followed).toBeLessThan(by.trainers.copies);
-    expect(by.trainers.groups.find((g) => g.kind === 'gust')?.examples).toContain("Boss's Orders");
+    expect(by.trainers.groups.find((g) => g.kind === 'gust')).toBeUndefined();
+    expect(by.trainers.followed).toBeGreaterThanOrEqual(30);
     expect(by.abilities.copies).toBe(10);
     expect(by.energy.copies).toBe(0);
     expect(by.energy.share).toBe(1);
@@ -139,7 +142,7 @@ describe('coverage over decks and pools', () => {
     }
     const text = formatCoverage(cov);
     expect(text).toMatch(/\| Trainer copies played with every sentence followed \| 38 \|/);
-    expect(text).toMatch(/gust: \d+ .*Boss's Orders/);
+    expect(text).not.toMatch(/Boss's Orders/);
   });
 
   it('measures a pool one printing per name', () => {

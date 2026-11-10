@@ -13,7 +13,7 @@
  * State is mutated in place for speed; a game is reproduced from its seed.
  */
 import type { CompiledDeck, SimAttack, SimCard } from './cards';
-import { cardMatches, energyMatches, expectedDamage, expectedHeads, pokeMatches, type Cond, type Count, type DamageMod, type DamageView, type StaticEffect } from './damage';
+import { cardMatches, energyMatches, expectedDamage, expectedHeads, pokeMatches, type Cond, type Count, type DamageMod, type DamageView, type SpecialCondition, type StaticEffect } from './damage';
 import type { AttachTarget, CardFilter, Effect, ParsedAbility, ParsedText } from './effects';
 import { Rng, shuffleInPlace } from './rng';
 import type { PokemonRuleSet } from './rules';
@@ -36,6 +36,16 @@ export interface Mon {
   movedTurn: number;
   /** The Pokémon Tool attached (its card is also in `under`, to be discarded with the Pokémon). */
   tool?: SimCard | null;
+  /** Special Conditions on it (rulebook p. 15–16); Asleep, Confused and Paralyzed replace one another. */
+  cond?: Set<SpecialCondition>;
+  /** Its owner's turn at whose end Paralysis lifts. */
+  paralyzedUntil?: number;
+  /** The opponent's own turn during which it cannot retreat / attack ("During your opponent's next turn, …"). */
+  noRetreatTurn?: number;
+  noAttackTurn?: number;
+  /** The opponent's own turn during which it takes no damage from attacks, or `shieldLess` less. */
+  shieldTurn?: number;
+  shieldLess?: number;
 }
 
 export interface Player {
@@ -80,8 +90,14 @@ export interface Player {
   /** During an attack: cards its own text discarded "in this way", and whether its optional cost was paid. */
   attackDiscarded: number;
   attackPaid: boolean;
+  /** Energy cards among those the attack's own text discarded from the top of either deck. */
+  attackMilledEnergy: number;
+  /** The last coin of a text's "Flip a coin. If heads, …", rolled before damage and honoured by the effects after it. */
+  heads: boolean;
   /** Boomerang Energy the attack's own text discarded, to come back after it. */
   boomerangs: SimCard[];
+  /** Own turn during which no Item may be played (Budew's Itchy Pollen). */
+  noItemsTurn: number;
   /** Once-per-game effects already spent, by card name (Legacy Energy's Prize card). */
   onceUsed: Set<string>;
   /** The game this player sits at (set by setup and each turn), for the Stadium in play, and the opponent when there is one. */
@@ -95,6 +111,8 @@ export interface Game {
   /** Set when the game is over. */
   winner: Player | null;
   ending: string;
+  /** How often a loop guard fired (a main phase of 200 actions, counters that could not be placed): zero in a sound game. */
+  guards: number;
   /** Debugging: called with each action when set. */
   trace?: (line: string) => void;
 }
@@ -135,7 +153,10 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
     koName: '',
     attackDiscarded: 0,
     attackPaid: false,
+    attackMilledEnergy: 0,
+    heads: true,
     boomerangs: [],
+    noItemsTurn: 0,
     onceUsed: new Set(),
   };
 }
@@ -249,7 +270,7 @@ function attackCost(p: Player, m: Mon, atk: SimAttack): string {
   let less = 0;
   for (const x of statics(p, m)) {
     if (x.k !== 'costLess' || (x.attack && x.attack !== atk.name)) continue;
-    less += x.per ? x.n * Math.round(gameView(p.game ?? { rules: { } as Game['rules'], stadium: null, winner: null, ending: '' }, p, p.opp ?? null, m, atk, false).count(x.per)) : x.n;
+    less += x.per ? x.n * Math.round(gameView(p.game ?? { rules: { } as Game['rules'], stadium: null, winner: null, ending: '', guards: 0 }, p, p.opp ?? null, m, atk, false).count(x.per)) : x.n;
   }
   let cost = atk.cost;
   for (; less > 0 && cost; less--) cost = cost.includes('C') ? cost.replace('C', '') : cost.slice(0, -1);
@@ -442,8 +463,9 @@ function energyNeed(p: Player, without: SimCard | null = null): string {
 }
 
 /** Barred this turn by the attack `m` used on its last one ("During your next turn, this Pokémon can't attack"). */
+/** The attack is barred: its user rests this turn (`rest` 1 or 2), or it was used this stay in the Active Spot (`rest` 3, `restTurn` Infinity until the Pokémon leaves it). */
 function resting(p: Player, m: Mon, atk: SimAttack): boolean {
-  return m.restTurn === p.turn && (!m.restAtk || m.restAtk === atk.name);
+  return m.restTurn >= p.turn && (!m.restAtk || m.restAtk === atk.name);
 }
 
 /** Can `m` use the plan's attack right now? */
@@ -794,6 +816,7 @@ function swapActive(p: Player, m: Mon): void {
   if (at < 0 || !p.active) return;
   // Effects of its own attack leave a Pokémon that goes to the Bench.
   p.active.restTurn = 0;
+  p.active.cond = undefined;
   p.bench[at] = p.active;
   p.active = m;
   m.movedTurn = p.turn;
@@ -836,7 +859,150 @@ function stack(p: Player, n: number): void {
 }
 
 /** Effects of an attack's own text that come after its damage. */
-const POST_DAMAGE = new Set<Effect['k']>(['selfDamage', 'benchDamageOwn', 'selfToHand']);
+const POST_DAMAGE = new Set<Effect['k']>(['selfDamage', 'benchDamageOwn', 'selfToHand', 'gust', 'benchDamage', 'condition', 'lock', 'shield', 'countersOpp', 'selfKO']);
+
+/* ---------- what needs an opponent ---------- */
+
+const preventsEffects = (o: Player, m: Mon) => statics(o, m).some((x) => x.k === 'preventEffects');
+
+/** Give a Special Condition to a Pokémon unless its side prevents effects; Asleep, Confused and Paralyzed replace one another. */
+function afflict(owner: Player, m: Mon, c: SpecialCondition): boolean {
+  if (preventsEffects(owner, m)) return false;
+  if (!m.cond) m.cond = new Set();
+  if (c === 'Asleep' || c === 'Confused' || c === 'Paralyzed') for (const x of ['Asleep', 'Confused', 'Paralyzed'] as const) m.cond.delete(x);
+  m.cond.add(c);
+  if (c === 'Paralyzed') m.paralyzedUntil = owner.turn + 1;
+  return true;
+}
+
+/** Damage to one of `o`'s Benched (or any) Pokémon by an attack effect, honouring Bench protection; Knock Outs give `p` Prize cards. */
+function hurt(g: Game, p: Player, o: Player, m: Mon, amount: number, counters: boolean): void {
+  if (m !== o.active && statics(o, m).some((x) => x.k === 'preventBenchDamage')) return;
+  if (counters && preventsEffects(o, m)) return;
+  m.dmg += amount;
+  if (m.dmg >= maxHp(o, m)) {
+    if (m === o.active) knockOut(g, p, o);
+    else {
+      o.discard.push(m.c.i, ...m.under);
+      for (const e of m.energy) o.discard.push(e.i);
+      o.bench.splice(o.bench.indexOf(m), 1);
+      takePrizes(g, p, o, prizesFor(o, m));
+    }
+  }
+}
+
+/** The Benched Pokémon of `o` a player would rather hit: one the damage Knocks Out (most Prize cards), else the one with the most Energy. */
+function benchTarget(o: Player, amount: number): Mon | null {
+  let best: Mon | null = null;
+  let score = -1;
+  for (const m of o.bench) {
+    const left = maxHp(o, m) - m.dmg;
+    const s = (amount >= left ? 1000 * m.c.prize : 0) + 10 * m.energy.length + (100 - Math.min(99, left / 10));
+    if (s > score) {
+      score = s;
+      best = m;
+    }
+  }
+  return best;
+}
+
+/** The opponent's Benched Pokémon a gust brings up: one the pilot's Active would Knock Out (most Prize cards), else the one with the most Energy. */
+function gustTarget(p: Player, o: Player): Mon | null {
+  const a = p.active;
+  const atk = a ? bestPayable(p, a) : null;
+  const hit = a && atk ? damageAgainst(a, null, atk.expected, atk.fx?.mods) : 0;
+  return benchTarget(o, hit);
+}
+
+/** Bring `m` from `o`'s Bench to the Active Spot; the old Active goes to the Bench with its conditions gone. */
+function bringUp(o: Player, m: Mon): void {
+  const at = o.bench.indexOf(m);
+  if (at < 0) return;
+  const old = o.active;
+  o.bench.splice(at, 1);
+  if (old) {
+    old.cond = undefined;
+    old.restTurn = 0;
+    o.bench.push(old);
+  }
+  o.active = m;
+}
+
+/**
+ * Pokémon Checkup between turns (rulebook p. 15–16): Poison puts a damage counter, Burn two and a
+ * coin to recover, Asleep a coin to wake; Paralysis lifts at the end of its owner's next turn. The
+ * player whose turn just ended is `p`; a Knock Out gives the other side its Prize cards.
+ */
+/**
+ * Knock Out every Pokémon whose damage has reached its HP: a Tool or Stadium that gave HP can leave
+ * (Jamming Tower, a replaced Stadium) after the damage landed. Prize cards go to the other side.
+ */
+export function sweep(g: Game, p: Player, o: Player | null): void {
+  for (const [x, other] of [
+    [p, o],
+    [o, p],
+  ] as const) {
+    if (!x || g.winner) continue;
+    for (const m of x.bench.slice()) {
+      if (m.dmg < maxHp(x, m)) continue;
+      x.discard.push(m.c.i, ...m.under);
+      for (const e of m.energy) x.discard.push(e.i);
+      x.bench.splice(x.bench.indexOf(m), 1);
+      if (other) takePrizes(g, other, x, prizesFor(x, m));
+      if (g.winner) return;
+    }
+    if (x.active && x.active.dmg >= maxHp(x, x.active)) {
+      if (other) knockOut(g, other, x);
+      else {
+        ownKnockOut(g, x, null, x.active);
+        refillActive(g, x, null);
+      }
+    }
+  }
+}
+
+export function checkup(g: Game, p: Player, o: Player | null): void {
+  sweep(g, p, o);
+  for (const [x, other] of [
+    [p, o],
+    [o, p],
+  ] as const) {
+    if (!x || g.winner) continue;
+    const m = x.active;
+    if (!m?.cond?.size) continue;
+    if (m.cond.has('Poisoned')) m.dmg += 10;
+    if (m.cond.has('Burned')) {
+      m.dmg += 20;
+      if (x.rng.next() < 0.5) m.cond.delete('Burned');
+    }
+    if (m.cond.has('Asleep') && x.rng.next() < 0.5) m.cond.delete('Asleep');
+    if (m.cond.has('Paralyzed') && x === p && (m.paralyzedUntil ?? 0) <= x.turn) m.cond.delete('Paralyzed');
+    if (m.dmg >= maxHp(x, m)) {
+      if (other) knockOut(g, other, x);
+      else {
+        ownKnockOut(g, x, null, m);
+        refillActive(g, x, null);
+      }
+    }
+  }
+}
+
+/** What an attack's opponent-facing effects are worth when choosing it, in damage: a turn the opponent loses, a lock, Bench damage that lands. */
+function effectValue(o: Player | null, atk: SimAttack): number {
+  if (!o || !atk.fx) return 0;
+  let v = 0;
+  for (const e of atk.fx.effects) {
+    if (e.k === 'condition' && e.on === 'opponentActive' && o.active && !preventsEffects(o, o.active)) v += e.c === 'Paralyzed' || e.c === 'Asleep' ? 60 : e.c === 'Confused' ? 40 : 30;
+    else if (e.k === 'lock') v += e.what === 'items' ? 25 : 20;
+    else if (e.k === 'shield') v += e.less ? Math.min(60, e.less) : 60;
+    else if (e.k === 'benchDamage') {
+      const amount = e.how === 'counters' ? 10 * e.n : e.n;
+      const t = benchTarget(o, amount);
+      if (t) v += e.how === 'each' ? Math.min(amount, maxHp(o, t) - t.dmg) * o.bench.length : Math.min(amount, maxHp(o, t) - t.dmg);
+    } else if (e.k === 'gust') v += 20;
+  }
+  return v;
+}
 
 /**
  * Pay an optional attack cost? Yes when the damage it adds Knocks Out the defender (the mirror of
@@ -901,7 +1067,11 @@ function refillActive(g: Game, p: Player, o: Player | null): void {
 }
 
 function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon | null, phase: 'all' | 'pre' | 'post' = 'all'): void {
-  if (phase !== 'post' && fx.chance < 1 && p.rng.next() >= fx.chance) return;
+  // One coin per text: rolled before damage (or for a Trainer or Ability, once), and the effects after damage keep its result.
+  if (fx.chance < 1) {
+    if (phase !== 'post') p.heads = p.rng.next() < fx.chance;
+    if (!p.heads) return;
+  }
   const altN = (e: { n: number; alt?: { if: Cond; n: number } }) => (e.alt && condHolds(g, p, o, e.alt.if) ? e.alt.n : e.n);
   const fetched: string[] = [];
   // "If you attached Energy to a Pokémon in this way, …": whether the effect before did anything, and to whom.
@@ -982,6 +1152,139 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         g.stadium = null;
         break;
       }
+      case 'gust': {
+        if (!o || !o.bench.length) break;
+        const m = e.by === 'you' ? gustTarget(p, o) : (() => { const old = o.active; promote(o, p); const picked = o.active; if (old) { old.cond = undefined; old.restTurn = 0; o.bench.push(old); } return picked; })();
+        if (m && e.by === 'you') bringUp(o, m);
+        g.trace?.(`gust: ${o.active?.c.name} up`);
+        break;
+      }
+      case 'benchDamage': {
+        if (!o || (e.ifPaid && !p.attackPaid)) break;
+        const counters = e.how === 'counters';
+        if (e.how === 'each') for (const m of o.bench.slice()) hurt(g, p, o, m, e.n, false);
+        else if (counters) {
+          // Spread as the player likes: fill the Pokémon closest to a Knock Out first, most Prize cards first.
+          // Each round fills one Pokémon or stops: a protected Bench takes nothing, and a Pokémon already at its HP
+          // (sweep() removes those before an attack) must not make the counters left grow.
+          let left = 10 * e.n;
+          for (let round = 0; left > 0 && o.bench.length; round++) {
+            if (round >= 2 * o.bench.length + 2) {
+              g.guards++;
+              break;
+            }
+            const t = benchTarget(o, left);
+            if (!t) break;
+            const take = Math.min(left, maxHp(o, t) - t.dmg);
+            if (take <= 0 || (t !== o.active && statics(o, t).some((x) => x.k === 'preventBenchDamage')) || preventsEffects(o, t)) break;
+            left -= take;
+            hurt(g, p, o, t, take, true);
+            if (g.winner) break;
+          }
+        } else {
+          const n = e.how === 'two' ? 2 : 1;
+          const pool = e.any && o.active ? [o.active, ...o.bench] : o.bench;
+          for (let k = 0; k < n && pool.length; k++) {
+            const t = e.any ? pool.reduce((a, b) => (maxHp(o, b) - b.dmg <= e.n && b.c.prize > a.c.prize ? b : a)) : benchTarget(o, e.n);
+            if (!t) break;
+            pool.splice(pool.indexOf(t), 1);
+            hurt(g, p, o, t, e.n, false);
+            if (g.winner) break;
+          }
+        }
+        break;
+      }
+      case 'condition': {
+        if (e.on === 'self') {
+          if (self) afflict(p, self, e.c);
+        } else if (o?.active) afflict(o, o.active, e.c);
+        break;
+      }
+      case 'lock': {
+        if (!o) break;
+        if (e.what === 'items') o.noItemsTurn = o.turn + 1;
+        else if (o.active && !preventsEffects(o, o.active)) {
+          if (e.what === 'retreat') o.active.noRetreatTurn = o.turn + 1;
+          else o.active.noAttackTurn = o.turn + 1;
+        }
+        break;
+      }
+      case 'shield': {
+        if (!self || !o) break;
+        self.shieldTurn = o.turn + 1;
+        self.shieldLess = e.less;
+        break;
+      }
+      case 'millOpp':
+        if (o) for (let k = 0; k < e.n && o.deck.length; k++) {
+          const i = o.deck.pop()!;
+          o.discard.push(i);
+          if (cardOf(o, i).kind === 'energy') p.attackMilledEnergy++;
+        }
+        break;
+      case 'discardOppHand': {
+        if (!o) break;
+        for (let k = 0; k < e.n; k++) {
+          let at = -1;
+          let w = -1;
+          for (let j = 0; j < o.hand.length; j++) {
+            const c = cardOf(o, o.hand[j]);
+            if (e.f && !matches(c, e.f)) continue;
+            const v = want(o, c, true);
+            if (v > w) {
+              w = v;
+              at = j;
+            }
+          }
+          if (at < 0) break;
+          o.discard.push(removeFromHand(o, at));
+        }
+        break;
+      }
+      case 'oppDiscardTo':
+        if (o) discardLeast(o, Math.max(0, o.hand.length - e.n));
+        break;
+      case 'oppHandBottomDraw':
+        if (o && o.hand.length) shuffleHandDraw(o, e.n, true);
+        break;
+      case 'discardOppEnergy': {
+        if (!o) break;
+        for (let k = 0; k < e.n; k++) {
+          const pool = e.from === 'active' ? (o.active ? [o.active] : []) : [...inPlay(o)];
+          let from: Mon | null = null;
+          let pick: SimCard | null = null;
+          for (const m of pool) for (const x of m.energy) if ((!e.special || !x.basicEnergy) && (!from || m.energy.length > from.energy.length)) { from = m; pick = x; }
+          if (!from || !pick) break;
+          removeEnergy(from, pick);
+          o.discard.push(pick.i);
+        }
+        break;
+      }
+      case 'countersOpp': {
+        if (!o) break;
+        const pool = o.active ? [o.active, ...o.bench] : o.bench;
+        const t = pool.find((m) => maxHp(o, m) - m.dmg <= 10 * e.n && m.c.prize > 1) ?? pool.find((m) => maxHp(o, m) - m.dmg <= 10 * e.n) ?? o.active ?? pool[0];
+        if (t) hurt(g, p, o, t, 10 * e.n, true);
+        break;
+      }
+      case 'moveCounters': {
+        if (!o) break;
+        const from = [...inPlay(p)].filter((m) => m.dmg > 0).sort((a, b) => b.dmg - a.dmg)[0];
+        if (!from) break;
+        const n = Math.min(e.n * 10, from.dmg);
+        const pool = o.active ? [o.active, ...o.bench] : o.bench;
+        const t = pool.find((m) => maxHp(o, m) - m.dmg <= n && m.c.prize > 1) ?? pool.find((m) => maxHp(o, m) - m.dmg <= n) ?? o.active ?? pool[0];
+        if (!t) break;
+        from.dmg -= n;
+        hurt(g, p, o, t, n, true);
+        break;
+      }
+      case 'selfKO':
+        if (self) {
+          ownKnockOut(g, p, o, self);
+          refillActive(g, p, o);
+        }
+        break;
       case 'stack':
         stack(p, e.n);
         break;
@@ -1046,7 +1349,11 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         break;
       }
       case 'millSelf':
-        for (let k = 0; k < e.n && p.deck.length; k++) p.discard.push(p.deck.pop()!);
+        for (let k = 0; k < e.n && p.deck.length; k++) {
+          const i = p.deck.pop()!;
+          p.discard.push(i);
+          if (cardOf(p, i).kind === 'energy') p.attackMilledEnergy++;
+        }
         break;
       case 'discardHand': {
         if (e.may) {
@@ -1135,6 +1442,45 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
       case 'discardStadium':
         if (g.stadium && (g.stadium.owner !== p || stadiumFavours(p, o, g.stadium.c) < 0)) return true;
         break;
+      case 'gust': {
+        if (!o || !o.bench.length) break;
+        if (e.by === 'opponent') return !!o.active && mainReady(o, o.active);
+        const t = gustTarget(p, o);
+        if (!t) break;
+        const a = p.active;
+        const atk = a ? bestPayable(p, a) : null;
+        const hit = a && atk ? damageAgainst(a, null, atk.expected, atk.fx?.mods) : 0;
+        const kos = hit >= maxHp(o, t) - t.dmg && !(o.active && hit >= maxHp(o, o.active) - o.active.dmg && o.active.c.prize >= t.c.prize);
+        if (kos || t.energy.length >= 2) return true;
+        break;
+      }
+      case 'discardOppEnergy':
+        if (o && (e.from === 'active' ? (o.active?.energy.length ?? 0) > 0 : [...inPlay(o)].some((m) => m.energy.length > 0))) return true;
+        break;
+      case 'oppHandBottomDraw':
+        if (o && o.hand.length > e.n + 1) return true;
+        break;
+      case 'oppDiscardTo':
+        if (o && o.hand.length > e.n) return true;
+        break;
+      case 'discardOppHand':
+        if (o && o.hand.some((i) => !e.f || matches(cardOf(o, i), e.f))) return true;
+        break;
+      case 'millOpp':
+        if (o && o.deck.length > 0) return true;
+        break;
+      case 'countersOpp': {
+        if (!o) break;
+        const pool = o.active ? [o.active, ...o.bench] : o.bench;
+        // Worth a Knock Out of its own when the counters Knock Out something worth as many Prize cards.
+        const ko = pool.find((m) => maxHp(o, m) - m.dmg <= 10 * e.n);
+        const cost = fx.effects.some((x) => x.k === 'selfKO') ? (self?.c.prize ?? 1) : 0;
+        if (ko && ko.c.prize >= cost) return true;
+        break;
+      }
+      case 'moveCounters':
+        if (o && [...inPlay(p)].some((m) => m.dmg > 0)) return true;
+        break;
       case 'stack':
         if (p.deck.length > reserve(p) && bestInDeck(p, { k: 'any' }, 'hand', null, 40) >= 0) return true;
         break;
@@ -1182,6 +1528,7 @@ function supporterValue(g: Game, p: Player, o: Player | null, fx: ParsedText): n
     } else if (e.k === 'switch') v += switchTarget(p, o) ? 2 : 0;
     else if (e.k === 'moveEnergy' || e.k === 'heal' || e.k === 'recoverToDeck') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 : 0;
     else if (e.k === 'discardDraw') v += Math.max(0, drawValue(p, e));
+    else if (e.k === 'gust' || e.k === 'oppHandBottomDraw' || e.k === 'oppDiscardTo' || e.k === 'discardOppHand' || e.k === 'discardOppEnergy') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 3 : 0;
     else if (e.k === 'attach' || e.k === 'recover') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 * e.n : 0;
     else v += drawValue(p, e);
   }
@@ -1255,6 +1602,7 @@ function evolve(g: Game, p: Player, o: Player | null, m: Mon, c: SimCard): void 
   g.trace?.(`evolve ${m.c.name} → ${c.name}`);
   m.under.push(m.c.i);
   m.c = c;
+  m.cond = undefined;
   m.entered = p.turn;
   p.acted++;
   triggerAbilities(g, p, o, m, 'evolve');
@@ -1348,6 +1696,7 @@ function playItem(g: Game, p: Player, o: Player | null): boolean {
   for (let j = 0; j < p.hand.length; j++) {
     const c = cardOf(p, p.hand[j]);
     if (c.kind !== 'trainer' || !c.fx || c.unread || !playable(g, p, o, c.fx)) continue;
+    if (c.tt === 'Item' && p.noItemsTurn === p.turn) continue;
     if (c.tt === 'Tool') {
       if (c.fx.statics?.length) continue; // attached by attachTool
       // A Tool read here lends a VSTAR Power (Forest Seal Stone): it needs a Pokémon V and the game's one VSTAR Power.
@@ -1572,7 +1921,8 @@ function moveUp(g: Game, p: Player, o: Player | null): boolean {
   }
   const a = p.active;
   const rc = retreatCost(p, a);
-  if (p.retreatDone < g.rules.retreatsPerTurn && a.energy.length >= rc) {
+  const stuckStill = a.noRetreatTurn === p.turn || a.cond?.has('Asleep') || a.cond?.has('Paralyzed');
+  if (!stuckStill && p.retreatDone < g.rules.retreatsPerTurn && a.energy.length >= rc) {
     for (let k = 0; k < rc; k++) p.discard.push(a.energy.pop()!.i);
     swapActive(p, m);
     g.trace?.(`retreat to ${m.c.name}`);
@@ -1649,7 +1999,11 @@ export function mainPhase(g: Game, p: Player, o: Player | null): void {
     o.game = g;
     o.opp = p;
   }
-  for (let guard = 0; guard < 200; guard++) {
+  for (let guard = 0; ; guard++) {
+    if (guard >= 200) {
+      g.guards++;
+      break;
+    }
     if (benchBasic(g, p, o)) continue;
     if (evolveAny(g, p, o)) continue;
     if (playCandy(g, p, o)) continue;
@@ -1739,6 +2093,12 @@ export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimA
         return opp.active ? retreatCost(opp, opp.active) : 0;
       case 'discarded':
         return roll ? p.attackDiscarded : Math.min(2, [...inPlay(p)].reduce((n, x) => n + x.energy.length, 0));
+      case 'milledEnergy': {
+        if (roll) return p.attackMilledEnergy;
+        // The decks' shares of Energy as they stand.
+        const share = (x: Player) => (x.deck.length ? x.deck.filter((i) => cardOf(x, i).kind === 'energy').length / x.deck.length : 0);
+        return c.n * (share(p) + (c.both ? share(opp) : 0));
+      }
     }
   };
   const holds = (c: Cond): number => {
@@ -1814,6 +2174,11 @@ export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimA
         return p.hand.length === 1 ? 1 : 0;
       case 'did':
         return 1;
+      case 'condition': {
+        const x = c.on === 'self' ? m : opp.active;
+        const has = x?.cond;
+        return has && (c.c === 'any' ? has.size > 0 : has.has(c.c)) ? 1 : 0;
+      }
     }
   };
   return { count, holds };
@@ -1829,8 +2194,20 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   }
   if (p.turnEnded || !p.active) return 0;
   if (p.first && p.turn === 1 && !g.rules.firstPlayerAttacksTurn1) return 0;
+  sweep(g, p, o);
+  if (!p.active) return 0;
   const a = p.active;
   const def = o?.active ?? null;
+  // Asleep or Paralyzed: no attack; locked by the opponent's last attack: none either; Confused: a coin, tails hurts itself.
+  if (a.cond?.has('Asleep') || a.cond?.has('Paralyzed') || a.noAttackTurn === p.turn) return 0;
+  if (a.cond?.has('Confused') && p.rng.next() < 0.5) {
+    a.dmg += 30;
+    if (a.dmg >= maxHp(p, a)) {
+      ownKnockOut(g, p, o, a);
+      refillActive(g, p, o);
+    }
+    return 0;
+  }
   let best: SimAttack | null = null;
   let bestD = 0;
   let setupAtk: SimAttack | null = null;
@@ -1840,8 +2217,9 @@ export function attack(g: Game, p: Player, o: Player | null): number {
     // Never leave the table empty: an attack that returns its user to the hand needs a Benched Pokémon behind it.
     if (atk.fx?.effects.some((x) => x.k === 'selfToHand') && !p.bench.length) continue;
     if (atk.damage > 0) {
+      // (sweep ran at the top of attack(): nothing on either Bench sits at or past its HP)
       // Chosen on its expectation (coins at their mean), then rolled.
-      const d = damageAgainst(a, def, expectedDamage(atk.damage, atk.fx?.mods ?? [], gameView(g, p, o, a, atk, false)) + staticDamage(p, o, a, def), atk.fx?.mods, def && o ? weaknessOf(o, p, def) : undefined);
+      const d = damageAgainst(a, def, expectedDamage(atk.damage, atk.fx?.mods ?? [], gameView(g, p, o, a, atk, false)) + staticDamage(p, o, a, def), atk.fx?.mods, def && o ? weaknessOf(o, p, def) : undefined) + effectValue(o, atk);
       if (d > bestD) {
         bestD = d;
         best = atk;
@@ -1853,10 +2231,11 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   if (!use) return 0;
   g.trace?.(`attack ${use.name}`);
   p.attackDiscarded = 0;
+  p.attackMilledEnergy = 0;
   p.attackPaid = false;
   if (use.fx?.effects.length) runEffects(g, p, o, use.fx, a, 'pre');
   if (use.rest) {
-    a.restTurn = p.turn + 1;
+    a.restTurn = use.rest === 3 ? Infinity : p.turn + 1;
     a.restAtk = use.rest === 1 ? '' : use.name;
   }
   let d = 0;
@@ -1866,6 +2245,8 @@ export function attack(g: Game, p: Player, o: Player | null): number {
       if (x.k === 'damageTaken') d = Math.max(0, d - x.delta);
       if (x.k === 'preventDamage' && pokeMatches(a.c, x.from)) d = 0;
     }
+    // "During your opponent's next turn, prevent all damage …" set by the defender's last attack.
+    if (o && def && def.shieldTurn === p.turn) d = def.shieldLess !== undefined ? Math.max(0, d - def.shieldLess) : 0;
     if (p.turn <= p.damage.length) p.damage[p.turn - 1] += d;
     if (!p.firstOnline && p.d.plan && a.c.key === p.d.plan.attacker) p.firstOnline = p.turn;
     if (o && def) {

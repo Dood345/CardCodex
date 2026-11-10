@@ -286,6 +286,43 @@ unread: Mist and Rocky Fighting Energy (prevent effects of attacks), Bubbly Wate
 Energy (Special Conditions), Reversal Energy (a condition on Prize cards). Coverage on the
 tournament lists stands at Trainers 76.8%, Abilities 62.6%, Special Energy 74.4%, attacks 81.1%.
 
+## What needs an opponent (2026-11-10)
+
+Gust, Special Conditions with Pokémon Checkup, damage and damage counters to the Bench, locks on
+retreating, attacking and Items, protection during the opponent's next turn, and disruption of the
+opponent's hand, deck and Energy are read whole and played in duels (`deck-playtest.md`,
+Head-to-head race); in a solo game they sit idle and the report says so. A coin's result is rolled
+once before an attack's damage and kept for the effects after it (Dunsparce's Dig). Coverage on the
+tournament lists: Trainers 76.8% → 90.2%, Abilities 62.6% → 84.4%, Special Energy 74.4% → 97.2%,
+attacks 81.1% → 97.5%; the Standard pool 46.7% / 34.9% / 83.3% / 83.2%.
+
+What moved, and why it is re-recorded rather than fixed: solo damage per turn on the tournament
+lists 92.8 → 90.0, because the old engine read Special Red Card's "they draw 3 cards" as the pilot's own
+draw and lists with it got a free three cards; now the card sits idle in a solo game. The duel
+ladders (swap-6 0.897 → 0.872 and swap-12 0.962 → 0.885 on the lists, 0.826 → 0.696 and 0.826 →
+0.739 on the archetypes) moved by about as much as the old engine moves between seeds (lists seed 1
+to seed 2: swap-6 0.897 → 0.692, Pokémon 0.897 → 0.744; archetypes: Trainers 0.717 → 0.652), turning
+each new feature off one at a time did not bring the seed-1 numbers back, and the duel judge's
+correlation with real win rates rose (lists 0.241 → 0.305, archetypes 0.180 → 0.228). Random piles
+now beat a list more often (0.987 → 0.949, 0.913 → 0.870): a pile of the era holds gust and
+disruption the pilot now plays.
+
+## Review follow-ups and data gaps (2026-11-10)
+
+Three figures the main session's review found overstated on the static board, and one printing
+without text. Magcargo ex's Ground Burn counted both milled top cards as Energy (420): Energy among
+cards an attack discards from the top of a deck is now a third of them (the deck's own share when
+known), about 233, and a game counts the real cards. Gouging Fire ex's Blaze Blitz, which its user
+"can't use again until it leaves the Active Spot", had sustained 260: it is now a rest of its own
+(`rest` 3), one use per stay in the Active Spot, 127 with Heat Blast between, and the engine bars it
+until the Pokémon goes to the Bench. Wailord ex's Falling Down (270, "This Pokémon is now Asleep")
+had sustained 270: 216 now, a quarter of its next turns lost (two coins before its next attack). The
+30th-anniversary Ultra Ball, the one Standard Trainer with no text of its own, reads the most recent
+Ultra Ball's. Coverage of the Standard pool: Trainers 46.7% → 47.2%, attacks 83.2% → 83.4%; the
+tournament lists hold still, and only the built corpus moved (the score builds other decks once
+Ground Burn and Blaze Blitz weigh what they do: Abilities followed there 68.2% → 66.0%, attacks
+90.5% → 91.3%, the solo Energy ladder 0.850 → 0.808, the duel Trainer ladder 0.675 → 0.750).
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

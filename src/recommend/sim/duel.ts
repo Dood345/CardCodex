@@ -10,7 +10,7 @@
  */
 import type { DeckCard } from '@/data/db';
 import type { PokemonEvaluator } from '../pokemon';
-import { attack, beginTurn, mainPhase, newPlayer, setup, type Game, type Player } from './engine';
+import { attack, beginTurn, checkup, mainPhase, newPlayer, setup, type Game, type Player } from './engine';
 import { compiledDeck } from './playtest';
 import { mixSeed } from './rng';
 import { POKEMON_RULES_PAR_2023, type PokemonRuleSet } from './rules';
@@ -24,6 +24,8 @@ export interface DuelGame {
   aPrizes: number;
   bPrizes: number;
   ending: string;
+  /** Loop guards that fired in the game (`Game.guards`). */
+  guards: number;
 }
 
 /** One game; `seed` and the game number give each seat its own random stream. */
@@ -33,7 +35,7 @@ export function duelGame(ev: PokemonEvaluator, a: readonly DeckCard[], b: readon
   const aFirst = game % 2 === 0;
   const pa = newPlayer(da, mixSeed(seed, game, 0), aFirst, maxTurns, rules.benchSize);
   const pb = newPlayer(db, mixSeed(seed, game, 1), !aFirst, maxTurns, rules.benchSize);
-  const g: Game = { rules, stadium: null, winner: null, ending: '', trace };
+  const g: Game = { rules, stadium: null, winner: null, ending: '', guards: 0, trace };
   const result = (winner: Player | null, ending: string, turns: number): DuelGame => ({
     result: winner === pa ? 1 : winner === pb ? 0 : 0.5,
     aFirst,
@@ -41,6 +43,7 @@ export function duelGame(ev: PokemonEvaluator, a: readonly DeckCard[], b: readon
     aPrizes: pa.taken,
     bPrizes: pb.taken,
     ending,
+    guards: g.guards,
   });
   const okA = setup(g, pa);
   const okB = setup(g, pb);
@@ -62,6 +65,7 @@ export function duelGame(ev: PokemonEvaluator, a: readonly DeckCard[], b: readon
     if (!beginTurn(g, p)) return result(o, 'deck out', t + 1);
     mainPhase(g, p, o);
     attack(g, p, o);
+    if (!g.winner) checkup(g, p, o);
     if (g.winner) return result(g.winner, g.ending, t + 1);
   }
   return result(null, 'turn limit', maxTurns);
@@ -78,6 +82,7 @@ export function duel(ev: PokemonEvaluator, a: readonly DeckCard[], b: readonly D
   let turns = 0;
   let diff = 0;
   const endings: Record<string, number> = {};
+  let guards = 0;
   for (let gi = 0; gi < games; gi++) {
     const r = duelGame(ev, a, b, options.seed, gi, maxTurns, rules);
     if (r.result === 1) wins++;
@@ -87,6 +92,7 @@ export function duel(ev: PokemonEvaluator, a: readonly DeckCard[], b: readonly D
     turns += r.turns;
     diff += r.aPrizes - r.bPrizes;
     endings[r.ending] = (endings[r.ending] ?? 0) + 1;
+    guards += r.guards;
   }
   const winRate = games ? (wins + draws / 2) / games : 0.5;
   return {
@@ -102,6 +108,7 @@ export function duel(ev: PokemonEvaluator, a: readonly DeckCard[], b: readonly D
     meanTurns: games ? turns / games : 0,
     meanScoreDiff: games ? diff / games : 0,
     endings,
+    guards,
     planA: compiledDeck(ev, a).plan?.detail ?? 'No attack to build toward',
     planB: compiledDeck(ev, b).plan?.detail ?? 'No attack to build toward',
     ms: performance.now() - t0,

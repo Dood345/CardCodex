@@ -7,7 +7,7 @@
 import type { DeckCard } from '@/data/db';
 import type { PokemonEvaluator } from '../pokemon';
 import { compileDeck, normalizeDeck, type CompiledDeck } from './cards';
-import { attack, beginTurn, keyPieceStuck, mainPhase, newPlayer, setup, type Game } from './engine';
+import { attack, beginTurn, checkup, keyPieceStuck, mainPhase, newPlayer, setup, type Game } from './engine';
 import { mixSeed } from './rng';
 import { POKEMON_RULES_PAR_2023, type PokemonRuleSet } from './rules';
 import type { PlaytestOptions, PokemonPlaytestReport } from './types';
@@ -52,6 +52,7 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
     onlineBy: new Array<number>(turns).fill(0),
     meanOnlineTurn: turns + 1,
     deadTurnRate: 0,
+    guards: 0,
     keyPieceStuckRate: 0,
     unread: d.unread,
     unreadCopies: d.unread.reduce((n, u) => n + u.copies, 0),
@@ -76,7 +77,7 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
   const held = new Set<number>();
   const played = new Set<number>();
   for (let gi = 0; gi < games; gi++) {
-    const g: Game = { rules, stadium: null, winner: null, ending: '' };
+    const g: Game = { rules, stadium: null, winner: null, ending: '', guards: 0 };
     const p = newPlayer(d, mixSeed(options.seed, gi), firstOf(options, gi), turns, rules.benchSize);
     setup(g, p);
     if (p.mulligans) mulliganGames++;
@@ -86,6 +87,9 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
       if (!beginTurn(g, p)) break;
       mainPhase(g, p, null);
       attack(g, p, null);
+      checkup(g, p, null);
+      report.guards += g.guards;
+      g.guards = 0;
       turnsPlayed++;
     }
     deadTurns += p.deadTurns;

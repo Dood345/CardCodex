@@ -58,7 +58,7 @@ describe('reading the fixture deck', () => {
 
   it('lists what it cannot read, with the kind of effect', () => {
     const reasons = new Map(d.unread.map((u) => [u.name, u.reason]));
-    expect(reasons.get("Boss's Orders")).toBe('gust');
+    expect(reasons.has("Boss's Orders")).toBe(false);
     expect(reasons.get('Defiance Band')).toBe('tool');
     expect(reasons.has('Iono')).toBe(false);
     // Played, but with an Ability the pilot does not use.
@@ -275,7 +275,7 @@ describe('attacks that rest their user', () => {
   it('keeps a rested Pokémon from attacking on its next turn, and lets it attack on the one after', () => {
     const du = compileDeck(ev, thin, 'umbreon');
     const card = (name: string) => du.cards.find((c) => c.name === name)!;
-    const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' };
+    const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 };
     const p: Player = newPlayer(du, 1, false, 6, 5);
     const dark = card('Darkness Energy');
     const active: Mon = { c: card('Umbreon'), under: [], energy: [dark, dark, dark], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
@@ -295,7 +295,7 @@ describe('Trainers that look at the top of the deck', () => {
   const du = compileDeck(ev, thin, 'umbreon');
   const card = (name: string) => du.cards.find((c) => c.name === name)!;
   const table = (hand: string[], library: string[]): { g: Game; p: Player } => {
-    const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' };
+    const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 };
     const p = newPlayer(du, 1, false, 6, 5);
     p.turn = 2;
     p.active = { c: card('Eevee'), under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
