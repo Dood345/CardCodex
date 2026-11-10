@@ -7,7 +7,7 @@
  * Extra and Side, and on the deck page each line can send a copy to or
  * from the side deck.
  */
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatCardNumber, type CatalogIndex } from '@/data/catalog';
 import type { CollectionMap } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
@@ -15,8 +15,8 @@ import { claimText, deckSections, limitHint, overLimit, type Claim, type Claims,
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import type { GameProfile } from '@/games';
 import type { DeckRules } from '@/games/deck-rules';
+import { CardZoom } from '@/ui/CardZoom';
 import { MinusIcon, PlusIcon } from '@/ui/icons';
-import { href } from '@/ui/router';
 
 export interface DeckEdits {
   /** Add or remove copies of a line. */
@@ -192,6 +192,9 @@ export function DeckRow({
 }) {
   const owned = collection.get(card.id)?.qty ?? 0;
   const short = Math.max(0, qty - (available ?? owned));
+  // The thumbnail is too small to read: tapping the picture or the text shows the card large (src/ui/CardZoom.tsx).
+  const [zoomed, setZoomed] = useState(false);
+  const counts = `${qty ? `${qty} in ${place} · ` : ''}own ${owned}${claimed ? ` · ${claimText(claimed)}` : ''}${short ? ` · ${short} missing` : ''}`;
   const stepper = onAdjust && (
     <div className="stepper stepper-sm">
       <button type="button" className="stepper-btn" aria-label={`Remove one ${card.name} from the deck`} disabled={qty <= 0} onClick={() => onAdjust(-1)}>
@@ -205,20 +208,17 @@ export function DeckRow({
   );
   return (
     <div className={`scan-candidate deck-card${short ? ' deck-short' : ''}`}>
-      <a href={href(`/card/${card.id}`)} aria-label={`Open ${card.name}`}>
+      <button type="button" className="deck-thumb" aria-label={`Show ${card.name} larger`} onClick={() => setZoomed(true)}>
         <img src={set ? cardImageUrl(card, set.series, 'low') : undefined} alt="" />
-      </a>
-      <div className="cand-body">
+      </button>
+      <div className="cand-body" onClick={() => setZoomed(true)}>
         <div className="cand-name">{card.name}</div>
         <div className="cand-sub">
           {set?.name ?? card.set} · {formatCardNumber(card, set)}
         </div>
-        <div className="cand-sub">
-          {qty ? `${qty} in ${place} · ` : ''}own {owned}
-          {claimed ? ` · ${claimText(claimed)}` : ''}
-          {short ? ` · ${short} missing` : ''}
-        </div>
+        <div className="cand-sub">{counts}</div>
       </div>
+      {zoomed && <CardZoom card={card} set={set} note={counts} onClose={() => setZoomed(false)} />}
       {extra ? (
         <div className="deck-controls">
           {stepper}
