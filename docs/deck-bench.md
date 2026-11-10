@@ -336,6 +336,15 @@ lists 0.744 → 0.692 and a 24-swap 1.000 → 0.962, both inside the band the ol
 seeds (a third of the Trainers swapped for random ones now brings in damage bonuses the pilot
 plays).
 
+## Searches in any combination (2026-11-10)
+
+"Up to N in any combination of X and Y" (Ethan's Adventure from the deck, Bug Catching Set from
+the top seven) is one search with one count shared across the kinds, the same `alts` a "X or Y"
+search carries; recoveries from the discard pile already read the wording. Trainer copies followed: tournament lists 91.6% → 92.8%, the Standard pool 48.9% → 49.8%. Solo
+damage per turn on the lists 90.1 → 91.5 and attacking by turn 3 and 4 up a point (the two cards
+now fetch); the duel judge's swap ladders rose (lists swap-6 0.872 → 0.923, swap-12 0.885 → 0.936)
+and its correlation with real win rates slipped 0.305 → 0.278, inside the seed band.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus
