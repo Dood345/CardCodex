@@ -89,7 +89,7 @@ gzipped, loaded like the other games). Still to do:
 ## Standing rule: Yu-Gi-Oh! gets every fix
 
 Every fix or feature is checked against Yu-Gi-Oh! mode (and now Magic) rather than assumed to carry over. The
-game-neutral paths (collection, binder, decks, sharing, backup, scroll memory, quick scroll on the
+game-neutral paths (collection, binder, decks, sharing, backup, scroll memory, sorting, quick scroll on the
 archetypes) do carry over; a branch on `game.id` gets its own Yu-Gi-Oh! case. The project's only
 tester owns no Yu-Gi-Oh! cards, so the check is headless Chrome or the emulator with the game
 switched.
@@ -112,5 +112,8 @@ Known Yu-Gi-Oh! gaps today:
   time.
 - Scroll memory, sticky filters and the remembered binder page live in memory only and reset when
   the app is killed.
-- The binder orders by set and number only.
+- The binder and the Collection's "By set" list order by set and number only (the Pokédex, a set's
+  cards and the archetypes can be sorted since 1.10.0).
+- The "From my binder" picker in a deck shows every owned copy, not only the copies other decks left
+  free.
 - The scanner's hash-fixture test can time out when every test file runs in parallel.

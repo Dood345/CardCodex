@@ -7,7 +7,9 @@
  * in the deck and once in the side deck (`zone: 'side'`); everything that
  * compares with the collection counts per card over both.
  */
+import { useMemo } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
+import { useSettings } from '@/app/settings';
 import { db, type Deck, type DeckCard } from './db';
 import { setWanted, type CollectionMap } from './collection';
 import type { CatalogIndex } from './catalog';
@@ -132,11 +134,65 @@ export async function deleteDeck(id: string): Promise<void> {
   await db.decks.delete(id);
 }
 
+/** Owned copies of one card that other decks have first call on, and those decks' names. */
+export interface Claim {
+  qty: number;
+  decks: string[];
+}
+
+/** Claims by card id; a card nobody else uses has no entry. */
+export type Claims = ReadonlyMap<string, Claim>;
+
+/**
+ * What the decks that come before `deckId` take out of the collection: a
+ * real copy sits in one deck at a time, so a deck counts what the older
+ * decks left over. Decks come in the order they were made (the oldest keeps
+ * its cards); a deck that is not saved yet (`deckId` undefined, or unknown)
+ * comes after all of them. A claim never exceeds the copies owned.
+ */
+export function claimsBefore(decks: readonly Deck[], deckId: string | undefined, collection: CollectionMap): Map<string, Claim> {
+  const ordered = [...decks].sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+  const at = deckId === undefined ? -1 : ordered.findIndex((d) => d.id === deckId);
+  const out = new Map<string, Claim>();
+  for (const deck of at < 0 ? ordered : ordered.slice(0, at)) {
+    for (const [cardId, qty] of perCard(deck.cards)) {
+      const owned = collection.get(cardId)?.qty ?? 0;
+      if (owned <= 0 || qty <= 0) continue;
+      const claim = out.get(cardId) ?? { qty: 0, decks: [] };
+      // A deck that found nothing left claims nothing, and is not named.
+      const takes = Math.min(qty, owned - claim.qty);
+      if (takes <= 0) continue;
+      claim.qty += takes;
+      claim.decks.push(deck.name);
+      out.set(cardId, claim);
+    }
+  }
+  return out;
+}
+
+/** "2 in Fire deck", "3 in 2 other decks". */
+export function claimText(claim: Claim): string {
+  return claim.decks.length === 1 ? `${claim.qty} in ${claim.decks[0]}` : `${claim.qty} in ${claim.decks.length} other decks`;
+}
+
+/**
+ * The claims on a deck's cards (see `claimsBefore`), live; undefined when
+ * the "one deck per copy" setting is off, so every deck counts every copy.
+ */
+export function useClaims(game: GameId, deckId: string | undefined, collection: CollectionMap): Claims | undefined {
+  const decks = useDecks(game);
+  const [settings] = useSettings();
+  return useMemo(() => (settings.reserveDeckCopies ? claimsBefore(decks, deckId, collection) : undefined), [settings.reserveDeckCopies, decks, deckId, collection]);
+}
+
 /** A card the collection cannot fill: `qty` copies over every zone, `short` of them missing. */
 export interface DeckNeed {
   cardId: string;
   qty: number;
+  /** Copies owned, whichever deck they sit in. */
   owned: number;
+  /** Copies other decks have first call on (0 without claims). */
+  claimed: number;
   short: number;
 }
 
@@ -160,23 +216,25 @@ function perCard(cards: readonly DeckCard[]): Map<string, number> {
   return out;
 }
 
-export function summarizeDeck(cards: readonly DeckCard[], collection: CollectionMap): DeckSummary {
+export function summarizeDeck(cards: readonly DeckCard[], collection: CollectionMap, claims?: Claims): DeckSummary {
   let total = 0;
   let covered = 0;
   const needs: DeckNeed[] = [];
   const counts = perCard(cards);
   for (const [cardId, qty] of counts) {
     const owned = collection.get(cardId)?.qty ?? 0;
+    const claimed = Math.min(owned, claims?.get(cardId)?.qty ?? 0);
+    const free = owned - claimed;
     total += qty;
-    covered += Math.min(owned, qty);
-    if (owned < qty) needs.push({ cardId, qty, owned, short: qty - owned });
+    covered += Math.min(free, qty);
+    if (free < qty) needs.push({ cardId, qty, owned, claimed, short: qty - free });
   }
   return { total, distinct: counts.size, covered, short: total - covered, needs };
 }
 
 /** Puts every card the collection is short of on the wishlist; returns how many were not on it yet. */
-export async function wantMissing(cards: readonly DeckCard[], collection: CollectionMap): Promise<number> {
-  const fresh = summarizeDeck(cards, collection).needs.filter((n) => !collection.get(n.cardId)?.wanted);
+export async function wantMissing(cards: readonly DeckCard[], collection: CollectionMap, claims?: Claims): Promise<number> {
+  const fresh = summarizeDeck(cards, collection, claims).needs.filter((n) => !collection.get(n.cardId)?.wanted);
   for (const n of fresh) await setWanted(n.cardId, true);
   return fresh.length;
 }
@@ -203,11 +261,12 @@ export interface PlacedSection {
 }
 
 /** The deck split into its game's sections, in the rules' order; every section is listed, empty ones too. */
-export function deckSections(rules: DeckRules, cards: readonly DeckCard[], index: CatalogIndex, collection: CollectionMap): PlacedSection[] {
+export function deckSections(rules: DeckRules, cards: readonly DeckCard[], index: CatalogIndex, collection: CollectionMap, claims?: Claims): PlacedSection[] {
   const left = new Map<string, number>();
   const placed = new Map<DeckCard, PlacedLine>();
   for (const c of [...cards.filter((c) => c.zone !== 'side'), ...cards.filter((c) => c.zone === 'side')]) {
-    const free = left.get(c.cardId) ?? collection.get(c.cardId)?.qty ?? 0;
+    const owned = collection.get(c.cardId)?.qty ?? 0;
+    const free = left.get(c.cardId) ?? Math.max(0, owned - (claims?.get(c.cardId)?.qty ?? 0));
     const used = Math.min(free, c.qty);
     left.set(c.cardId, free - used);
     placed.set(c, { ...c, available: used });

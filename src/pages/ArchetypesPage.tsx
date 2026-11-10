@@ -18,7 +18,7 @@ import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
 
 type OwnedFilter = 'all' | 'owned' | 'missing';
-type Sort = 'name' | 'size';
+type Sort = 'name' | 'size' | 'owned';
 
 const NO_SECTIONS: Section[] = [];
 
@@ -53,10 +53,15 @@ export default function ArchetypesPage() {
       if (owned === 'missing' && got > 0) return false;
       return !q || normalizeText(a.name).includes(q);
     });
-    return sort === 'size' ? [...list].sort((a, b) => b.unique - a.unique || a.name.localeCompare(b.name)) : list;
+    if (sort === 'size') return [...list].sort((a, b) => b.unique - a.unique || a.name.localeCompare(b.name));
+    if (sort === 'owned') {
+      const got = (name: string) => progress.get(name)?.size ?? 0;
+      return [...list].sort((a, b) => got(b.name) - got(a.name) || a.name.localeCompare(b.name));
+    }
+    return list;
   }, [index, query, owned, sort, progress]);
 
-  // Quick scroll zone: letters when the list is alphabetical, a plain thumb when sorted by size.
+  // Quick scroll zone: letters when the list is alphabetical, a plain thumb when sorted by size or by cards owned.
   const quick = visible.length >= QUICK_SCROLL_MIN;
   const sections = useMemo(() => (sort === 'name' ? sectionsBy(visible, (a) => initialOf(a.name)) : NO_SECTIONS), [visible, sort]);
 
@@ -100,6 +105,9 @@ export default function ArchetypesPage() {
           </Chip>
           <Chip active={sort === 'size'} onClick={() => setSort('size')}>
             Largest first
+          </Chip>
+          <Chip active={sort === 'owned'} onClick={() => setSort('owned')}>
+            Most owned
           </Chip>
         </div>
       </TopBar>

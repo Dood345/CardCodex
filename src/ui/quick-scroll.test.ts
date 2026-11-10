@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fractionOf, hundredOf, initialOf, labelStride, positionAt, sectionsBy, type Section } from './quick-scroll';
+import { fractionOf, hundredOf, initialOf, labelStride, positionAt, sectionsBy, type Section, shortLabel } from './quick-scroll';
 
 describe('sections', () => {
   it('groups consecutive items by label and reads initials and hundreds', () => {
@@ -13,6 +13,31 @@ describe('sections', () => {
     expect(initialOf('6 Samurai')).toBe('#');
     expect(initialOf('')).toBe('#');
     expect([1, 99, 100, 151, 1000, 1025].map(hundredOf)).toEqual(['1', '1', '100', '100', '1000', '1000']);
+  });
+});
+
+describe('shortLabel', () => {
+  it('keeps a year and shortens a series name to something the zone can hold', () => {
+    expect(shortLabel('2024')).toBe('2024');
+    expect(shortLabel('1993')).toBe('1993');
+    expect(shortLabel('Scarlet & Violet')).toBe('SV');
+    expect(shortLabel('Sword & Shield')).toBe('SS');
+    expect(shortLabel('HeartGold & SoulSilver')).toBe('HS');
+    expect(shortLabel('Call of Legends')).toBe('COL');
+    expect(shortLabel("McDonald's Collection")).toBe('MC');
+    expect(shortLabel('E-Card')).toBe('EC');
+    expect(shortLabel('Platinum')).toBe('PLA');
+    expect(shortLabel('XY')).toBe('XY');
+    expect(shortLabel('  ')).toBe('#');
+  });
+
+  it('gives the Sets list one section per series, in list order', () => {
+    const shown = ['Mega Evolution', 'Mega Evolution', 'Scarlet & Violet', 'Scarlet & Violet', 'Scarlet & Violet', 'Sword & Shield'].map((group) => ({ group }));
+    expect(sectionsBy(shown, (s) => shortLabel(s.group))).toEqual([
+      { label: 'ME', start: 0 },
+      { label: 'SV', start: 2 },
+      { label: 'SS', start: 5 },
+    ]);
   });
 });
 

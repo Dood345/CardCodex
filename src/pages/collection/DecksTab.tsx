@@ -6,10 +6,11 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
+import { useSettings } from '@/app/settings';
 import { useCollection } from '@/data/collection';
 import { findDeckCode } from '@/data/deck-code';
 import { DECK_FILE_ROUTE, holdDeckFile } from '@/data/deck-file';
-import { createDeck, summarizeDeck, useDecks } from '@/data/decks';
+import { claimsBefore, createDeck, summarizeDeck, useDecks } from '@/data/decks';
 import { rankStarterDecks, useStarterDecks } from '@/data/starter-decks';
 import { hasRecommender } from '@/recommend';
 import { cardImageUrl } from '@/data/types';
@@ -22,6 +23,7 @@ export function DecksTab() {
   const game = useGame();
   const collection = useCollection();
   const decks = useDecks(game.id);
+  const [settings] = useSettings();
   const starters = useStarterDecks(game.id);
   const ranked = useMemo(() => rankStarterDecks(starters ?? [], collection, (id) => index.cardsById.has(id)), [starters, collection, index]);
   const [name, setName] = useState('');
@@ -94,7 +96,7 @@ export function DecksTab() {
       ) : (
         <div className="deck-list">
           {decks.map((d) => {
-            const s = summarizeDeck(d.cards, collection);
+            const s = summarizeDeck(d.cards, collection, settings.reserveDeckCopies ? claimsBefore(decks, d.id, collection) : undefined);
             const first = d.cards[0] && index.cardsById.get(d.cards[0].cardId);
             const set = first && index.setsById.get(first.set);
             const pct = s.total ? Math.round((s.covered / s.total) * 100) : 0;

@@ -1,6 +1,6 @@
 /**
  * The quick scroll zone: a narrow strip down the right edge of a long list
- * (the Pokédex, the archetypes) that moves through the whole list in one
+ * (the Pokédex, the archetypes, the sets) that moves through the whole list in one
  * drag. Section labels run along it (hundreds for the Pokédex, letters for
  * the archetypes), a thumb shows where the list is, and while dragging a
  * bubble names the item under the finger. The zone takes the touch itself
@@ -27,6 +27,7 @@ export function QuickScroll({
   count,
   sections,
   labelAt,
+  itemSelector,
 }: {
   /** The list whose children are the items, in order. */
   gridRef: RefObject<HTMLElement | null>;
@@ -35,7 +36,13 @@ export function QuickScroll({
   sections: readonly Section[];
   /** Text for the bubble while dragging: the item at `index`. */
   labelAt: (index: number) => string;
+  /**
+   * Which elements under the list are its items, in order, when they are not its direct children (the Sets list
+   * keeps its rows inside one section per series). Default: the list's children.
+   */
+  itemSelector?: string;
 }) {
+  const itemsOf = (grid: HTMLElement): ArrayLike<Element> => (itemSelector ? grid.querySelectorAll(itemSelector) : grid.children);
   const zoneRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState<{ top: number; height: number } | null>(null);
   const [thumb, setThumb] = useState(0);
@@ -73,8 +80,9 @@ export function QuickScroll({
     const update = () => {
       frame.current = 0;
       const grid = gridRef.current;
-      if (!grid || !grid.children.length) return;
-      const i = firstBelow(grid.children, contentLine(pane));
+      const items = grid ? itemsOf(grid) : null;
+      if (!items || !items.length) return;
+      const i = firstBelow(items, contentLine(pane));
       setThumb(fractionOf(i < 0 ? count - 1 : i, count, sections));
     };
     const onScroll = () => {
@@ -87,7 +95,8 @@ export function QuickScroll({
       if (frame.current) cancelAnimationFrame(frame.current);
       frame.current = 0;
     };
-  }, [gridRef, count, sections]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gridRef, count, sections, itemSelector]);
 
   useEffect(
     () => () => {
@@ -108,7 +117,7 @@ export function QuickScroll({
     const rect = zone.getBoundingClientRect();
     const f = rect.height > 0 ? (clientY - rect.top) / rect.height : 0;
     const index = Math.min(count - 1, Math.max(0, Math.floor(positionAt(f, count, sections))));
-    const el = grid.children[index];
+    const el = itemsOf(grid)[index];
     settling.current();
     if (el) settling.current = settleAlign(pane, el, () => contentLine(pane));
     setThumb(fractionOf(index, count, sections));

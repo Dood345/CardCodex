@@ -6,7 +6,7 @@
 import { useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
-import { createDeck, summarizeDeck } from '@/data/decks';
+import { createDeck, summarizeDeck, useClaims } from '@/data/decks';
 import { toDeckCards, useStarterDecks } from '@/data/starter-decks';
 import { EmptyState, TopBar } from '@/ui/components';
 import { href, navigate } from '@/ui/router';
@@ -16,6 +16,8 @@ export default function StarterDeckPage({ id }: { id: string }) {
   const index = useCatalog();
   const game = useGame();
   const collection = useCollection();
+  // Not a saved deck yet: every saved deck has first call on the copies it uses.
+  const claims = useClaims(game.id, undefined, collection);
   const decks = useStarterDecks(game.id);
   const [saving, setSaving] = useState(false);
 
@@ -39,7 +41,7 @@ export default function StarterDeckPage({ id }: { id: string }) {
   }
   const known = toDeckCards(deck).filter((c) => index.cardsById.has(c.cardId));
   const unknown = deck.cards.length - known.length;
-  const s = summarizeDeck(known, collection);
+  const s = summarizeDeck(known, collection, claims);
   const save = async () => {
     setSaving(true);
     const copy = await createDeck(deck.game, deck.name, known);
@@ -76,7 +78,15 @@ export default function StarterDeckPage({ id }: { id: string }) {
           <div className="scan-candidates">
             {known.map((c) => {
               const card = index.cardsById.get(c.cardId)!;
-              return <DeckRow key={c.cardId} card={card} set={index.setsById.get(card.set)} qty={c.qty} collection={collection} />;
+              return <DeckRow
+                  key={c.cardId}
+                  card={card}
+                  set={index.setsById.get(card.set)}
+                  qty={c.qty}
+                  collection={collection}
+                  claimed={claims?.get(c.cardId)}
+                  available={Math.max(0, (collection.get(c.cardId)?.qty ?? 0) - (claims?.get(c.cardId)?.qty ?? 0))}
+                />;
             })}
           </div>
         </section>

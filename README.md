@@ -19,14 +19,15 @@ with Capacitor. Your collection lives only on your device.
   scanner; your collection and backups hold every game's cards. (See *Yu-Gi-Oh! mode* and *Magic
   mode* below for what differs.)
 - **Pokédex** – all 1,025 species with sprites and type colours. Species you own no cards of show as
-  silhouettes, Pokédex-style. Filter by generation or collected/missing; tap a species for its
+  silhouettes, Pokédex-style. Filter by generation or collected/missing, and sort by number, by
+  name or with the species you own most cards of first; tap a species for its
   official artwork and every card that features it (newest first) with owned counts. Trainer and
   Energy cards, which have no species, get their own toggles in the same row: one entry per card
   name with its owned count, letters on the quick scroll, and a tap opens every printing of that
   name with the same collected/missing filter.
 - **Sets (binder view)** – every series and set from Base Set to the current releases, with set
-  symbols, logos and completion bars. Open a set to see its cards in number order; cards you don't
-  own are dimmed. **Quick add** mode turns every tile into a one-tap "+1" for fast inventory entry.
+  symbols, logos and completion bars. Open a set to see its cards in number order, A–Z or with the
+  ones you own most copies of first; cards you don't own are dimmed. **Quick add** mode turns every tile into a one-tap "+1" for fast inventory entry.
 - **Search** – instant search across ~21k cards by name, set name, set code (`SVI`, `PAL`) or
   printed number (`057/198`), with filters for owned/missing/wanted, kind, energy type, rarity and
   series. Species matches appear as shortcuts to the Pokédex.
@@ -86,9 +87,9 @@ with Capacitor. Your collection lives only on your device.
 - **Back lands where you were** – coming back to a list (Android back or the browser's) puts the
   tile you left at the top of the screen again, with the filters you had on; only a page reached
   afresh starts at the top.
-- **Quick scroll** – long lists (the Pokédex, the archetypes) have a strip down the right edge:
-  drag it to move through the whole list, with Pokédex hundreds or archetype letters along it and a
-  bubble naming what is under your finger.
+- **Quick scroll** – long lists (the Pokédex, the archetypes, the sets) have a strip down the right
+  edge: drag it to move through the whole list, with Pokédex hundreds, letters, or the series and
+  years of the sets along it, and a bubble naming what is under your finger.
 - **Binder view** – the Collection tab can show your cards (or your wishlist) as a binder: pages of
   9 or 12 pockets, set by set in number order, turned with a swipe, the arrows, the slider or the
   arrow keys. Empty pockets on the last page show where the next cards go, and opening a card and
@@ -98,6 +99,9 @@ with Capacitor. Your collection lives only on your device.
   over your owned cards, or your wishlist, set by set like the binder, with a name search, a set
   filter and a stepper on every card) or from any card's "Add to deck"; every line shows how many
   copies you own and how many are missing, and one tap puts every missing card on your wishlist.
+  A copy you own counts for one deck: a deck counts what your older decks left over and says where
+  the rest are ("own 3 · 2 in Fire deck · 1 missing"). Settings turns that off if you move cards
+  between decks.
   Each game's deck rules show as reminders, never enforced: a Pokémon deck has 60 cards and four
   copies of a card at most (basic Energy is unlimited); a Yu-Gi-Oh! deck is split into Main, Extra
   and Side (see below); a Magic deck has 60 cards or more and a sideboard of up to 15, or follows
@@ -137,7 +141,7 @@ What comes next (Pokémon starter decks, the Magic scanner) is in [ROADMAP.md](R
 ### Yu-Gi-Oh! mode
 
 - **Archetypes** replaces the Pokédex: all ~665 archetypes with a cover artwork and how many of
-  their distinct cards you own; an archetype lists its cards (newest printing shown, copies summed
+  their distinct cards you own, sorted A–Z, largest first or most owned first; an archetype lists its cards (newest printing shown, copies summed
   over printings) or every printing. Cards outside any archetype are reachable from Search and Sets.
 - **Printings are the unit**: every catalog entry is one printed set code (`LOB-EN001`), so the
   Sets tab (grouped by release year, ~1,037 sets), binders and quantities all work per printing, and

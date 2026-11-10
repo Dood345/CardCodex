@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection, progressOf } from '@/data/collection';
 import { normalizeText } from '@/data/normalize';
 import { SetRow, TopBar } from '@/ui/components';
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
+import { QUICK_SCROLL_MIN, QuickScroll } from '@/ui/QuickScroll';
+import { sectionsBy, shortLabel } from '@/ui/quick-scroll';
 import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
 
@@ -39,6 +41,15 @@ export default function SetsPage() {
     }
     return sets.size;
   }, [collection, index]);
+
+  // Quick scroll: the sets on screen in order (collapsed series hide theirs), one label per series or year.
+  const listRef = useRef<HTMLDivElement>(null);
+  const shown = useMemo(
+    () => groups.flatMap((g) => (collapsed.has(g.id) && !q ? [] : g.sets.map((set) => ({ set, group: g.name })))),
+    [groups, collapsed, q],
+  );
+  const quick = shown.length >= QUICK_SCROLL_MIN;
+  const sections = useMemo(() => sectionsBy(shown, (s) => shortLabel(s.group)), [shown]);
 
   const toggle = (id: string) =>
     setCollapsed((prev) => {
@@ -76,7 +87,7 @@ export default function SetsPage() {
           />
         </div>
       </TopBar>
-      <div className="series-list">
+      <div ref={listRef} className={`series-list${quick ? ' with-quick-scroll' : ''}`}>
         {groups.map((g) => {
           const isCollapsed = collapsed.has(g.id) && !q;
           return (
@@ -97,6 +108,15 @@ export default function SetsPage() {
           );
         })}
       </div>
+      {quick && (
+        <QuickScroll
+          gridRef={listRef}
+          count={shown.length}
+          sections={sections}
+          itemSelector=".set-row"
+          labelAt={(i) => `${shown[i].group} · ${shown[i].set.name}`}
+        />
+      )}
     </>
   );
 }

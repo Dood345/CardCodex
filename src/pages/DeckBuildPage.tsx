@@ -11,7 +11,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useCatalog, useGame } from '@/app/context';
 import { useCollection } from '@/data/collection';
-import { createDeck, summarizeDeck, useDecks } from '@/data/decks';
+import { createDeck, summarizeDeck, useClaims, useDecks } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { hasRecommender } from '@/recommend';
@@ -33,6 +33,8 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
   const index = useCatalog();
   const game = useGame();
   const collection = useCollection();
+  // Not a saved deck yet: every saved deck has first call on the copies it uses.
+  const claims = useClaims(game.id, undefined, collection);
   const decks = useDecks(game.id);
   const supported = hasRecommender(game.id);
   const { ev: loaded, error } = useEvaluator(supported);
@@ -162,7 +164,7 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
     navigate(`/decks/${deck.id}`, true);
   };
 
-  const summary = result ? summarizeDeck(result.cards, collection) : null;
+  const summary = result ? summarizeDeck(result.cards, collection, claims) : null;
 
   return (
     <>
@@ -324,7 +326,7 @@ export default function DeckBuildPage({ seed }: { seed?: string }) {
             <PracticeBlock ev={ev} cards={result.cards} />
             <p className="deck-hint advisor-note">{SCORE_NOTE}</p>
           </section>
-          <DeckSections game={game} cards={result.cards} index={index} collection={collection} />
+          <DeckSections game={game} cards={result.cards} index={index} collection={collection} claims={claims} />
           {result.steps.length > 0 && (
             <details className="deck-section build-steps">
               <summary>How this deck came together ({result.steps.length} steps)</summary>
