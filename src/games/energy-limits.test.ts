@@ -6,7 +6,10 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import type { Catalog } from '@/data/types';
+import { buildIndex } from '@/data/catalog';
+import type { CollectionEntry } from '@/data/db';
+import { limitHint, overLimit, unlimitedTwin, withPrinting } from '@/data/decks';
+import type { Catalog, SpeciesFile } from '@/data/types';
 import { buildTextIndex, type CardTextFile } from '@/recommend/card-text';
 import { isBasicEnergy, POKEMON_DECK_RULES } from './deck-rules';
 
@@ -16,6 +19,8 @@ const catalog = json<Catalog>('public/data/catalog.json');
 const text = buildTextIndex(json<CardTextFile>('public/data/text.json'));
 const energy = catalog.cards.filter((c) => c.cat === 'Energy');
 const BASIC_NAME = /^(?:Basic )?(?:Grass|Fire|Water|Lightning|Psychic|Fighting|Darkness|Metal|Fairy) Energy$/;
+const index = buildIndex(catalog, json<SpeciesFile>('public/data/species.json').species);
+const own = (list: [string, number][]) => new Map<string, CollectionEntry>(list.map(([cardId, qty]) => [cardId, { cardId, qty, wanted: 0, addedAt: 0, updatedAt: 0 }]));
 
 describe('Energy copy limits', () => {
   it('gives every Energy card one of the two limits: none for basic, four for Special', () => {
@@ -62,5 +67,82 @@ describe('Energy copy limits', () => {
       expect(c, id).toBeDefined();
       expect(POKEMON_DECK_RULES.copyLimit(c!), id).toBe(Infinity);
     }
+  });
+});
+
+describe('a name that is two cards: basic and Special "Darkness Energy"', () => {
+  // swsh12.5-158: basic (Crown Zenith, no effect). hgss3-79 and dp5-93: the older Special Energy (they have an effect).
+  const BASIC = 'swsh12.5-158';
+  const SPECIAL = 'hgss3-79';
+  const SPECIAL2 = 'dp5-93';
+
+  it('says which is which by the card, as the catalog and the card text both have it', () => {
+    const note = (id: string) => POKEMON_DECK_RULES.cardNote!(index.cardsById.get(id)!);
+    expect(note(BASIC)).toBe('Basic Energy');
+    expect(note(SPECIAL)).toBe('Special Energy');
+    expect(note('base1-96')).toBe('Special Energy'); // Double Colorless Energy
+    expect(note('base1-4')).toBeUndefined(); // Charizard: only Energy cards get a note
+    // Every printing the app calls Special has effect text; every one it calls basic has none.
+    for (const c of energy.filter((x) => x.name === 'Darkness Energy' || x.name === 'Metal Energy')) {
+      const fx = text.byId.get(c.id)?.text.fx;
+      if (text.byId.has(c.id)) expect(!!fx, `${c.id} effect text`).toBe(!isBasicEnergy(c));
+    }
+  });
+
+  it('does not hold twelve basic ones against the four a Special one allows', () => {
+    expect(overLimit(POKEMON_DECK_RULES, [{ cardId: BASIC, qty: 12 }], index)).toEqual([]);
+    // One old Special printing among basic ones used to flag all twelve.
+    const mixed = [
+      { cardId: BASIC, qty: 11 },
+      { cardId: SPECIAL, qty: 1 },
+    ];
+    expect(overLimit(POKEMON_DECK_RULES, mixed, index)).toEqual([]);
+    expect(limitHint(POKEMON_DECK_RULES, overLimit(POKEMON_DECK_RULES, mixed, index))).toBeNull();
+  });
+
+  it('still caps the Special one at four, over its printings, and names them', () => {
+    const cards = [
+      { cardId: BASIC, qty: 9 },
+      { cardId: SPECIAL, qty: 3 },
+      { cardId: SPECIAL2, qty: 2 },
+    ];
+    const over = overLimit(POKEMON_DECK_RULES, cards, index);
+    expect(over).toEqual([{ name: 'Darkness Energy', qty: 5, limit: 4, ids: [SPECIAL, SPECIAL2] }]);
+    expect(limitHint(POKEMON_DECK_RULES, over)).toBe('4 copies at most: Darkness Energy ×5.');
+  });
+
+  it('finds the basic printing to switch to: one you own first, else the newest with a picture', () => {
+    const picked = unlimitedTwin(POKEMON_DECK_RULES, 'Darkness Energy', index, own([]))!;
+    expect(isBasicEnergy(picked)).toBe(true);
+    expect(picked.name).toBe('Darkness Energy');
+    expect(picked.img).toBeTruthy();
+    expect(unlimitedTwin(POKEMON_DECK_RULES, 'Darkness Energy', index, own([['sm1-170', 2]]))!.id).toBe('sm1-170');
+    // Owning the Special printing does not make it the twin.
+    expect(isBasicEnergy(unlimitedTwin(POKEMON_DECK_RULES, 'Darkness Energy', index, own([[SPECIAL, 12]]))!)).toBe(true);
+    // A Special Energy with no basic card of its name has none.
+    expect(unlimitedTwin(POKEMON_DECK_RULES, 'Double Colorless Energy', index, own([]))).toBeUndefined();
+    expect(unlimitedTwin(POKEMON_DECK_RULES, 'Charizard', index, own([]))).toBeUndefined();
+  });
+
+  it('switches every line of the old printings to the basic one, zone by zone', () => {
+    const cards = [
+      { cardId: 'base1-4', qty: 2 },
+      { cardId: SPECIAL, qty: 8 },
+      { cardId: SPECIAL2, qty: 4 },
+      { cardId: BASIC, qty: 1 },
+    ];
+    expect(withPrinting(cards, new Set([SPECIAL, SPECIAL2]), BASIC)).toEqual([
+      { cardId: 'base1-4', qty: 2 },
+      { cardId: BASIC, qty: 13 },
+    ]);
+    expect(overLimit(POKEMON_DECK_RULES, withPrinting(cards, new Set([SPECIAL, SPECIAL2]), BASIC), index)).toEqual([]);
+    const sided = [
+      { cardId: SPECIAL, qty: 3 },
+      { cardId: SPECIAL, qty: 2, zone: 'side' as const },
+    ];
+    expect(withPrinting(sided, new Set([SPECIAL]), BASIC)).toEqual([
+      { cardId: BASIC, qty: 3 },
+      { cardId: BASIC, qty: 2, zone: 'side' },
+    ]);
   });
 });

@@ -32,6 +32,12 @@ export interface DeckRules {
   copyLimit(card: CatalogCard): number;
   /** Reminder heading for cards over the limit: "3 copies at most". */
   limitHint: string;
+  /**
+   * A word on a card whose kind decides its copy limit and is not obvious from its name: a Pokémon Energy
+   * card is "Basic Energy" (no limit) or "Special Energy" (four), and "Darkness Energy" and "Metal Energy"
+   * exist as both. Shown on deck lines.
+   */
+  cardNote?(card: CatalogCard): string | undefined;
 }
 
 /* ---------- Pokémon ---------- */
@@ -41,9 +47,11 @@ const BASIC_ENERGY = /^(?:Basic )?(?:Grass|Fire|Water|Lightning|Psychic|Fighting
 /**
  * Basic Energy, which a Pokémon deck may run any number of. TCGdex marks a
  * card as basic Energy (`stage: 'Basic'`) on a minority of prints only, so
- * the printed name decides as well. One exception: from Neo Genesis to
- * HeartGold SoulSilver, "Darkness Energy" and "Metal Energy" were Special
- * Energy, printed Rare or Uncommon, and count toward the four-copy limit.
+ * the printed name decides as well. One exception: from Neo Genesis (2000)
+ * to Call of Legends (2011), 15 printings each of "Darkness Energy" and
+ * "Metal Energy" are Special Energy: they carry an effect, are printed Rare
+ * or Uncommon, and count toward the four-copy limit. Checked against the
+ * cards' own text in energy-limits.test.ts.
  */
 export function isBasicEnergy(card: Pick<CatalogCard, 'cat' | 'name' | 'stage' | 'rarity'>): boolean {
   if (card.cat !== 'Energy') return false;
@@ -59,6 +67,7 @@ export const POKEMON_DECK_RULES: DeckRules = {
   sectionOf: () => 'main',
   copyLimit: (card) => (isBasicEnergy(card) ? Infinity : 4),
   limitHint: '4 copies at most',
+  cardNote: (card) => (card.cat !== 'Energy' ? undefined : isBasicEnergy(card) ? 'Basic Energy' : 'Special Energy'),
 };
 
 /* ---------- Yu-Gi-Oh! ---------- */

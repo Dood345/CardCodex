@@ -152,7 +152,7 @@ describe('deck sections and reminders', () => {
       { cardId: POT.id, qty: 1, zone: 'side' as const },
     ];
     const over = overLimit(YGO_DECK_RULES, cards, index);
-    expect(over).toEqual([{ name: 'Pot of Greed', qty: 4, limit: 3 }]);
+    expect(over).toEqual([{ name: 'Pot of Greed', qty: 4, limit: 3, ids: [POT.id, POT2.id] }]);
     expect(limitHint(YGO_DECK_RULES, over)).toBe('3 copies at most: Pot of Greed ×4.');
     expect(limitHint(YGO_DECK_RULES, [])).toBeNull();
   });

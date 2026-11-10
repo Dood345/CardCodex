@@ -13,6 +13,8 @@ import { useSettings } from '@/app/settings';
 import { db, type Deck, type DeckCard } from './db';
 import { setWanted, type CollectionMap } from './collection';
 import type { CatalogIndex } from './catalog';
+import { normalizeText } from './normalize';
+import type { CatalogCard } from './types';
 import { isGameId, type GameId } from '@/games/ids';
 import { sectionHint, type DeckRules, type DeckSection, type DeckSectionId } from '@/games/deck-rules';
 
@@ -283,21 +285,54 @@ export interface OverLimit {
   name: string;
   qty: number;
   limit: number;
+  /** The printings counted, in deck order. */
+  ids: string[];
 }
 
-/** Cards over the copy limit, counted by name over every printing and section (unknown cards are skipped). */
+/**
+ * Cards over the copy limit, counted by name over every printing and section
+ * (unknown cards are skipped). A printing with no limit is never counted: a
+ * name can be two cards (basic "Darkness Energy" and the older Special
+ * Energy of the same name), and twelve basic ones must not be held against
+ * the four a Special one allows.
+ */
 export function overLimit(rules: DeckRules, cards: readonly DeckCard[], index: CatalogIndex): OverLimit[] {
   const byName = new Map<string, OverLimit>();
   for (const c of cards) {
     const card = index.cardsById.get(c.cardId);
     if (!card) continue;
+    const limit = rules.copyLimit(card);
+    if (!Number.isFinite(limit)) continue;
     const prev = byName.get(card.name);
     if (prev) {
       prev.qty += c.qty;
-      prev.limit = Math.min(prev.limit, rules.copyLimit(card));
-    } else byName.set(card.name, { name: card.name, qty: c.qty, limit: rules.copyLimit(card) });
+      prev.limit = Math.min(prev.limit, limit);
+      if (!prev.ids.includes(card.id)) prev.ids.push(card.id);
+    } else byName.set(card.name, { name: card.name, qty: c.qty, limit, ids: [card.id] });
   }
   return [...byName.values()].filter((o) => o.qty > o.limit);
+}
+
+/**
+ * The printing to use instead when a card over its limit also exists, under
+ * the same name, as a card with no limit (basic Darkness Energy for the old
+ * Special one): an owned one first, else the newest with a picture, else the
+ * newest. Undefined when the name has no such twin.
+ */
+export function unlimitedTwin(rules: DeckRules, name: string, index: CatalogIndex, collection: CollectionMap): CatalogCard | undefined {
+  const twins = (index.cardsByName.get(normalizeText(name)) ?? []).filter((c) => c.name === name && !Number.isFinite(rules.copyLimit(c)));
+  return twins.find((c) => (collection.get(c.id)?.qty ?? 0) > 0) ?? twins.find((c) => c.img || c.pc !== undefined || c.sid) ?? twins[0];
+}
+
+/** `cards` with every line of the printings `from` turned into a line of `to` in the same zone (merged with one already there). */
+export function withPrinting(cards: readonly DeckCard[], from: ReadonlySet<string>, to: string): DeckCard[] {
+  return normalizeCards(cards.map((c) => (from.has(c.cardId) ? line(to, c.qty, c.zone) : c)));
+}
+
+/** Swaps printings in a deck (see `withPrinting`), in one write. */
+export async function replaceDeckPrinting(id: string, from: readonly string[], to: string): Promise<void> {
+  const set = new Set(from);
+  await editDeckCards(id, (cards) => withPrinting(cards, set, to));
 }
 
 /** "3 copies at most: Pot of Greed ×4, Raigeki ×5.", or null when nothing is over. */

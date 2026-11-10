@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import sharp from 'sharp';
 import { beforeAll, describe, expect, it } from 'vitest';
 import type { Catalog, CatalogCard, CatalogSet } from '@/data/types';
+import { isBasicEnergy } from '@/games/deck-rules';
 import type { RgbaImage } from './grid';
 import { decodeHashFile, type HashFile } from './hash';
 import {
@@ -126,6 +127,12 @@ describe('Energy references', () => {
     const types = new Set(refs.table.ids.map((id) => BASIC_ENERGY.exec(cards.get(id)!.name)?.[1]));
     expect([...types].sort()).toEqual(['Darkness', 'Fairy', 'Fighting', 'Fire', 'Grass', 'Lightning', 'Metal', 'Psychic', 'Water']);
     for (const id of file.ids) expect(BASIC_ENERGY.test(cards.get(id)?.name ?? ''), id).toBe(true);
+  });
+
+  it('hold basic Energy only: the older Special "Darkness Energy" and "Metal Energy" print their name and are never offered', () => {
+    for (const id of file.ids) expect(isBasicEnergy(cards.get(id)!), id).toBe(true);
+    for (const special of ['neo1-104', 'hgss3-79', 'col1-86', 'dp5-95']) expect(file.ids, special).not.toContain(special);
+    expect(file.ids).toContain('swsh12.5-158');
   });
 
   it('are refused when the file does not fit the code that reads it', () => {
