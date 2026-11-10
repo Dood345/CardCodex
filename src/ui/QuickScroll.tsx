@@ -11,6 +11,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 're
 import { contentLine, firstBelow, mainPane, settleAlign } from './pane';
 import { fractionOf, labelStride, positionAt, type Section } from './quick-scroll';
 
+/** On the scrolling pane while a quick scroll zone is shown; hides the pane's own scrollbar (src/styles.css). */
+export const QUICK_SCROLL_PANE_CLASS = 'has-quick-scroll';
 /** Lists shorter than this do without the zone. */
 export const QUICK_SCROLL_MIN = 40;
 /** Minimum spacing between drawn labels (px). */
@@ -51,6 +53,14 @@ export function QuickScroll({
   const frame = useRef(0);
   const dragging = useRef(false);
   const settling = useRef<() => void>(() => undefined);
+
+  // The zone is the list's scrollbar while it is up: the pane's own bar would show as a second, thin one beside it.
+  useLayoutEffect(() => {
+    const pane = mainPane();
+    if (!pane) return;
+    pane.classList.add(QUICK_SCROLL_PANE_CLASS);
+    return () => pane.classList.remove(QUICK_SCROLL_PANE_CLASS);
+  }, []);
 
   // Between the top bar and the bottom nav, following both when they change size.
   useLayoutEffect(() => {
