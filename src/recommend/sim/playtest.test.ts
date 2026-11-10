@@ -35,7 +35,7 @@ describe('reading the fixture deck', () => {
 
   it('reads the draw, search and acceleration of the deck from the card text', () => {
     expect(byName('Professor\'s Research').fx?.effects).toEqual([{ k: 'discardHandDraw', n: 7 }]);
-    expect(byName('Iono').fx?.effects).toEqual([{ k: 'shuffleHandDraw', n: -1, bottom: true }]);
+    expect(byName('Iono').fx?.effects).toEqual([{ k: 'shuffleHandDraw', n: -1, bottom: true, both: true }]);
     expect(byName('Ultra Ball').fx?.discardCost).toBe(2);
     expect(byName('Nest Ball').fx?.effects[0]).toMatchObject({ k: 'search', to: 'bench', f: { k: 'pokemon', basic: true } });
     expect(byName('Buddy-Buddy Poffin').fx?.effects[0]).toMatchObject({ k: 'search', n: 2, f: { hpMax: 70 } });
@@ -71,7 +71,9 @@ describe('reading the fixture deck', () => {
   it('reads a coin flip and a condition as such', () => {
     expect(parseText('Flip a coin. If heads, draw 3 cards.')).toMatchObject({ chance: 0.5, effects: [{ k: 'draw', n: 3 }] });
     expect(parseText('Flip 2 coins. For each heads, draw a card.').unread).toBe('coin flips');
-    expect(parseText('You can use this card only if your opponent has 3 or fewer Prize cards remaining. Draw 3 cards.').unread).toBe('condition');
+    const red = parseText('You can use this card only if your opponent has 3 or fewer Prize cards remaining. Draw 3 cards.');
+    expect(red).toMatchObject({ cond: { k: 'prizes', side: 'opponent', max: 3 }, effects: [{ k: 'draw', n: 3 }], followed: true });
+    expect(parseText('You can use this card only if your Active Pokémon is Poisoned. Draw 3 cards.').unread).toBe('condition');
   });
 
   it('gives each kind of Pokémon its prize value', () => {
@@ -309,8 +311,9 @@ describe('Trainers that look at the top of the deck', () => {
     expect(card('Pokégear 3.0').fx?.effects).toMatchObject([{ k: 'search', n: 1, f: { k: 'trainer', tt: 'Supporter' }, to: 'hand', top: 7 }]);
     expect(card("Bill's Transfer").fx?.effects).toMatchObject([{ k: 'search', n: 99, f: { k: 'pokemon' }, to: 'hand', top: 8 }]);
     expect(card("Ciphermaniac's Codebreaking").fx?.effects).toEqual([{ k: 'stack', n: 2 }]);
-    // Potion heals, and nothing is hurt in a game against nobody: the only card left out.
-    expect(du.unread).toEqual([{ id: 'swsh1-177', name: 'Potion', copies: 1, reason: 'heal' }]);
+    // Potion heals: read, and with nothing hurt in a game against nobody it sits in the hand (see the report below).
+    expect(du.unread).toEqual([]);
+    expect(card('Potion').fx?.effects).toEqual([{ k: 'heal', n: 30, all: undefined, target: 'any', minEnergy: undefined, maxHpLeft: undefined }]);
   });
 
   it('finds a Pokémon among the top seven cards with Great Ball', () => {
@@ -343,6 +346,8 @@ describe('Trainers that look at the top of the deck', () => {
     const text = r.lines.join(' | ');
     expect(text).toMatch(/1 card needs an opponent to matter \(Potion\)/);
     expect(text).not.toMatch(/does not know how to play/);
+    const r2 = playtest(ev, thin, { games: 60, seed: 1 });
+    expect(r2.idle).toEqual([{ id: 'swsh1-177', name: 'Potion', copies: 1, reason: 'heal' }]);
     const charizard = pokemonPlaytest(ev, cards, { games: 20, seed: 1 }).lines.join(' | ');
     expect(charizard).toMatch(/need an opponent to matter \([^)]*Boss's Orders/);
     expect(charizard).toMatch(/The test pilot does not know how to play \d+ of the cards/);

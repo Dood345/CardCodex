@@ -61,8 +61,9 @@ export function parsePokeTest(raw: string): PokeTest | null {
     return t;
   }
   if (s === 'Pokémon') return t;
-  if ((m = /^([A-Z][a-z]+(?:'s|’s)) Pokémon$/.exec(s))) {
-    t.owner = m[1].replace('’', "'");
+  if ((m = /^(?:(Basic) )?((?:Team Rocket's|[A-Z][a-z]+'s)) Pokémon$/.exec(s))) {
+    t.owner = m[2];
+    if (m[1]) t.basic = true;
     return t;
   }
   // One or more card names ("Lunatone", "Beedrill and Beedrill ex", "Charjabug"): capitalised words, no "Pokémon".
@@ -153,13 +154,19 @@ export function parseCond(raw: string): Cond | null {
     return { k: 'selfEnergy', type: m[2] ? COST_LETTERS[m[2]] : undefined, special: m[1] === 'Special' || undefined };
   }
   if (/^this Pokémon moved from your Bench to the Active Spot this turn$|^this Pokémon was on the Bench and became your Active Pokémon this turn$/.test(s)) return { k: 'movedThisTurn' };
-  if ((m = /^any of your (?:([A-Z][a-z]+'s) )?Pokémon were Knocked Out by damage from an attack during your opponent's last turn$/.exec(s))) return { k: 'koLastTurn', owner: m[1] };
+  if ((m = /^any of your (?:((?:Team Rocket's|[A-Z][a-z]+'s)) )?Pokémon were Knocked Out (?:by damage from an attack )?during your opponent's last turn$/.exec(s))) return { k: 'koLastTurn', owner: m[1] };
+  if ((m = /^all of your Pokémon in play are (.+)$/.exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? { k: 'allInPlay', t } : null;
+  }
+  if (/^you go second, and only during your first turn$/.test(s)) return { k: 'firstTurnSecond' };
+  if (/^it is the last card in your hand$/.test(s)) return { k: 'lastCardInHand' };
   if (/^(?:a|there is a|there is any|you have a) Stadium(?: card)? (?:is )?in play$/.test(s)) return { k: 'stadium' };
   if (/^there is no Stadium(?: card)? in play$/.test(s)) return { k: 'stadium', not: true };
-  if ((m = /^you (don't )?have (.+?) on your Bench$/.exec(s))) {
+  if ((m = /^you (don't )?have (?:any )?(.+?) (on your Bench|in play)$/.exec(s))) {
     const t = parsePokeTest(m[2]);
     if (!t) return null;
-    return { k: 'inPlay', side: 'self', t, min: 1, bench: true, not: m[1] ? true : undefined };
+    return { k: 'inPlay', side: 'self', t, min: 1, bench: m[3] === 'on your Bench' || undefined, not: m[1] ? true : undefined };
   }
   if ((m = /^you have (\d+) or more (.+?) in your discard pile$/.exec(s))) {
     const t = parseCardTest(m[2]);

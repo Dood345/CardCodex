@@ -55,6 +55,8 @@ export interface PlaytestReport {
   unreadDrawsPerGame: number;
   /** Cards the pilot plays but cannot use in full (Pokémon: Abilities it does not read, passive ones included), by copies. */
   partlyRead: UnreadCard[];
+  /** Trainers the pilot can read that reached its hand in some game and were never played in any (Pokémon: a Potion with nothing to heal), by copies; `reason` is what they do. */
+  idle: UnreadCard[];
   /** Wall time of the run. */
   ms: number;
 }

@@ -47,31 +47,33 @@ describe('sentence accounting', () => {
   });
 
   it('does not count a card whose search is wider than the text, or whose draw has a clause the pilot skips', () => {
-    // Poké Pad: "a Pokémon that doesn't have a Rule Box". The pilot searches for any Pokémon.
-    const pad = one('me03-081');
-    expect(pad.fx?.effects[0]).toMatchObject({ k: 'search', f: { k: 'pokemon', vague: "that doesn't have Rule Box" } });
-    expect(pad.fx?.followed).toBe(false);
-    expect(kindOf(pad.fx!)).toBe('search wider than "that doesn\'t have Rule Box"');
-    // Lillie's Determination: "If you have exactly 6 Prize cards remaining, draw 8 cards instead."
+    // Tera Orb: "a Tera Pokémon". The pilot searches for any Pokémon, and says so.
+    const orb = one(index.cardsByName.get('tera orb')![0].id);
+    expect(orb.fx?.effects[0]).toMatchObject({ k: 'search', f: { k: 'pokemon', vague: 'Tera' } });
+    expect(orb.fx?.followed).toBe(false);
+    expect(kindOf(orb.fx!)).toBe('search wider than "Tera"');
+    // Lillie's Determination: "If you have exactly 6 Prize cards remaining, draw 8 cards instead." is an alternative.
     const lillie = one('me01-119');
-    expect(lillie.fx?.effects).toEqual([{ k: 'shuffleHandDraw', n: 6, bottom: false }]);
-    expect(lillie.fx?.followed).toBe(false);
-    expect(kindOf(lillie.fx!)).toBe('"instead"');
-    // Iono: both players shuffle; the pilot only resolves its own side.
+    expect(lillie.fx?.effects).toEqual([{ k: 'shuffleHandDraw', n: 6, bottom: false, alt: { if: { k: 'prizes', side: 'self', exactly: [6] }, n: 8 } }]);
+    expect(lillie.fx?.followed).toBe(true);
+    // Iono: both players shuffle; in a duel the engine resolves both sides, so every sentence is read.
     const iono = one('sv04.5-080');
-    expect(iono.fx?.effects[0]).toMatchObject({ k: 'shuffleHandDraw', n: -1 });
-    expect(iono.fx?.followed).toBe(false);
-    expect(iono.fx?.sentences.every((s) => s.status === 'unread')).toBe(true);
-    expect(iono.fx?.sentences[0].why).toBe('the opponent');
+    expect(iono.fx?.effects[0]).toMatchObject({ k: 'shuffleHandDraw', n: -1, both: true });
+    expect(iono.fx?.followed).toBe(true);
+    // Boss's Orders: nothing of it is read yet.
+    const boss = one('sv02-172');
+    expect(boss.fx?.followed).toBe(false);
+    expect(boss.fx?.sentences[0].why).toBe('');
   });
 
   it('counts an unread Trainer by the kind of its first unread sentence', () => {
     expect(one('sv02-172').unread).toBe('gust');
     expect(kindOf(one('sv02-172').fx!)).toBe('gust');
-    expect(kindOf(one('sv06.5-061').fx!)).toBe('recovery from the discard pile');
+    expect(kindOf(one('sv01-187').fx!)).toBe('coin flips');
     // Crushing Hammer: "If heads, discard an Energy from 1 of your opponent's Pokémon."
     expect(kindOf(one('me03-071').fx!)).toBe('coin flips');
-    expect(kindOf(one('me04-082').fx!)).toBe('"only if"');
+    // Special Red Card: its "only if" is read; what the opponent does with their hand is not.
+    expect(kindOf(one('me04-082').fx!)).toBe("opponent's hand or deck");
     expect(kindOf(one('sv10.5b-079').fx!)).toBe('Retreat Cost');
   });
 

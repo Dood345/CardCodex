@@ -87,6 +87,12 @@ export type Cond =
   | { k: 'benchDamaged' }
   /** The optional cost of this attack was paid ("If you do, …"). */
   | { k: 'paid' }
+  /** Every Pokémon in play on your side matches. */
+  | { k: 'allInPlay'; t: PokeTest }
+  /** Your first turn, going second. */
+  | { k: 'firstTurnSecond' }
+  /** The card being played is the last card in your hand. */
+  | { k: 'lastCardInHand' }
   | { k: 'not'; c: Cond }
   | { k: 'any'; cs: Cond[] };
 

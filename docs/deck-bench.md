@@ -203,6 +203,39 @@ of the opponent's Energy is credited one card on the typical board (Sunflora's R
 was 180). Coverage on the tournament lists stands at Trainers 30.3%, Abilities 23.4%, Special Energy
 0%, attacks 81.0%.
 
+## Items and Supporters read (2026-11-10)
+
+The pilot follows the Trainer wordings the tournament lists lean on (`deck-playtest.md`, Card
+reading): searches narrowed by Rule Box, owner or name, "draw N instead" alternatives, both players
+shuffling, "only if" conditions, recovery from the discard pile, Energy moves, looks that keep the
+best cards, Crispin, Gwynn, healing. Ability conditions and costs ("if …, you may", "You must
+discard … in order to use this Ability") are honoured too: before, Fezandipiti ex's Flip the Script
+drew three cards every turn. Trainer copies followed in full: tournament lists 30.3% → 68.8%,
+archetypes 31.6% → 68.2%, built decks 34.1% → 63.6%, the Standard pool 14.4% → 30.1%; Abilities
+23.4% → 25.1% on the lists.
+
+| Judge, tournament lists | Before | After |
+| --- | --- | --- |
+| Attacking by turn 3 (mean) | 50% | 52% |
+| Attacking by turn 4 (mean) | 64% | 67% |
+| Damage per turn (mean) | 87 | 93 |
+| Turns with a play (mean) | 90% | 87% |
+| Beats swapped Trainers (attacking by turn 3 / damage / wins) | 81% / 75% / 55% | 87% / 85% / 69% |
+| Wins against the field, rank correlation with real win rates | 0.05 | 0.33 |
+| Wins against the field, beats pile / order | 95% / 0.81 | 92% / 0.73 |
+
+Reading Trainers is what the "swapped Trainers" ladder was waiting for: every played judge now sees a
+third of the Trainers swapped far better. Simulated wins follow real win rates for the first time
+(0.33). Turns with a play fell three points because an Ability with an unmet condition no longer
+counts as a play. The duel ladder's pile and order columns gave a little: three of the thirty-nine
+sampled lists rate at or below a random pile against the field (two before), decks whose strategy the
+pilot cannot play yet (N's Zoroark, Dhelmise, Team Rocket's Honchkrow lean on Abilities and
+discard-pile counts, the next families), and field decks that deck out in thirty-turn games against a
+pile. Playing Trainers as written made the pilot draw itself out: a flat reserve of six cards became
+one draw a turn for the Knock Outs still needed plus two, and under twenty cards it draws only into a
+hand of fewer than five; before that rule five of the thirty-nine lists lost head-to-head to their
+own random pile.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

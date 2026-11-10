@@ -49,6 +49,7 @@ opening its combo, and a Magic one as casting on curve.
 | `keyPieceStuckRate` | Share of games where every copy of something the plan needs is prized (see below) |
 | `unread`, `unreadCopies`, `unreadDrawsPerGame` | Cards the pilot cannot read, with the kind of effect; how often one is in hand |
 | `partlyRead` | Cards it plays without using them in full: Pokémon whose Ability it does not use (passive ones, or activated ones whose text was not read), such as Radiant Charizard's cost reduction |
+| `idle` | Trainers it can read that reached its hand in some game and were never played in any (a Potion with nothing to heal), with what they do as the reason; the deck page lists the healing ones among the cards that need an opponent |
 | `meanDamagePerTurn`, `damageByTurn` | Pokémon only: damage per own turn as the attack text makes it (coins flipped, counts read, the opponent a mirror), mean over the first six turns |
 
 **What counts as a stuck key piece.** Any one of these, in the Prize cards from the start of the game:
@@ -88,6 +89,16 @@ those from `features(card).text`.
 | Rare Candy | Rare Candy | skip the Stage 1 |
 | Discard cost | Ultra Ball ("only if you discard 2 other cards") | pay the discard, then resolve |
 | One coin flip | "Flip a coin. If heads, …" | the effect happens half the time |
+| Searches narrowed by kind | Poké Pad, Team Rocket's Proton, Fighting Gong, Brock's Scouting | "that doesn't have a Rule Box" (no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega), an owner ("Team Rocket's Pokémon"), a name ("that has "Team Rocket" in its name"), "X or Y" (either kind), "of different types" |
+| A draw with an alternative | Lillie's Determination, Lacey, Team Rocket's Ariana | "If …, draw N cards instead": the other number when the condition holds (Prize cards remaining, every Pokémon in play of an owner) |
+| Both players shuffle | Judge, Iono, Unfair Stamp | the opponent shuffles and draws too, in a duel |
+| "You can use this card only if …" | Unfair Stamp, Special Red Card, Rosa's Encouragement, Gladion's Final Battle | played only while the condition holds (a Knock Out last turn, Prize cards, the last card in hand, going second on the first turn); "You can't use this card during your first turn" and "If you go first, you may use this card during your first turn" likewise |
+| Recovery from the discard pile | Night Stretcher, Lana's Aid, Miracle Headset | the most wanted card of any of the kinds named into the hand; Super Rod and Energy Recycler into the deck, when the discard pile holds a card the plan wants |
+| Energy moved | Energy Switch, N's Plan | from a Pokémon that does not need it to one that does |
+| A look that keeps some cards | Explorer's Guidance, Hassel, Drayton | the top N, the most wanted kept, the rest discarded or shuffled back; "a Pokémon and a Trainer card" one of each |
+| Crispin | Crispin | one Basic Energy to the hand and one of another type attached |
+| Gwynn | Gwynn | spare Pokémon without a Rule Box discarded, N cards drawn for each |
+| Healing | Potion, Jumbo Ice Cream, Bianca's Devotion | the most damaged Pokémon it may reach (the Active with enough Energy, one with little HP left), when something is damaged; it sits idle otherwise and the report says so |
 | Attack costs (attacks only) | Draconic Buster, Bellowing Thunder, Icicle Loop, Tuck Tail | Energy discarded from the attacker (a number, all, a type), "any amount" from any of your Pokémon, Energy put back into the hand or shuffled into the deck, the top of the deck or cards from the hand discarded, damage to itself or to its own Bench, the attacker returned to the hand; optional ("You may …") with a bonus "and have this attack do N more damage" or "If you do, …" |
 
 `{R}` symbols are read as type names.
@@ -254,8 +265,14 @@ shares in its baseline and fails on any drop (`docs/deck-bench.md`).
 - **A stuck Active.** When the Active is off the main line and short of its Retreat Cost while the
   line waits on the Bench, Energy (manual or accelerated, such as Infernal Reign's third Energy)
   goes to it right after the line's lead. Searches then rank Energy and Switch at the top.
-- **Deck reserve.** Draw effects are passed up when they would leave fewer than 6 cards in the
-  deck, because decking out loses.
+- **Deck reserve.** Draw effects (and looks that discard the rest, and Gwynn's discard-and-draw)
+  are passed up when they would leave fewer cards in the deck than one draw a turn for the Knock
+  Outs still needed plus two, never under six (`reserve`), because decking out loses; once the deck
+  is under twenty cards the pilot draws only into a hand of fewer than five cards, and a hand-replacing
+  draw loses a card of value for each card over four.
+  Before 2026-11-10 the reserve was a flat six: once the pilot played Gwynn, Explorer's Guidance and
+  Run Away Draw as written, lists that could not Knock Out a random pile's Pokémon quickly decked out
+  against it (five of thirty-nine lost to their pile; none do now).
 - **The attack** is the payable attack with the highest expected damage on the board as it stands.
   A setup attack (Pidgey's Call for Family) is used instead when the damage would be under 50 and
   would not knock out.
@@ -373,11 +390,12 @@ discards the one in play.
 
 **Gaps that matter for this deck:**
 
-- **Cards whose text is not read.** The pilot never plays them. That covers gust, disruption,
-  healing, recovery other than Energy, every Tool except a lent VSTAR Power, Stadiums other than
-  "once during each player's turn", conditional cards ("only if …") and multi-coin effects. The report names them in two groups:
-  cards that need an opponent to matter (gust, disruption, healing) and cards the pilot does not
-  know how to play.
+- **Cards whose text is not read.** The pilot never plays them. That covers gust, hand and Energy
+  disruption of the opponent, every Tool except a lent VSTAR Power, Stadiums other than "once during
+  each player's turn", "only if" conditions about things the engine does not track (a Tera Pokémon in
+  play), multi-coin effects, and a few wordings (Salvatore's evolve-from-deck, Naveen, Kieran's
+  "Choose 1"). The report names them in two groups: cards that need an opponent to matter (gust,
+  disruption, and healing that sat idle) and cards the pilot does not know how to play.
 - **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
   Stadiums that change damage are not. Still unread in attack text: a count the parser does not
   model (Benched Pokémon by HP, damage counters on an owner's Pokémon), a bonus tied to a Special
