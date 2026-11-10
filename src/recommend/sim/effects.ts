@@ -58,7 +58,21 @@ export type Effect =
   | { k: 'attach'; n: number; from: 'discard' | 'hand'; f: CardFilter; target: AttachTarget }
   | { k: 'recover'; n: number; f: CardFilter }
   | { k: 'switch' }
-  | { k: 'rareCandy' };
+  | { k: 'rareCandy' }
+  /* Attack costs and own-side effects (damage-text.ts), run by the engine around the attack's damage. */
+  /** Discard Energy from the attacker: n of them (or all), of a type or kind; optional when `may`. */
+  | { k: 'discardSelfEnergy'; n: number; all?: boolean; type?: string; basic?: boolean; special?: boolean; may?: boolean }
+  /** Discard any amount of Energy from any of your Pokémon; the pilot picks the count (engine.ts). */
+  | { k: 'discardAnyEnergy'; type?: string; basic?: boolean; special?: boolean }
+  | { k: 'energyToHand'; n: number; type?: string; may?: boolean }
+  | { k: 'energyToDeck'; n: number; all?: boolean; may?: boolean }
+  /** Damage to the attacker itself, after its damage; `ifPaid`: only when the optional cost before it was paid. */
+  | { k: 'selfDamage'; n: number; ifPaid?: boolean }
+  | { k: 'benchDamageOwn'; n: number; each: boolean }
+  /** The attacker and everything attached go back to the hand. */
+  | { k: 'selfToHand' }
+  | { k: 'millSelf'; n: number }
+  | { k: 'discardHand'; n: number; may?: boolean };
 
 export type SentenceStatus = 'read' | 'noop' | 'unread';
 
@@ -307,9 +321,11 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: RE_ENDS_TURN.test(t0), mods: [], unread: '', sentences: [], followed: false };
   const marks: Mark[] = [];
   let t = t0;
+  const ef: { at: number; e: Effect }[] = [];
   if (mode === 'attack' && t0.trim()) {
     const dm = parseDamageMods(splitSentences(t0));
     out.mods = dm.mods;
+    ef.push(...dm.effects);
     for (const [start, end] of dm.spans) {
       marks.push({ start, end, exact: true });
       t = t.slice(0, start) + ' '.repeat(end - start) + t.slice(end);
@@ -317,8 +333,9 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   }
   const fail = (why: string): ParsedText => ({ ...out, unread: why, sentences: unreadAll(t0, why), followed: false });
   if (!t0.trim()) return { ...out, unread: 'no text', sentences: [], followed: true };
-  if (!t.trim() && out.mods.length) {
-    out.unread = 'damage only';
+  if (!t.trim() && (out.mods.length || ef.length)) {
+    out.effects = ef.sort((a, b) => a.at - b.at).map((x) => x.e);
+    out.unread = out.effects.length ? '' : 'damage only';
     out.sentences = account(t0, marks, 1);
     out.followed = out.sentences.every((s) => s.status !== 'unread');
     return out;
@@ -338,7 +355,6 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   if (RE_CONDITION.test(rest)) return fail('condition');
   if ((m = RE_ENDS_TURN.exec(t))) marks.push({ start: m.index, end: m.index + m[0].length, exact: true });
 
-  const ef: { at: number; e: Effect }[] = [];
   const mark = (at: number, len: number, exact = false, vague?: string) => marks.push({ start: at, end: at + len, exact, vague });
   let drew = false;
   if ((m = RE_PRIZE_DRAW.exec(t))) {
@@ -451,6 +467,20 @@ export function attackRest(effect: string): 0 | 1 | 2 {
   if (/If (?:tails|heads),[^.]*$/i.test(effect.slice(0, m.index))) return 0;
   const what = (m[1] ?? m[2]).toLowerCase();
   return what === 'attack' || what === 'use attacks' ? 1 : 2;
+}
+
+/**
+ * Energy an attack's own text takes from its user every time, to be attached again a card a turn:
+ * a mandatory discard (a number, or the whole cost for "all"), or Energy put back into the hand or
+ * deck. Optional costs count nothing: the pilot pays them only for a Knock Out.
+ */
+export function attackDrain(fx: ParsedText | null, costN: number): number {
+  let n = 0;
+  for (const e of fx?.effects ?? []) {
+    if ((e.k === 'discardSelfEnergy' || e.k === 'energyToDeck') && !e.may) n += e.all ? costN : e.n;
+    else if (e.k === 'energyToHand' && !e.may) n += e.n;
+  }
+  return Math.min(n, costN);
 }
 
 /** The rest sentence of an attack, which the engine honours (`attackRest`), is read. */

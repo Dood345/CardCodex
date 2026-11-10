@@ -25,6 +25,8 @@ export interface SimAttack {
   fx: ParsedText | null;
   /** Expected damage on the typical board (`AttackFeature.expected`): what the pilot compares attacks by before a game. */
   expected: number;
+  /** Energy its own text takes from its user each time (`AttackFeature.drain`). */
+  drain: number;
   /** 1: the Pokémon cannot attack on its next turn; 2: it cannot use this attack; 0: neither. */
   rest: 0 | 1 | 2;
   /** Damage a turn the attack keeps up (`AttackFeature.sustained`). */
@@ -130,7 +132,7 @@ export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number):
   const t = f.text;
   const kind = f.isPokemon ? 'pokemon' : f.isEnergy ? 'energy' : 'trainer';
   // A braced unknown symbol in a cost counts as one Colorless.
-  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, printed: a.printed, fx: a.effect ? parseAttackText(a.effect) : null, expected: a.expected, rest: a.rest, sustained: a.sustained }));
+  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, printed: a.printed, fx: a.effect ? parseAttackText(a.effect) : null, expected: a.expected, drain: a.drain, rest: a.rest, sustained: a.sustained }));
   const abilities = (t?.b ?? []).map((b) => parseAbility(b.k, b.n, b.e));
   let fx: ParsedText | null = null;
   let unread = '';
@@ -278,7 +280,8 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[], onl
       if (s > bestScore) {
         bestScore = s;
         const about = Math.round(a.expected) !== a.damage ? `, about ${Math.round(a.expected)}` : '';
-        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.printed || a.damage}${about}${a.rest ? ', every other turn' : ''})` };
+        const drain = a.drain ? `, ${a.drain === a.costN ? 'all its' : a.drain} Energy discarded` : '';
+        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.printed || a.damage}${about}${drain}${a.rest ? ', every other turn' : ''})` };
       }
     }
   }

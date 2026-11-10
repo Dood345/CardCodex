@@ -88,6 +88,7 @@ those from `features(card).text`.
 | Rare Candy | Rare Candy | skip the Stage 1 |
 | Discard cost | Ultra Ball ("only if you discard 2 other cards") | pay the discard, then resolve |
 | One coin flip | "Flip a coin. If heads, …" | the effect happens half the time |
+| Attack costs (attacks only) | Draconic Buster, Bellowing Thunder, Icicle Loop, Tuck Tail | Energy discarded from the attacker (a number, all, a type), "any amount" from any of your Pokémon, Energy put back into the hand or shuffled into the deck, the top of the deck or cards from the hand discarded, damage to itself or to its own Bench, the attacker returned to the hand; optional ("You may …") with a bonus "and have this attack do N more damage" or "If you do, …" |
 
 `{R}` symbols are read as type names.
 
@@ -142,7 +143,9 @@ exactly its cost in Energy and two more across its side, each player has three B
 its plan before the opponent has taken anything: credited two Prize cards, Pecharunt ex's 60 per
 Prize card the opponent has taken became a list's plan and the list decked out against random piles
 that never took one), a discard pile of three Energy and two Supporters, and an Active with a Retreat
-Cost of two; a count narrowed to a kind of Pokémon or card is one. A condition is credited by whether the pilot can bring it about: a coin,
+Cost of two; a count narrowed to a kind of Pokémon or card is one, and so is a count of the
+opponent's Energy of a type (nothing says the opponent plays that type: Sunflora's Redirected
+Sunlight, 60 per Fire Energy on the opponent's Pokémon, was credited 180). A condition is credited by whether the pilot can bring it about: a coin,
 the opponent's side, damage taken, a Knock Out, a Stadium, hand sizes and Prize cards count half (the
 game decides); Energy of a type on this Pokémon or in play, and a named or kind of Pokémon in play,
 count in full when the deck holds the means and nothing otherwise; extra Energy beyond the cost
@@ -378,10 +381,24 @@ discards the one in play.
 - **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
   Stadiums that change damage are not. Still unread in attack text: a count the parser does not
   model (Benched Pokémon by HP, damage counters on an owner's Pokémon), a bonus tied to a Special
-  Condition, a Tool attached, a healed Pokémon or a named Special Energy, and "N damage for each card
-  you discarded in this way" (the discard is an attack cost, the next family). Of the attack
-  drawbacks, "can't attack next turn" and "not on your first turn going second" are played;
-  discarding Energy and self-damage are ignored, as are Special Conditions.
+  Condition, a Tool attached, a healed Pokémon or a named Special Energy. Of the attack drawbacks,
+  "can't attack next turn", "not on your first turn going second", Energy discarded or returned,
+  damage to itself and to its own Bench are played (see Attack costs below); Special Conditions are
+  not.
+- **Attack costs** (`damage-text.ts` `parseCost`, since 2026-11-10). The costs run before the
+  attack's damage, the own-side damage after it. "Any amount" of Energy (Raging Bolt ex) is as many
+  as a Knock Out needs (the mirror's HP in a solo game), taken from the Bench first and the attacker
+  last, or every one when no Knock Out is in reach: the attack hits for them. An optional cost is
+  paid when its bonus turns the attack into a Knock Out, or is worth more than the attacks the lost
+  Energy would have powered (each Energy a turn of the attack's own base damage). An attack that
+  returns its user to the hand (Tuck Tail) is used only with a Benched Pokémon behind it. A Pokémon
+  Knocked Out by its own attack, or a Benched one by its own side, is discarded and the opponent takes
+  its Prize cards; a solo game plays on with an empty Active Spot when nothing is left to promote.
+  Energy a mandatory cost takes every time (`AttackFeature.drain`: a discard, or Energy put back,
+  the whole cost for "all") comes back one card a turn, so the sustained figure divides by
+  max(1, drain): Slaking ex's Great Swing (CC, 280, discard one) lands every turn, Cynthia's
+  Garchomp ex's Draconic Buster (FF, 260, discard all) every other turn. Before this the engine built
+  decks around such attacks and their damage per turn fell from 61 to 53 once the cost was paid.
 - **Special Energy conditions.** A Special Energy provides what `features.provides` says.
 - **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
   and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This

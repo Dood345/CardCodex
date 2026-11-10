@@ -58,7 +58,9 @@ export type Count =
   | { k: 'prizesTaken'; side: 'self' | 'opponent' }
   | { k: 'hand'; side: 'self' | 'opponent' }
   | { k: 'discard'; side: 'self' | 'opponent'; t: CardTest }
-  | { k: 'retreatCost'; on: 'opponentActive' };
+  | { k: 'retreatCost'; on: 'opponentActive' }
+  /** Cards the attack's own text discarded "in this way" (engine.ts `Player.attackDiscarded`). */
+  | { k: 'discarded' };
 
 export type Cond =
   /** Heads on one coin. */
@@ -83,6 +85,8 @@ export type Cond =
   | { k: 'sameType' }
   | { k: 'sameEnergy' }
   | { k: 'benchDamaged' }
+  /** The optional cost of this attack was paid ("If you do, …"). */
+  | { k: 'paid' }
   | { k: 'not'; c: Cond }
   | { k: 'any'; cs: Cond[] };
 
@@ -209,7 +213,8 @@ export function expectedDamage(base: number, mods: readonly DamageMod[], view: D
  * Pokémon (four in play), five cards in hand, no Prize cards taken and no damage counters (a
  * deck opens with its plan before the opponent has taken anything), a discard pile of three
  * Energy and two Supporters, and an Active with a Retreat Cost of two; a count narrowed to a kind
- * of Pokémon or card is one.
+ * of Pokémon or card is one, and so is a count of the opponent's Energy of a type (Sunflora's
+ * Redirected Sunlight, 60 per Fire Energy on the opponent's Pokémon, was credited 180).
  *
  * Conditions are credited by whether the pilot can bring them about: a coin, the opponent's side,
  * damage taken, a Knock Out, a Stadium, the hand and the Prize cards count half (the game decides);
@@ -225,6 +230,8 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
       case 'heads':
         return typeof c.flips === 'object' ? count(c.flips.per) / 2 : expectedHeads(c.flips);
       case 'energy': {
+        // A typed count of the opponent's Energy is credited one card: nothing says the opponent plays that type.
+        if (c.type && (c.on === 'opponentActive' || c.on === 'opponentAll')) return 1;
         const own = c.type || c.basic || c.special ? Math.max(1, Math.ceil(costN / 2)) : costN;
         return c.on === 'self' || c.on === 'opponentActive' ? own : c.on === 'bothActive' ? 2 * own : own + 2;
       }
@@ -241,6 +248,8 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
       case 'discard':
         return c.t.energy || c.t.basicEnergy || c.t.energyType ? 3 : c.t.supporter ? 2 : 1;
       case 'retreatCost':
+        return 2;
+      case 'discarded':
         return 2;
     }
   };
@@ -262,6 +271,8 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
       case 'movedThisTurn':
       case 'discard':
         return 0;
+      case 'paid':
+        return 0.5;
       default:
         return 0.5;
     }
@@ -273,9 +284,12 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
  * Damage a turn an attack keeps up: its expected damage, halved for one that rests its user, with
  * half of the card's next attack (at no higher cost) when only the attack itself is barred.
  */
-export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number }>(a: A, attacks: readonly A[]): number {
-  if (!a.rest || a.damage <= 0) return a.expected;
+export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number; drain: number }>(a: A, attacks: readonly A[]): number {
+  // Energy the attack takes from its user comes back one card a turn, so the attack lands every max(1, drain)
+  // turns: a one-Energy discard is covered by the turn's attachment, "discard all" of an FF attack waits a turn.
+  const own = a.expected / Math.max(1, a.drain);
+  if (!a.rest || a.damage <= 0) return own;
   let other = 0;
-  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected);
-  return (a.expected + other) / 2;
+  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected / Math.max(1, b.drain));
+  return (own + other) / 2;
 }

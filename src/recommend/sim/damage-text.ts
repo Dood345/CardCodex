@@ -15,6 +15,7 @@
 import { normalizeText } from '@/data/normalize';
 import { COST_LETTERS } from '../card-text';
 import type { CardTest, Cond, Count, DamageMod, PokeTest } from './damage';
+import type { Effect } from './effects';
 
 const TYPE_NAMES = Object.keys(COST_LETTERS).filter((t) => t !== 'Colorless');
 const TYPE_ALT = TYPE_NAMES.join('|');
@@ -126,6 +127,7 @@ export function parseCount(raw: string, flips: Count | null): Count | null {
     return { k: 'discard', side: m[2] === 'your' ? 'self' : 'opponent', t };
   }
   if (/^Colorless in your opponent's Active Pokémon's Retreat Cost$/.test(s)) return { k: 'retreatCost', on: 'opponentActive' };
+  if (/^(?:cards?|Energy cards?) (?:you )?discarded(?: in this way)?$/.test(s)) return { k: 'discarded' };
   return null;
 }
 
@@ -189,8 +191,56 @@ export function parseCond(raw: string): Cond | null {
 
 export interface DamageParse {
   mods: DamageMod[];
+  /** What the attack costs its user or does to its own side (effects.ts `Effect`), with the sentence start. */
+  effects: { at: number; e: Effect }[];
   /** Character spans of the sentences consumed. */
   spans: [number, number][];
+}
+
+/** "a", "2", "all", "any amount of" as an Energy count. */
+function energyN(s: string): { n: number; all?: boolean; any?: boolean } {
+  if (s === 'all') return { n: 99, all: true };
+  if (/^any (?:amount|number) of$/.test(s)) return { n: 99, any: true };
+  return { n: /^\d+$/.test(s) ? N(s) : 1 };
+}
+
+const RE_TYPE_WORD = new RegExp(`^(${TYPE_ALT})$`);
+
+/**
+ * The cost and own-side sentences of an attack: Energy discarded from this Pokémon or any of yours
+ * (a number, all, any amount, a type), Energy put back into the hand or deck, damage to itself or
+ * to its own Bench, the Pokémon returned to the hand, the top of the deck discarded, cards discarded
+ * from the hand; each may be optional ("You may …") with "and have this attack do N more damage" or
+ * a following "If you do, …" tied to it.
+ */
+function parseCost(s: string): { e: Effect; bonus?: number } | null {
+  let m: RegExpExecArray | null;
+  if ((m = /^(You may )?[Dd]iscard (an?|\d+|all|any amount of|any number of) (?:(Basic|Special) )?(?:([A-Z][a-z]+) )?Energy(?: cards?)? (?:attached to|from) (this Pokémon|your Pokémon|among your Pokémon)(?:,? and (?:have this attack do|this attack does) (\d+) more damage)?\.$/.exec(s))) {
+    if (m[4] && !RE_TYPE_WORD.test(m[4])) return null;
+    const { n, all, any } = energyN(m[2]);
+    const type = m[4] ? COST_LETTERS[m[4]] : undefined;
+    const basic = m[3] === 'Basic' || undefined;
+    const special = m[3] === 'Special' || undefined;
+    if (m[5] !== 'this Pokémon') {
+      if (!any) return null;
+      return { e: { k: 'discardAnyEnergy', type, basic, special } };
+    }
+    return { e: { k: 'discardSelfEnergy', n, all, type, basic, special, may: !!m[1] || undefined }, bonus: m[6] ? N(m[6]) : undefined };
+  }
+  if ((m = /^(You may )?[Pp]ut (an?|\d+) (?:([A-Z][a-z]+) )?Energy attached to this Pokémon into your hand(?: and have this attack do (\d+) more damage)?\.$/.exec(s))) {
+    if (m[3] && !RE_TYPE_WORD.test(m[3])) return null;
+    return { e: { k: 'energyToHand', n: energyN(m[2]).n, type: m[3] ? COST_LETTERS[m[3]] : undefined, may: !!m[1] || undefined }, bonus: m[4] ? N(m[4]) : undefined };
+  }
+  if ((m = /^(You may )?[Ss]huffle (\d+|all) Energy attached to this Pokémon into your deck(?: and have this attack do (\d+) more damage)?\.$/.exec(s))) {
+    const { n, all } = energyN(m[2]);
+    return { e: { k: 'energyToDeck', n, all, may: !!m[1] || undefined }, bonus: m[3] ? N(m[3]) : undefined };
+  }
+  if ((m = /^(?:This Pokémon|It) (?:also )?does (\d+) damage to itself\.?$/.exec(s))) return { e: { k: 'selfDamage', n: N(m[1]) } };
+  if ((m = /^This attack (?:also )?does (\d+) damage to (each|1) of your Benched Pokémon\.$/.exec(s))) return { e: { k: 'benchDamageOwn', n: N(m[1]), each: m[2] === 'each' } };
+  if (/^Put this Pokémon and all attached cards into your hand\.$/.test(s)) return { e: { k: 'selfToHand' } };
+  if ((m = /^(You may )?[Dd]iscard the top (\d+|card) cards? (?:of|from) your deck\.$/.exec(s))) return { e: { k: 'millSelf', n: m[2] === 'card' ? 1 : N(m[2]) } };
+  if ((m = /^(You may )?[Dd]iscard (a|\d+|up to \d+) cards? from your hand\.$/.exec(s))) return { e: { k: 'discardHand', n: energyN(m[2].replace(/^up to /, '')).n, may: !!m[1] || undefined } };
+  return null;
 }
 
 /**
@@ -199,7 +249,10 @@ export interface DamageParse {
  */
 export function parseDamageMods(sentences: readonly { text: string; start: number; end: number }[]): DamageParse {
   const mods: DamageMod[] = [];
+  const effects: { at: number; e: Effect }[] = [];
   const spans: [number, number][] = [];
+  /** An optional cost was read: a following "If you do, …" hangs on it. */
+  let optional = false;
   let flips: Count | null = null;
   let flipAt = -1;
   let flipUsed = false;
@@ -247,6 +300,34 @@ export function parseDamageMods(sentences: readonly { text: string; start: numbe
       take(i);
       continue;
     }
+    // Costs and own-side effects.
+    const cost = parseCost(s);
+    if (cost) {
+      effects.push({ at: sentences[i].start, e: cost.e });
+      optional = 'may' in cost.e && !!cost.e.may;
+      if (cost.bonus !== undefined) mods.push({ k: 'bonus', n: cost.bonus, if: { k: 'paid' } });
+      take(i);
+      continue;
+    }
+    if (optional && (m = /^If you do, this attack does (\d+) more damage\.$/.exec(s))) {
+      mods.push({ k: 'bonus', n: N(m[1]), if: { k: 'paid' } });
+      take(i);
+      continue;
+    }
+    if (optional && (m = /^If you do, this Pokémon (?:also )?does (\d+) damage to itself\.$/.exec(s))) {
+      effects.push({ at: sentences[i].start, e: { k: 'selfDamage', n: N(m[1]), ifPaid: true } });
+      take(i);
+      continue;
+    }
+    // "Discard any amount of Fire Energy from among your Pokémon, and this attack does 50 damage for each card you discarded in this way."
+    if ((m = /^(Discard (?:any amount of|any number of) (?:(?:Basic|Special) )?(?:[A-Z][a-z]+ )?Energy(?: cards?)? from (?:among )?your Pokémon), and this attack does (\d+) (more )?damage for each (cards? you discarded in this way)\.$/.exec(s))) {
+      const c = parseCost(`${m[1]}.`);
+      if (!c) continue;
+      effects.push({ at: sentences[i].start, e: c.e });
+      mods.push({ k: m[3] ? 'plus' : 'times', n: N(m[2]), per: { k: 'discarded' } });
+      take(i);
+      continue;
+    }
     // Scaling: "This attack does N (more|less) damage for each X" / "Does N damage plus N more damage for each X" /
     // "N more damage times the amount of X".
     if ((m = /^(?:This attack does|Does) (?:\d+ damage (?:plus|minus) )?(\d+) (more |less )?damage (?:for each|times the (?:number|amount) of) (.+?)\.$/.exec(s))) {
@@ -281,5 +362,5 @@ export function parseDamageMods(sentences: readonly { text: string; start: numbe
     }
   }
   spans.sort((a, b) => a[0] - b[0]);
-  return { mods, spans };
+  return { mods, effects, spans };
 }

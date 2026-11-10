@@ -21,7 +21,9 @@ export function builtCorpus(ev: DeckEvaluator, seeds: readonly CatalogCard[], op
 
 /**
  * Pokémon seeds picked by rule, not by taste: per Energy type, the Stage 2
- * Pokémon of the pool with the highest printed damage (ties to the lower id),
+ * Pokémon of the pool whose best attack keeps up the most damage a turn
+ * (`sustained`: the printed number read with its text, halved for an attack
+ * that rests its user or discards its Energy; ties to the lower id),
  * `perType` of them.
  */
 export function pokemonSeeds(ev: PokemonEvaluator, pool: readonly CatalogCard[], perType = 1): CatalogCard[] {
@@ -32,7 +34,7 @@ export function pokemonSeeds(ev: PokemonEvaluator, pool: readonly CatalogCard[],
     const type = f.types[0];
     let list = byType.get(type);
     if (!list) byType.set(type, (list = []));
-    list.push({ card, damage: f.best.damage });
+    list.push({ card, damage: f.best.sustained });
   }
   const out: CatalogCard[] = [];
   for (const type of [...byType.keys()].sort()) {
