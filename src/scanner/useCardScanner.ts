@@ -11,7 +11,9 @@ import type { TextRecognizer } from './recognizer';
 import { loadHashTable } from './artwork';
 import { CameraError, grabFrame, startCamera, stopCamera } from './camera';
 import { getRecognizer } from './engine';
-import { samplePocketLuma, type HashTable } from './hash';
+import { loadEnergyReferences, withBareEnergy, type EnergyReferences } from './energy';
+import { sampleRgba } from './grid';
+import { POCKET_SAMPLE_WIDTH, samplePocketLuma, type HashTable } from './hash';
 import { addLiveArtwork } from './live-artwork';
 import { updateTracks, type Track } from './tracker';
 
@@ -95,6 +97,8 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
   pausedRef.current = userPaused || hidden;
   /** The game's artwork hash table once loaded (null: none, or artwork evidence off). */
   const tableRef = useRef<HashTable | null>(null);
+  /** Colour references for basic Energy cards that print no name (energy.ts); null for other games. */
+  const energyRef = useRef<EnergyReferences | null>(null);
   const avgArtMsRef = useRef(0);
 
   // The hash table is fetched once per game (artwork.ts caches the promise); until it is here frames run on OCR alone.
@@ -106,6 +110,10 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
     let cancelled = false;
     loadHashTable(matcher.game).then((t) => {
       if (!cancelled) tableRef.current = t;
+    });
+    energyRef.current = null;
+    void loadEnergyReferences(matcher.game).then((r) => {
+      if (!cancelled) energyRef.current = r;
     });
     return () => {
       cancelled = true;
@@ -152,6 +160,16 @@ export function useCardScanner(opts: UseCardScannerOptions): CardScanner {
         const ms = performance.now() - ta;
         avgArtMsRef.current = avgArtMsRef.current ? avgArtMsRef.current * 0.7 + ms * 0.3 : ms;
         setArtworkMs(avgArtMsRef.current);
+      }
+      // A basic Energy that prints only "ENERGY" gives the text matcher nothing: found by picture and colour instead.
+      if (energyRef.current && lookup) {
+        found = withBareEnergy(found, {
+          lines,
+          frame: { w, h },
+          refs: energyRef.current,
+          lookup,
+          sample: (region) => sampleRgba(frame, region, POCKET_SAMPLE_WIDTH),
+        });
       }
       // With Tesseract a frame can take 1.5–3 s, longer than holdMs: a track
       // must survive at least ~2.5 recognition cycles or every chip would be

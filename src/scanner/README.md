@@ -507,6 +507,42 @@ hashing 0.29–0.36 s (32–40 ms per pocket); the table holds 232 KB of hash wo
 with its ids, and loads in 1.6 s cold from the dev server (11 ms from the browser cache). A synthetic page says nothing about glare, foil or a phone's focus: real photos (a Pendulum card
 and a foil among them) are the next measurement.
 
+## Basic Energy that prints no name (`energy.ts`, `energy-features.ts`, `scripts/build-energy-refs.mjs`)
+
+Since Sun & Moon most basic Energy cards carry only the word "ENERGY", the type's symbol and a
+copyright line. The text matcher has nothing to match, and every type shares one design, so the
+luma-only artwork hashes put the types within a few bits of each other (on the 2020 Darkness
+Energy photo in `scripts/fixtures/cards/`: Darkness 17, Water 21, Fighting 21, and an unrelated
+Trainer at 17).
+
+When a frame's lines hold such a header (`bareEnergyHeader`: a line that is just "ENERGY", no line
+naming a type of Energy) and nothing in the frame was identified for certain, `withBareEnergy`
+matches the card against the basic Energy reference images only:
+
+1. **Where and which design**: `matchPocket` over an energy-only hash table, started from the
+   snap guide, or from an outline estimated off the header line (`energyBoxFromHeader`).
+2. **Which type**: among the references within `ENERGY_FAMILY_BITS` of the nearest (the same
+   design), the correlation of the big symbol's 20×20 grey thumbnail with each reference's, best
+   over a few nudges of the outline, less a small penalty for the distance in colour of the art
+   under the symbol. Correlation ignores brightness and light colour. Colour alone does not work:
+   in a bluish light a Darkness Energy reads as Water.
+3. **Accepting**: the best symbol at least `ENERGY_SYMBOL_MIN` (0.7) and `ENERGY_MARGIN` (0.06)
+   ahead of the next type. On the fixture photo: Darkness 0.80 to 0.93, next type 0.72 to 0.81
+   before the colour penalty, a lead of 0.09 to 0.12 after it.
+
+The candidate is the look-alike reference and is never confident: the printing in hand may not be
+in the catalog at all (TCGdex has no entry for the unnumbered Sword & Shield basic Energy), so the
+user confirms it. Its alternatives are the other pictured printings of that Energy, nearest the
+card's copyright year first, then the other types.
+
+`public/data/energy-refs.json` (`npm run energy-refs`, after `npm run hashes`) holds the
+thumbnails and colours for the 191 basic Energy printings with a picture, computed by the same
+functions the app uses (`energy-features.ts`, loaded through Vite like `hash.ts`). Pokémon only.
+
+Not covered: Energy cards without any header text (very old prints name their Energy and go
+through the text matcher), and the SV-era "Basic {symbol} Energy" header when the OCR reads the
+symbol as letters.
+
 ## Pokédex line as a species cue (`parseDex`)
 
 Pokémon cards since the Black & White era print the National Pokédex number on the Pokédex line

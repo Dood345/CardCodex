@@ -214,6 +214,11 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
   (`src/scanner/hash.ts`). Built from the TCGdex images by `npm run hashes` (each image is downloaded
   once into `scripts/.cache/`).
+- `energy-refs.json` – for the 191 basic Energy printings that have a picture, a 20×20 grey thumbnail
+  of the big symbol and the colour of the art under it (104 KB, 75 KB gzipped). Basic Energy cards
+  since Sun & Moon print no name, number or set code, only "ENERGY", so the scanner tells their types
+  apart by the symbol (`src/scanner/energy.ts`). Built from the cached reference images by
+  `npm run energy-refs`, after `npm run hashes`.
 - `ygo/hashes.json` – the same for Yu-Gi-Oh!, one hash per passcode (14.8k pictures: every card and
   its alternate artworks; printings share the picture, so the OCR'd set code still picks the
   printing), with the 59×86 card aspect and the Yu-Gi-Oh! artwork window. Built from the YGOPRODeck
