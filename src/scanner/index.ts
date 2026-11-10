@@ -16,7 +16,7 @@ export {
   stopCamera,
   grabFrame,
   coverTransform,
-  mapBox,
+  chipAnchor, mapBox,
   unmapBox,
   visibleRegion,
   previewToPhoto,

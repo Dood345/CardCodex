@@ -1265,7 +1265,8 @@ textarea:focus {
 .scan-chip {
   position: absolute;
   pointer-events: auto;
-  transform: translate(-50%, -100%);
+  /* Centred on its anchor, the middle of the card (chipAnchor in src/scanner/camera.ts). */
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: stretch;
   border-radius: 999px;
@@ -1278,7 +1279,14 @@ textarea:focus {
   white-space: nowrap;
   max-width: 80vw;
   overflow: hidden;
-  animation: rise 0.15s ease-out;
+  animation: chip-in 0.15s ease-out;
+}
+/* Its own entrance: the shared "rise" animates transform and would drop the centring while it runs. */
+@keyframes chip-in {
+  from {
+    transform: translate(-50%, -50%) scale(0.92);
+    opacity: 0;
+  }
 }
 .scan-chip.sure {
   border-color: var(--ok);

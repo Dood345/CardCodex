@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coverTransform, mapBox, orientLike, previewToPhoto } from './camera';
+import { chipAnchor, coverTransform, mapBox, orientLike, previewToPhoto } from './camera';
 import { updateTracks, type Track } from './tracker';
 import type { ScanCandidate } from './types';
 import { fixtureCatalog } from './fixtures.test-util';
@@ -32,6 +32,39 @@ describe('coverTransform', () => {
 
   it('survives an unknown frame size', () => {
     expect(coverTransform(0, 0, 100, 100)).toEqual({ scale: 1, offsetX: 0, offsetY: 0 });
+  });
+});
+
+describe('chipAnchor', () => {
+  const view = { w: 400, h: 800 };
+
+  it('puts the add chip in the middle of the card', () => {
+    // A card filling most of a photo, and a small card in the middle of the live view.
+    expect(chipAnchor({ x: 60, y: 100, w: 280, h: 390 }, view)).toEqual({ x: 200, y: 295 });
+    expect(chipAnchor({ x: 150, y: 300, w: 100, h: 140 }, view)).toEqual({ x: 200, y: 370 });
+  });
+
+  it('keeps the chip on screen for a card at the edge of the frame', () => {
+    // Far left and high: the chip is most of the screen wide, so it stays near the middle and under the top row.
+    expect(chipAnchor({ x: -40, y: 0, w: 100, h: 140 }, view)).toEqual({ x: 160, y: 96 });
+    // Far right and low.
+    expect(chipAnchor({ x: 360, y: 740, w: 100, h: 140 }, view)).toEqual({ x: 240, y: 756 });
+    // A view too short for both margins still gives one point inside it.
+    const a = chipAnchor({ x: 0, y: 0, w: 100, h: 20 }, { w: 400, h: 100 });
+    expect(a.y).toBeGreaterThanOrEqual(0);
+    expect(a.y).toBeLessThanOrEqual(100);
+  });
+
+  it('never sends the chip to the corner: a card mapped through a real transform lands on the card', () => {
+    // The live-mode bug: a 0×0 view made coverTransform scale everything to the origin.
+    const frame = { x: 500, y: 200, w: 280, h: 390 };
+    const t = coverTransform(1280, 720, 360, 640);
+    const a = chipAnchor(mapBox(frame, t), { w: 360, h: 640 });
+    expect(a.x).toBeGreaterThanOrEqual(360 * 0.4);
+    expect(a.x).toBeLessThanOrEqual(360 * 0.6);
+    expect(a.y).toBeCloseTo((200 + 390 / 2) * (640 / 720));
+    // Unmeasured view: no clamping, and the caller draws nothing (ScanPage skips the overlay at 0×0).
+    expect(chipAnchor({ x: 10, y: 20, w: 100, h: 140 }, { w: 0, h: 0 })).toEqual({ x: 60, y: 90 });
   });
 });
 
