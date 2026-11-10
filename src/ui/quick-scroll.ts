@@ -32,6 +32,25 @@ export function initialOf(name: string): string {
   return /[A-Z]/.test(first) ? first : '#';
 }
 
+/**
+ * A label short enough for the zone, for a section named by a phrase: a year
+ * stays a year ("2024"), a phrase becomes its initials ("Scarlet & Violet" →
+ * "SV", "Call of Legends" → "COL"), one word its first three letters
+ * ("Platinum" → "PLA").
+ */
+export function shortLabel(name: string): string {
+  const text = name.trim();
+  if (/^\d{2,4}$/.test(text)) return text;
+  const words = text.split(/[^\p{L}\p{N}']+/u).filter(Boolean);
+  if (!words.length) return '#';
+  if (words.length === 1) return words[0].slice(0, 3).toUpperCase();
+  return words
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 3)
+    .toUpperCase();
+}
+
 /** Hundreds label for a Pokédex number: "1" up to 99, then "100", "200", … */
 export function hundredOf(id: number): string {
   const h = Math.floor(id / 100) * 100;

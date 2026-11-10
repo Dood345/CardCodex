@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useCatalog } from '@/app/context';
 import { useSettings } from '@/app/settings';
 import { adjustQty, useCollection, progressOf } from '@/data/collection';
+import { asListSort, sortCards, type ListSort } from '@/data/sorting';
 import { setLogoUrl } from '@/data/types';
 import { CardGrid, CardTile, Chip, EmptyState, Img, ProgressBar, SetBadge, Toast, TopBar, useToast } from '@/ui/components';
 import { navigate } from '@/ui/router';
@@ -15,6 +16,8 @@ export default function SetPage({ id }: { id: string }) {
   const [settings] = useSettings();
   const [filter, setFilter] = useSticky<Filter>('set:filter', 'all');
   const [quickAdd, setQuickAdd] = useSticky('set:quickAdd', false);
+  const [storedSort, setSort] = useSticky<ListSort>('set:sort', 'natural');
+  const sort = asListSort(storedSort);
   const [toast, showToast] = useToast();
   const set = index.setsById.get(id);
   const cards = useMemo(() => index.cardsBySet.get(id) ?? [], [index, id]);
@@ -29,14 +32,18 @@ export default function SetPage({ id }: { id: string }) {
   }
 
   const p = progressOf(cards, collection);
-  const visible = cards.filter((c) => {
-    const e = collection.get(c.id);
-    const owned = (e?.qty ?? 0) > 0;
-    if (filter === 'owned') return owned;
-    if (filter === 'missing') return !owned;
-    if (filter === 'wanted') return !!e?.wanted;
-    return true;
-  });
+  const visible = sortCards(
+    cards.filter((c) => {
+      const e = collection.get(c.id);
+      const owned = (e?.qty ?? 0) > 0;
+      if (filter === 'owned') return owned;
+      if (filter === 'missing') return !owned;
+      if (filter === 'wanted') return !!e?.wanted;
+      return true;
+    }),
+    sort,
+    collection,
+  );
   const logo = setLogoUrl(set);
 
   return (
@@ -63,6 +70,16 @@ export default function SetPage({ id }: { id: string }) {
           </Chip>
           <Chip active={filter === 'wanted'} onClick={() => setFilter('wanted')}>
             Wanted
+          </Chip>
+          <span className="chip-sep" />
+          <Chip active={sort === 'natural'} onClick={() => setSort('natural')}>
+            By number
+          </Chip>
+          <Chip active={sort === 'name'} onClick={() => setSort('name')}>
+            A–Z
+          </Chip>
+          <Chip active={sort === 'owned'} onClick={() => setSort('owned')}>
+            Most owned
           </Chip>
           <span className="chip-sep" />
           <Chip active={quickAdd} onClick={() => setQuickAdd((v) => !v)} color="var(--accent)">

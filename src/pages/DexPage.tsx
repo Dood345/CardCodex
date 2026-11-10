@@ -3,19 +3,21 @@ import { useCatalog } from '@/app/context';
 import { useCollection } from '@/data/collection';
 import { nameGroups, ownedIn } from '@/data/name-groups';
 import { normalizeText } from '@/data/normalize';
+import { asListSort, sortList, type ListSort } from '@/data/sorting';
 import type { CardCategory } from '@/data/types';
 import { Chip, SpeciesTile, TopBar, dexNumber } from '@/ui/components';
 import { GameSwitch } from '@/ui/GameSwitch';
 import { GearIcon } from '@/ui/icons';
 import { NameTile } from '@/ui/NameTile';
 import { QUICK_SCROLL_MIN, QuickScroll } from '@/ui/QuickScroll';
-import { hundredOf, initialOf, sectionsBy } from '@/ui/quick-scroll';
+import { hundredOf, initialOf, sectionsBy, type Section } from '@/ui/quick-scroll';
 import { href } from '@/ui/router';
 import { useSticky } from '@/ui/sticky';
 
 type OwnedFilter = 'all' | 'owned' | 'missing';
 
 const GENERATIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+const NO_SECTIONS: Section[] = [];
 /** The Pokédex shows species; Trainer and Energy cards, which have none, are grouped by name instead (src/data/name-groups.ts). */
 const CATEGORIES: { cat: CardCategory; label: string; noun: string }[] = [
   { cat: 'Pokemon', label: 'Pokémon', noun: 'species' },
@@ -31,6 +33,8 @@ export default function DexPage() {
   const [gen, setGen] = useSticky<number>('dex:gen', 0);
   const [owned, setOwned] = useSticky<OwnedFilter>('dex:owned', 'all');
   const [cat, setCat] = useSticky<CardCategory>('dex:cat', 'Pokemon');
+  const [storedSort, setSort] = useSticky<ListSort>('dex:sort', 'natural');
+  const sort = asListSort(storedSort);
   const gridRef = useRef<HTMLDivElement>(null);
   const bySpecies = cat === 'Pokemon';
 
@@ -51,7 +55,7 @@ export default function DexPage() {
   const visible = useMemo(() => {
     const q = normalizeText(query);
     const asNumber = /^\d+$/.test(q) ? Number(q) : null;
-    return index.species.filter((s) => {
+    const list = index.species.filter((s) => {
       if (gen && s.gen !== gen) return false;
       const total = index.cardsByDex.get(s.id)?.length ?? 0;
       const got = progress.get(s.id) ?? 0;
@@ -63,30 +67,45 @@ export default function DexPage() {
       }
       return true;
     });
-  }, [index, query, gen, owned, progress]);
+    return sortList(
+      list,
+      sort,
+      (s) => s.name,
+      (s) => progress.get(s.id) ?? 0,
+    );
+  }, [index, query, gen, owned, progress, sort]);
 
   // Trainers and Energy: one entry per card name, with the owned printings counted the same way.
   const groups = useMemo(() => (bySpecies ? [] : nameGroups(index, cat)), [index, cat, bySpecies]);
   const groupOwned = useMemo(() => new Map(groups.map((g) => [g.key, ownedIn(g, collection)])), [groups, collection]);
   const visibleGroups = useMemo(() => {
     const q = normalizeText(query);
-    return groups.filter((g) => {
+    const list = groups.filter((g) => {
       const got = groupOwned.get(g.key) ?? 0;
       if (owned === 'owned' && got === 0) return false;
       if (owned === 'missing' && got > 0) return false;
       return !q || g.key.includes(q);
     });
-  }, [groups, groupOwned, query, owned]);
+    // Names already come A–Z, so only "most owned" reorders them.
+    return sortList(
+      list,
+      sort === 'owned' ? 'owned' : 'natural',
+      (g) => g.name,
+      (g) => groupOwned.get(g.key) ?? 0,
+    );
+  }, [groups, groupOwned, query, owned, sort]);
   const groupsCollected = useMemo(() => [...groupOwned.values()].filter((n) => n > 0).length, [groupOwned]);
   const noun = CATEGORIES.find((c) => c.cat === cat)?.noun ?? 'cards';
 
   // Quick scroll zone by hundreds of Pokédex numbers (or initials), once the list is long enough to need one.
   const count = bySpecies ? visible.length : visibleGroups.length;
   const quick = count >= QUICK_SCROLL_MIN;
-  const sections = useMemo(
-    () => (bySpecies ? sectionsBy(visible, (s) => hundredOf(s.id)) : sectionsBy(visibleGroups, (g) => initialOf(g.name))),
-    [bySpecies, visible, visibleGroups],
-  );
+  // The labels follow the order: hundreds by number, letters by name, a plain thumb by cards owned.
+  const sections = useMemo(() => {
+    if (sort === 'owned') return NO_SECTIONS;
+    if (!bySpecies) return sectionsBy(visibleGroups, (g) => initialOf(g.name));
+    return sort === 'name' ? sectionsBy(visible, (s) => initialOf(s.name)) : sectionsBy(visible, (s) => hundredOf(s.id));
+  }, [bySpecies, visible, visibleGroups, sort]);
 
   return (
     <>
@@ -132,6 +151,18 @@ export default function DexPage() {
               {c.label}
             </Chip>
           ))}
+          <span className="chip-sep" />
+          <Chip active={sort !== 'owned' && (!bySpecies || sort === 'natural')} onClick={() => setSort('natural')}>
+            {bySpecies ? 'By number' : 'A–Z'}
+          </Chip>
+          {bySpecies && (
+            <Chip active={sort === 'name'} onClick={() => setSort('name')}>
+              A–Z
+            </Chip>
+          )}
+          <Chip active={sort === 'owned'} onClick={() => setSort('owned')}>
+            Most owned
+          </Chip>
           {bySpecies && (
             <>
               <span className="chip-sep" />

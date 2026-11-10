@@ -106,8 +106,8 @@ describe('deck lines by card and zone', () => {
     const s = summarizeDeck(cards, owned([[POT.id, 2]]));
     expect([s.total, s.distinct, s.covered, s.short]).toEqual([4, 2, 2, 2]);
     expect(s.needs).toEqual([
-      { cardId: POT.id, qty: 3, owned: 2, short: 1 },
-      { cardId: FUSION.id, qty: 1, owned: 0, short: 1 },
+      { cardId: POT.id, qty: 3, owned: 2, claimed: 0, short: 1 },
+      { cardId: FUSION.id, qty: 1, owned: 0, claimed: 0, short: 1 },
     ]);
   });
 
