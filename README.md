@@ -99,6 +99,7 @@ with Capacitor. Your collection lives only on your device.
   over your owned cards, or your wishlist, set by set like the binder, with a name search, a set
   filter and a stepper on every card) or from any card's "Add to deck"; every line shows how many
   copies you own and how many are missing, and one tap puts every missing card on your wishlist.
+  Tap a line's picture or text to see the card large, with a link to its card page.
   A copy you own counts for one deck: a deck counts what your older decks left over and says where
   the rest are ("own 3 · 2 in Fire deck · 1 missing"). Settings turns that off if you move cards
   between decks.

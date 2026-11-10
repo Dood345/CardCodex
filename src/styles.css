@@ -2940,3 +2940,77 @@ textarea:focus {
 .about-details .hint {
   margin-top: 8px;
 }
+
+/* A card shown large over the current screen (src/ui/CardZoom.tsx). */
+.card-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: calc(16px + var(--safe-t)) 16px calc(16px + var(--safe-b));
+  background: rgba(0, 0, 0, 0.82);
+  animation: zoom-in 0.14s ease-out;
+}
+@keyframes zoom-in {
+  from {
+    opacity: 0;
+  }
+}
+/* As large as the screen allows: bounded by the width, and by the height left over the caption. */
+.card-zoom-art {
+  width: min(92vw, 460px, calc((100vh - 190px) * 63 / 88));
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 4.2% / 3%;
+  overflow: hidden;
+  background: var(--bg-card);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6);
+  cursor: zoom-out;
+}
+.card-zoom-img,
+.card-zoom-art .img-fallback,
+.card-zoom-art .img-skeleton {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.card-zoom-caption {
+  width: min(92vw, 460px);
+  text-align: center;
+  color: #fff;
+}
+.card-zoom-name {
+  font-size: 17px;
+  font-weight: 700;
+}
+.card-zoom-sub {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.75);
+}
+.card-zoom-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.card-zoom-actions .btn.ghost {
+  color: #fff;
+}
+/* The deck line's picture is a button that opens the large view; its text does the same. */
+.deck-thumb {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  display: flex;
+  cursor: zoom-in;
+}
+.deck-card .cand-body {
+  cursor: zoom-in;
+}
