@@ -815,7 +815,9 @@ export function parseEnergyText(raw: string, rule?: { only: unknown; upgrades: {
  * it cannot use that attack again, 0 when neither. A rest that hangs on a
  * coin flip is not counted.
  */
-export function attackRest(effect: string): 0 | 1 | 2 {
+export function attackRest(effect: string): 0 | 1 | 2 | 3 {
+  // "This Pokémon can't use Blaze Blitz again until it leaves the Active Spot": once per stay there.
+  if (/This Pokémon can't use [^.]+? again until it leaves the Active Spot/i.test(effect)) return 3;
   const m = /During your next turn, this Pokémon can't (attack|use attacks|use [^.]+)|This Pokémon can't (attack|use attacks|use [^.]+?) during your next turn/i.exec(effect);
   if (!m) return 0;
   if (/If (?:tails|heads),[^.]*$/i.test(effect.slice(0, m.index))) return 0;
@@ -855,7 +857,7 @@ export function attackMiss(fx: ParsedText | null): number {
 export function parseAttackText(raw: string): ParsedText {
   const fx = parseText(raw, 'attack');
   if (!attackRest(raw)) return fx;
-  const re = /During your next turn, this Pokémon can't (?:attack|use attacks|use [^.]+)\.?|This Pokémon can't (?:attack|use attacks|use [^.]+?) during your next turn\.?/i;
+  const re = /During your next turn, this Pokémon can't (?:attack|use attacks|use [^.]+)\.?|This Pokémon can't (?:attack|use attacks|use [^.]+?) during your next turn\.?|This Pokémon can't use [^.]+? again until it leaves the Active Spot\.?/i;
   for (const s of fx.sentences) if (s.status === 'unread' && re.test(s.text) && !/^If (?:tails|heads),/i.test(s.text)) {
     s.status = 'read';
     s.why = '';

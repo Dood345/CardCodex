@@ -307,6 +307,22 @@ correlation with real win rates rose (lists 0.241 → 0.305, archetypes 0.180 �
 now beat a list more often (0.987 → 0.949, 0.913 → 0.870): a pile of the era holds gust and
 disruption the pilot now plays.
 
+## Review follow-ups and data gaps (2026-11-10)
+
+Three figures the main session's review found overstated on the static board, and one printing
+without text. Magcargo ex's Ground Burn counted both milled top cards as Energy (420): Energy among
+cards an attack discards from the top of a deck is now a third of them (the deck's own share when
+known), about 233, and a game counts the real cards. Gouging Fire ex's Blaze Blitz, which its user
+"can't use again until it leaves the Active Spot", had sustained 260: it is now a rest of its own
+(`rest` 3), one use per stay in the Active Spot, 127 with Heat Blast between, and the engine bars it
+until the Pokémon goes to the Bench. Wailord ex's Falling Down (270, "This Pokémon is now Asleep")
+had sustained 270: 216 now, a quarter of its next turns lost (two coins before its next attack). The
+30th-anniversary Ultra Ball, the one Standard Trainer with no text of its own, reads the most recent
+Ultra Ball's. Coverage of the Standard pool: Trainers 46.7% → 47.2%, attacks 83.2% → 83.4%; the
+tournament lists hold still, and only the built corpus moved (the score builds other decks once
+Ground Burn and Blaze Blitz weigh what they do: Abilities followed there 68.2% → 66.0%, attacks
+90.5% → 91.3%, the solo Energy ladder 0.850 → 0.808, the duel Trainer ladder 0.675 → 0.750).
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

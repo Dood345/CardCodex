@@ -90,6 +90,8 @@ export interface Player {
   /** During an attack: cards its own text discarded "in this way", and whether its optional cost was paid. */
   attackDiscarded: number;
   attackPaid: boolean;
+  /** Energy cards among those the attack's own text discarded from the top of either deck. */
+  attackMilledEnergy: number;
   /** The last coin of a text's "Flip a coin. If heads, …", rolled before damage and honoured by the effects after it. */
   heads: boolean;
   /** Boomerang Energy the attack's own text discarded, to come back after it. */
@@ -151,6 +153,7 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
     koName: '',
     attackDiscarded: 0,
     attackPaid: false,
+    attackMilledEnergy: 0,
     heads: true,
     boomerangs: [],
     noItemsTurn: 0,
@@ -460,8 +463,9 @@ function energyNeed(p: Player, without: SimCard | null = null): string {
 }
 
 /** Barred this turn by the attack `m` used on its last one ("During your next turn, this Pokémon can't attack"). */
+/** The attack is barred: its user rests this turn (`rest` 1 or 2), or it was used this stay in the Active Spot (`rest` 3, `restTurn` Infinity until the Pokémon leaves it). */
 function resting(p: Player, m: Mon, atk: SimAttack): boolean {
-  return m.restTurn === p.turn && (!m.restAtk || m.restAtk === atk.name);
+  return m.restTurn >= p.turn && (!m.restAtk || m.restAtk === atk.name);
 }
 
 /** Can `m` use the plan's attack right now? */
@@ -1212,7 +1216,11 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         break;
       }
       case 'millOpp':
-        if (o) for (let k = 0; k < e.n && o.deck.length; k++) o.discard.push(o.deck.pop()!);
+        if (o) for (let k = 0; k < e.n && o.deck.length; k++) {
+          const i = o.deck.pop()!;
+          o.discard.push(i);
+          if (cardOf(o, i).kind === 'energy') p.attackMilledEnergy++;
+        }
         break;
       case 'discardOppHand': {
         if (!o) break;
@@ -1341,7 +1349,11 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         break;
       }
       case 'millSelf':
-        for (let k = 0; k < e.n && p.deck.length; k++) p.discard.push(p.deck.pop()!);
+        for (let k = 0; k < e.n && p.deck.length; k++) {
+          const i = p.deck.pop()!;
+          p.discard.push(i);
+          if (cardOf(p, i).kind === 'energy') p.attackMilledEnergy++;
+        }
         break;
       case 'discardHand': {
         if (e.may) {
@@ -2081,6 +2093,12 @@ export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimA
         return opp.active ? retreatCost(opp, opp.active) : 0;
       case 'discarded':
         return roll ? p.attackDiscarded : Math.min(2, [...inPlay(p)].reduce((n, x) => n + x.energy.length, 0));
+      case 'milledEnergy': {
+        if (roll) return p.attackMilledEnergy;
+        // The decks' shares of Energy as they stand.
+        const share = (x: Player) => (x.deck.length ? x.deck.filter((i) => cardOf(x, i).kind === 'energy').length / x.deck.length : 0);
+        return c.n * (share(p) + (c.both ? share(opp) : 0));
+      }
     }
   };
   const holds = (c: Cond): number => {
@@ -2213,10 +2231,11 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   if (!use) return 0;
   g.trace?.(`attack ${use.name}`);
   p.attackDiscarded = 0;
+  p.attackMilledEnergy = 0;
   p.attackPaid = false;
   if (use.fx?.effects.length) runEffects(g, p, o, use.fx, a, 'pre');
   if (use.rest) {
-    a.restTurn = p.turn + 1;
+    a.restTurn = use.rest === 3 ? Infinity : p.turn + 1;
     a.restAtk = use.rest === 1 ? '' : use.name;
   }
   let d = 0;

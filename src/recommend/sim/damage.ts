@@ -126,7 +126,9 @@ export type Count =
   | { k: 'discard'; side: 'self' | 'opponent'; t: CardTest }
   | { k: 'retreatCost'; on: 'opponentActive' }
   /** Cards the attack's own text discarded "in this way" (engine.ts `Player.attackDiscarded`). */
-  | { k: 'discarded' };
+  | { k: 'discarded' }
+  /** Energy cards among the `n` cards the attack's own text discards from the top of a deck (`both`: one deck each): a deck's share of Energy on the static board. */
+  | { k: 'milledEnergy'; n: number; both?: boolean };
 
 export type Cond =
   /** Heads on one coin. */
@@ -330,6 +332,11 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
         return 2;
       case 'discarded':
         return 2;
+      case 'milledEnergy': {
+        // The deck's own share of Energy when known (a third of a typical deck); the opponent's a third.
+        const own = supply ? Math.min(1, supply.energy() / 60) : 1 / 3;
+        return c.both ? c.n * (own + 1 / 3) : c.n * own;
+      }
     }
   };
   const holds = (c: Cond): number => {
@@ -363,13 +370,15 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
  * Damage a turn an attack keeps up: its expected damage, halved for one that rests its user, with
  * half of the card's next attack (at no higher cost) when only the attack itself is barred.
  */
-export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number; drain: number; miss?: number }>(a: A, attacks: readonly A[]): number {
+export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2 | 3; costN: number; damage: number; drain: number; miss?: number }>(a: A, attacks: readonly A[]): number {
   // Energy the attack takes from its user comes back one card a turn, so the attack lands every max(1, drain)
   // turns: a one-Energy discard is covered by the turn's attachment, "discard all" of an FF attack waits a turn.
   // A Special Condition the attack puts on its user costs a share of its next turns (`miss`).
   const own = a.expected / Math.max(1, a.drain) / (1 + (a.miss ?? 0));
   if (!a.rest || a.damage <= 0) return own;
   let other = 0;
-  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected / Math.max(1, b.drain));
+  if (a.rest >= 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected / Math.max(1, b.drain));
+  // Once per stay in the Active Spot (rest 3): one use, then the other attack over a stay of about three turns.
+  if (a.rest === 3) return (own + 2 * other) / 3;
   return (own + other) / 2;
 }

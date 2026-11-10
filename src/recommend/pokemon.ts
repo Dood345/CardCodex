@@ -74,7 +74,7 @@ export interface AttackFeature {
   /** The share of its next turns a Special Condition on its user costs (Wailord ex's Falling Down: Asleep, a quarter): `sustained` divides by 1 + miss. */
   miss: number;
   /** 1: its user cannot attack next turn; 2: it cannot use this attack next turn; 0: neither (sim/effects.ts). */
-  rest: 0 | 1 | 2;
+  rest: 0 | 1 | 2 | 3;
   /**
    * Damage a turn the attack keeps up: `expected`, except for an attack that rests its user: that one lands
    * every other turn, with the card's next attack (at no higher cost) in between when only the attack itself
@@ -567,10 +567,29 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     return !ys || ys.some((y) => y >= eraMin - 1 && y <= eraMax + 1);
   }
 
+  /** A text entry says something: attacks or Abilities for a Pokémon, an effect for a Trainer, an effect or a kind for an Energy. */
+  const hasContent = (c: CatalogCard, t: CardText | undefined): boolean => (c.cat === 'Pokemon' ? !!(t?.a?.length || t?.b?.length) : c.cat === 'Energy' ? !!(t?.fx || t?.et) : !!t?.fx);
+
+  /**
+   * The printing's text, or, when its entry carries none (the 30th-anniversary Ultra Ball has only
+   * "Item"), the text of the most recent printing of the same name and kind (same HP for a Pokémon)
+   * that has some; the printing keeps its own regulation mark and legality.
+   */
+  function textOf(card: CatalogCard): CardText | undefined {
+    const own = text.byId.get(card.id)?.text;
+    if (hasContent(card, own)) return own;
+    for (const other of index.cardsByName.get(normalizeText(card.name)) ?? []) {
+      if (other.id === card.id || other.cat !== card.cat || (card.cat === 'Pokemon' && other.hp !== card.hp)) continue;
+      const t = text.byId.get(other.id)?.text;
+      if (hasContent(other, t)) return t;
+    }
+    return own;
+  }
+
   function featuresOf(card: CatalogCard): PokemonFeatures {
     let f = features.get(card.id);
     if (f) return f;
-    const t = text.byId.get(card.id)?.text;
+    const t = textOf(card);
     const isPokemon = card.cat === 'Pokemon';
     const attacks: AttackFeature[] = (t?.a ?? []).map((a) => {
       const damage = damageValue(a.d);
@@ -875,7 +894,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       if (d > top || (d === top && d > 0 && l.f.best!.costN < topCostN)) {
         top = d;
         topCostN = l.f.best!.costN;
-        topName = `${l.card.name}'s ${l.f.best!.name}${l.f.best!.rest ? ' (every other turn)' : ''}`;
+        topName = `${l.card.name}'s ${l.f.best!.name}${l.f.best!.rest === 3 ? ' (once per stay in the Active Spot)' : l.f.best!.rest ? ' (every other turn)' : ''}`;
       }
     }
     parts.push(part('power', 'Power', attackers.length ? top / (0.75 * era) : 0, attackers.length ? `${topName} for ${Math.round(top)} against ${era} HP Pokémon of the era` : 'No attacks'));

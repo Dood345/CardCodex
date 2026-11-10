@@ -146,8 +146,12 @@ The highest score wins. Counting copies across the whole line keeps a one-copy R
 user ("During your next turn, this Pokémon can't attack", or "can't use" the attack itself): that
 one lands every other turn, so it counts half, plus half of the card's next attack when only the
 attack itself is barred (`AttackFeature.sustained`, shared with the score's Power part). A rest that
-hangs on a coin flip is not counted. Before this, a 2-2 Umbreon line (140, every other turn) was the
-plan of a deck that also held a 2-2 Exeggutor line (130 every turn).
+hangs on a coin flip is not counted. An attack its user "can't use again until it leaves the Active
+Spot" (Gouging Fire ex's Blaze Blitz, `rest` 3) lands once per stay there: one use, then the card's
+next attack over a stay of about three turns (260 and 60 give 127), and the engine bars it until the
+Pokémon goes to the Bench. An attack that puts its user to sleep or confuses it divides by one plus
+the share of turns lost (`AttackFeature.miss`). Before this, a 2-2 Umbreon line (140, every other
+turn) was the plan of a deck that also held a 2-2 Exeggutor line (130 every turn).
 
 **Expected damage** (`AttackFeature.expected`, `damage.ts`, since 2026-11-10). An attack's text is
 read into damage modifiers (`damage-text.ts`): "+" or "×" damage per count (Energy attached to this
@@ -172,7 +176,10 @@ Prize card the opponent has taken became a list's plan and the list decked out a
 that never took one), a discard pile of three Energy and two Supporters, and an Active with a Retreat
 Cost of two; a count narrowed to a kind of Pokémon or card is one, and so is a count of the
 opponent's Energy of a type (nothing says the opponent plays that type: Sunflora's Redirected
-Sunlight, 60 per Fire Energy on the opponent's Pokémon, was credited 180). A condition is credited by whether the pilot can bring it about: a coin,
+Sunlight, 60 per Fire Energy on the opponent's Pokémon, was credited 180); Energy among the cards
+an attack discards from the top of a deck is a third of them (the deck's own share of Energy when
+the deck is known; Magcargo ex's Ground Burn, 140 more per Energy card among the top card of each
+deck, was credited 420 and is now about 233, and in a game the real top cards count). A condition is credited by whether the pilot can bring it about: a coin,
 the opponent's side, damage taken, a Knock Out, a Stadium, hand sizes and Prize cards count half (the
 game decides); Energy of a type on this Pokémon or in play, and a named or kind of Pokémon in play,
 count in full when the deck holds the means and nothing otherwise; extra Energy beyond the cost
@@ -559,27 +566,54 @@ The pilot's mistakes in duels were found by tracing lost games (`duelGame(…, t
 tuning to the tests. Before the stuck-Active and deck-reserve rules, the Charizard deck decked out
 in 9% of mirror games and lost 3–5% to random piles, stalled behind a Manaphy with no Energy.
 
-### Blind spots across the catalog
+### What is still not followed (2026-11-10)
 
-The parser reads these shares of Trainers and Abilities, by catalog slice (one printing per name):
+The coverage measure (`coverageOfDecks`, `coverageOfPool`) after the seven families, by copies
+over the 346 tournament lists and by name over the Standard pool, with the largest unread groups
+(`kindOf`, example cards from the report) and why each is left:
 
-| Slice | Trainers read | Unread Trainers by kind | Abilities |
-| --- | --- | --- | --- |
-| Standard-legal | 71 of 229 | other 59, tool 35, stadium 19, heal 14, condition 12, recover 8, disrupt 4, gust 3, coin flips 3 | 50 activated read of 108 activated (128 passive) |
-| 2023–2024 printings | 55 of 175 | other 39, tool 36, stadium 11, heal 10, condition 9, recover 8 | 22 of 43 activated |
-| Whole catalog | 366 of 1,384 | other 391, tool 238, stadium 145, heal 66, coin flips 47, recover 46, condition 45, disrupt 25 | 122 of 329 activated |
+| Measure | Tournament lists | Standard pool |
+| --- | --- | --- |
+| Trainer copies played with every sentence followed | 90.2% | 46.7% |
+| Ability copies used with every sentence followed | 84.4% | 34.9% |
+| Special Energy copies followed beyond what they provide | 97.2% | 83.3% |
+| Damaging attack copies fully acted on | 97.5% | 83.2% |
 
-"Other" is mostly these, which are the next things to read:
-
-- "look at the top N cards and take one" (Pokégear 3.0, Dusk Ball, Explorer's Guidance);
-- Energy moves (Energy Switch);
-- hammers;
-- hand-size disruption;
-- searches tied to a Pokémon in play (Salvatore, Grand Tree).
-
-A card's kind is the first of the evaluator's roles gust, heal, recover and disrupt that it has.
-Only a card with none of those is classed by its text (tool, stadium, condition, coin flips,
-other).
+- **Markers the catalog does not carry** (Area Zero Underdepths, 175 copies on the lists with the
+  other "opponent's hand or deck" Trainers; Iron Crown ex's Cobalt Command, "attacks used by your
+  Future Pokémon"): Tera, Future and Ancient are not in the card data, so nothing about them can be
+  checked. Needs a marker from the catalog builder.
+- **A Trainer's damage bonus for the turn** (152 copies: Premium Power Pro, Black Belt's Training:
+  "During this turn, attacks used by your Pokémon do N more damage to your opponent's Active
+  Pokémon"): the damage model takes modifiers from attack text, Tools, Abilities and Stadiums, not
+  from a Trainer played this turn.
+- **Searches worded wider than the filter** (133 copies: Bug Catching Set, Ethan's Adventure: "up
+  to N in any combination of" two kinds).
+- **Healing in other wordings** (72 copies: Wally's Compassion heals all damage from a Mega
+  Evolution Pokémon ex and returns its Energy; Jacinthe heals 150 from a Psychic Pokémon): the
+  engine heals a number of damage counters from a Pokémon of any type.
+- **Abilities with an "if" about things the board does not track** (149 copies: Dipplin's
+  Festival Lead attacks twice while Festival Grounds is in play; Thwackey's Boom Boom Groove needs
+  an Active with that Ability), **deck searches in wordings not read** (62 copies: Fan Rotom's Fan
+  Call, "once during your first turn"), Pecharunt ex's Subjugating Chains (38 copies: a switch with
+  an exception and a follow-up), and Stadiums shared on a condition (Team Rocket's Factory: a draw
+  for a player who played a Team Rocket Supporter this turn).
+- **Special Energy tied to Special Conditions** (24 copies: Bubbly Water Energy recovers from and
+  prevents them): protection from a condition is not a standing effect yet.
+- **Attacks**: damage for each Benched Pokémon by HP or by the counters on them (24 copies:
+  Igglybuff's Bouncy Circle, Cynthia's Spiritomb's Raging Curse), Team Rocket's Murkrow's Torment
+  (24 copies: a lock on one attack chosen by name), Energy moved by the attack to the Bench (19
+  copies: Iron Thorns ex's Volt Cyclone, Yanmega ex's Jet Cyclone), damage for each Supporter of a
+  name discarded from the hand (18 copies: Team Rocket's Honchkrow's Rocket Feathers).
+- **Across the Standard pool**, which holds many cards no list plays: Tools and Supporters with a
+  condition on being hit or on the end of the turn (Adversity Policy, Amarys), damage reduced by
+  the attacker's type or by Energy attached (Babiri Berry, Aurorus's Tundra Wall), two coins or a
+  coin against a Knock Out (Bewear's Hyper Lariat, Annihilape's Durable Body), damage bonuses on
+  conditions the board does not credit, healing attacks (Alolan Exeggutor's Mega Drain, Applin's
+  Mini Drain), and the opponent's hand or Active changed in wordings not read (Aipom's Astonish
+  shuffles a random card from their hand into their deck, Claydol's Devolution Ray devolves).
+- **Rules the engine leaves aside**: effects that last beyond the next turn, "If tails, …"
+  branches, conditions on the opponent's Bench, and the opponent's hand being seen (a no-op).
 
 ### Computed here, not in the evaluator
 
@@ -589,6 +623,13 @@ These belong in `PokemonFeatures` later:
   puts it; discard costs; coin flips; Ability triggers and per-turn limits; VSTAR Powers.
 - **The catalog evolution map,** name → what it evolves from. It is needed for Stage 2 lines that
   skip their Stage 1.
+- **Data gaps across printings.** A printing whose text entry says nothing (the 30th-anniversary
+  Ultra Ball carries only "Item") reads the text of the most recent printing of its name and kind
+  (same HP for a Pokémon), keeping its own regulation mark and legality (`textOf` in `pokemon.ts`);
+  across the catalog 170 of 193 such printings have one to borrow from, in the Standard pool that
+  one. What no printing carries stays unread: the catalog has no Tera, Future or Ancient marker (the
+  builder reads TCGdex's category and stage), so "if you have a Tera Pokémon in play" and the kinds
+  "Future Pokémon" and "Ancient Pokémon" cannot be checked.
 - **Prize value per Pokémon.**
 - **Weakness and Resistance values** (`×2`, `+20`, `-30`).
 

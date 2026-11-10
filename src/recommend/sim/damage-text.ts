@@ -472,6 +472,21 @@ export function parseDamageMods(sentences: readonly { text: string; start: numbe
       take(i);
       continue;
     }
+    // "Discard the top card of each player's deck. This attack does 140 more damage for each Energy card discarded in this way." (Magcargo ex)
+    if ((m = /^Discard the top (card|\d+ cards) of (your|each player's) deck\.$/.exec(s)) && i + 1 < sentences.length) {
+      const next = /^This attack does (\d+) more damage for each Energy card discarded in this way\.$/.exec(sentences[i + 1].text);
+      if (next) {
+        const n = m[1] === 'card' ? 1 : N(m[1]);
+        const both = m[2] !== 'your';
+        effects.push({ at: sentences[i].start, e: { k: 'millSelf', n } });
+        if (both) effects.push({ at: sentences[i].start, e: { k: 'millOpp', n } });
+        mods.push({ k: 'plus', n: N(next[1]), per: { k: 'milledEnergy', n, both: both || undefined } });
+        take(i);
+        take(i + 1);
+        i++;
+        continue;
+      }
+    }
     // "Discard any amount of Fire Energy from among your Pokémon, and this attack does 50 damage for each card you discarded in this way."
     if ((m = /^(Discard (?:any amount of|any number of) (?:(?:Basic|Special) )?(?:[A-Z][a-z]+ )?Energy(?: cards?)? from (?:among )?your Pokémon), and this attack does (\d+) (more )?damage for each (cards? you discarded in this way)\.$/.exec(s))) {
       const c = parseCost(`${m[1]}.`);
