@@ -323,6 +323,19 @@ tournament lists hold still, and only the built corpus moved (the score builds o
 Ground Burn and Blaze Blitz weigh what they do: Abilities followed there 68.2% → 66.0%, attacks
 90.5% → 91.3%, the solo Energy ladder 0.850 → 0.808, the duel Trainer ladder 0.675 → 0.750).
 
+## Damage bonuses for the turn (2026-11-10)
+
+"During this turn, attacks used by your Pokémon do N more damage" Trainers (Premium Power Pro,
+Black Belt's Training, Gladion's Final Battle, Kieran's second option) are standing effects the
+player holds until the turn ends, played in a duel when they turn the Active's best attack into a
+Knock Out and in a solo game when the plan's attack is about to be used (`deck-playtest.md`).
+Trainer copies followed: tournament lists 90.2% → 91.6%, the Standard pool 47.2% → 48.9%. The
+judges held: solo damage per turn and the online shares within a point, the duel judge's random
+piles a little further behind the lists (archetypes 0.870 → 0.913), the Trainer-swap ladder of the
+lists 0.744 → 0.692 and a 24-swap 1.000 → 0.962, both inside the band the old engine moves between
+seeds (a third of the Trainers swapped for random ones now brings in damage bonuses the pilot
+plays).
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

@@ -27,7 +27,7 @@
  */
 import { COST_LETTERS } from '../card-text';
 import type { Cond, DamageMod, PokeTest, SpecialCondition, StaticEffect } from './damage';
-import { parseCond, parseDamageMods, parsePokeTest, parseStatic } from './damage-text';
+import { parseCond, parseDamageMods, parsePokeTest, parseStatic, parseTurnBoost } from './damage-text';
 
 export type CardFilter = (
   | { k: 'any' }
@@ -135,6 +135,10 @@ export type Effect = {
   | { k: 'moveCounters'; n: number }
   /** "If you use this Ability, this Pokémon is Knocked Out." */
   | { k: 'selfKO' }
+  /** A damage bonus the player holds until the turn ends (Premium Power Pro, Black Belt's Training): standing effects as a Tool's, applied to the attacker they reach. */
+  | { k: 'damageBoost'; statics: StaticEffect[] }
+  /** "Choose 1: • … • …": the pilot takes the first option that is useful. */
+  | { k: 'choose'; options: Effect[][] }
 );
 
 export type SentenceStatus = 'read' | 'noop' | 'unread';
@@ -567,6 +571,23 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   if ((m = RE_ENDS_TURN.exec(t))) marks.push({ start: m.index, end: m.index + m[0].length, exact: true });
 
   const mark = (at: number, len: number, exact = false, vague?: string) => marks.push({ start: at, end: at + len, exact, vague });
+  // "Choose 1: • A. • B.": each option read on its own; the whole text counts when every option is followed.
+  if (/^Choose 1: • /.test(t)) {
+    const options = t.slice('Choose 1:'.length).split(/ ?• /).map((x) => x.trim()).filter(Boolean).map((x) => parseText(x, mode));
+    if (options.length >= 2 && options.every((x) => x.followed && x.effects.length)) {
+      ef.push({ at: 0, e: { k: 'choose', options: options.map((x) => x.effects) } });
+      mark(0, t.length, true);
+      t = ' '.repeat(t.length);
+    }
+  }
+  // A damage bonus for the turn, one sentence read whole.
+  for (const s of splitSentences(t)) {
+    const st = parseTurnBoost(s.text.trim());
+    if (!st) continue;
+    ef.push({ at: s.start, e: { k: 'damageBoost', statics: st } });
+    mark(s.start, s.end - s.start, true);
+    t = t.slice(0, s.start) + ' '.repeat(s.end - s.start) + t.slice(s.end);
+  }
   let drew = false;
   if ((m = RE_PRIZE_DRAW.exec(t))) {
     const both = /^Each player/i.test(t.slice(0, m.index + 12)) || /each player draws/i.test(m[0]);
