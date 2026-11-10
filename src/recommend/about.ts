@@ -48,7 +48,7 @@ export function aboutRecommender(game: GameId): AboutRecommender | null {
     paragraphs.push(
       `Pokémon decks are also played. A simple test pilot plays a full deck ${PLAY_GAMES} practice games against nobody and reports how soon it attacks, ` +
         'how much damage it does and how often it has nothing to play. “Tune by playing” and “Find a swap by playing” try swaps the same way ' +
-        'and keep one only if the deck plays better with it on fresh games. The pilot cannot use every card, and says which ones it treated as blanks.',
+        'and keep one only if the deck plays better with it on fresh games. The pilot cannot use every card, and says which ones sat unused: those that need an opponent to matter, and those it does not know how to play.',
     );
   } else {
     paragraphs.push('Decks of this game are scored, not played: there is no practice pilot for it yet, so “Tune by playing” is not offered.');

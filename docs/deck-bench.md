@@ -88,6 +88,7 @@ How the kinds of deck compare when played (means):
 | Theme decks (`pokemon-tcg-data`) | 74 | 10% | 22 | 74% |
 | Built by the engine, score only, first version | 98.5 | 16% | 45 | 78% |
 | Built by the engine, score only, after calibration | 99.3 | 26% | 69 | 82% |
+| The same, with resting attacks played as printed (1.10.8) | 99.2 | 23% | 64 | 82% |
 | Built and tuned by play (ten seeds, eight rounds) | 94 | 35% | about 100 | |
 | Tournament archetypes (`limitless-archetypes`) | 88 | 45% | 68 | 87% |
 | Tournament lists (`limitless-lists`) | 90 | 44% | 72 | 89% |
@@ -101,6 +102,16 @@ What the runs showed, in the order they changed the engine:
   where tournament lists reach 44%. Playing found what counting could not: too little Energy, too
   few copies of the attacker, orphaned evolution lines. Calibrating the score against the simulator
   took built decks to 26% and 69 damage a turn; tuning by play takes them to 35% and about 100.
+- **A big number that lands every other turn was counted every turn** (1.10.8, from a player's deck
+  whose check "played toward" a 140 attack that bars its user from attacking next turn). The pilot
+  now sits that turn out and the plan and the Power part count what an attack keeps up. Seven of the
+  forty built decks had leaned on such an attack: measured honestly, built decks fall from 26% and
+  69 to 23% and 64, and the decks the old engine built measure the same (64) under the new pilot,
+  so the builder is no worse, only seen more clearly. Tournament lists did not move (44%, 72): they
+  seldom rest. The same round found three holes the built decks fell into: 143 Stage 1 and Stage 2
+  cards with no "evolves from" in the card data passed for Basics (now taken from another printing
+  of the name), one Energy of a type passed for covering every attacker of that type (now counted in
+  full from three copies), and "build another" put a seed's own earlier stages on its avoid list.
 - **Swapped Trainers stay the hardest damage** for every judge (88% for the score, 72 to 78% played,
   50% in duels): a random Trainer of the era often draws or searches too, and the test pilot cannot
   use many Trainers at all.

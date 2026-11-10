@@ -19,6 +19,10 @@ export interface SimAttack {
   costN: number;
   damage: number;
   fx: ParsedText | null;
+  /** 1: the Pokémon cannot attack on its next turn; 2: it cannot use this attack; 0: neither. */
+  rest: 0 | 1 | 2;
+  /** Damage a turn the attack keeps up (`AttackFeature.sustained`). */
+  sustained: number;
 }
 
 export interface SimCard {
@@ -118,7 +122,7 @@ function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCar
   const t = f.text;
   const kind = f.isPokemon ? 'pokemon' : f.isEnergy ? 'energy' : 'trainer';
   // A braced unknown symbol in a cost counts as one Colorless.
-  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, fx: a.effect ? parseText(a.effect) : null }));
+  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, fx: a.effect ? parseText(a.effect) : null, rest: a.rest, sustained: a.sustained }));
   const abilities = (t?.b ?? []).map((b) => parseAbility(b.k, b.n, b.e));
   let fx: ParsedText | null = null;
   let unread = '';
@@ -170,7 +174,6 @@ function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCar
   };
 }
 
-/** Compile a deck list. Side-zone lines and ids the catalog lacks are left out. */
 /**
  * The main deck as one line per card id, sorted by id: the same cards in any
  * order or split over several lines compile to the same table, so a seed
@@ -184,7 +187,11 @@ export function normalizeDeck(deck: readonly DeckCard[]): DeckCard[] {
     .map(([cardId, n]) => ({ cardId, qty: n }));
 }
 
-export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[]): CompiledDeck {
+/**
+ * Compile a deck list. Side-zone lines and ids the catalog lacks are left out.
+ * `only`: the key of the Pokémon to take as the main attacker, for comparing plans.
+ */
+export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[], only = ''): CompiledDeck {
   const cards: SimCard[] = [];
   const byId = new Map<string, SimCard>();
   const list: number[] = [];
@@ -230,20 +237,25 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[]): Co
   for (const c of cards) if (c.kind === 'energy') for (const ch of c.provides) provided.add(ch);
   const payable = (cost: string) => [...cost].every((ch) => ch === 'C' || provided.has(ch) || provided.has('*'));
 
-  // Main attacker: the strongest attack on a line the deck plays in numbers.
+  // Main attacker: the attack that does the most turn after turn, on a line the deck plays in numbers. An
+  // attack that rests its user counts for the damage it keeps up (every other turn). The line counts by all
+  // its copies, Basics included: counting only its scarcer end, or the odds of drawing both ends, named the
+  // deck's own attacker less often on tournament lists (228 and 191 of 346, against 234) and fell for the
+  // Basics of the old theme decks' 3-2-1 lines.
   let plan: Plan | null = null;
   let bestScore = 0;
   for (const c of cards) {
     if (c.kind !== 'pokemon') continue;
+    if (only && c.key !== only) continue;
     for (const a of c.attacks) {
       if (a.damage <= 0) continue;
       const line = lineOf(c.key);
+      const root = line[line.length - 1];
       const lineCopies = line.reduce((n, k) => n + (copies.get(k) ?? 0), 0);
-      const s = a.damage * Math.min(1, lineCopies / 4) * (payable(a.cost) ? 1 : 0.25) / Math.max(1, a.costN) ** 0.25;
+      const s = a.sustained * Math.min(1, lineCopies / 4) * (payable(a.cost) ? 1 : 0.25) / Math.max(1, a.costN) ** 0.25;
       if (s > bestScore) {
         bestScore = s;
-        const root = line[line.length - 1];
-        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.damage})` };
+        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.damage}${a.rest ? ', every other turn' : ''})` };
       }
     }
   }
