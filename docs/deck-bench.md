@@ -185,6 +185,24 @@ none taken). Built decks measure lower under the new pilot (attacking by turn 3 
 → 61): the decks the old score built measure 21% and 62 under it, so most of the drop is the honest
 recount of coin flips and conditions, and a little is the score now building toward scaling attacks.
 
+## Attack costs read (2026-11-10)
+
+The pilot pays what an attack's text costs its user and does to its own side (`deck-playtest.md`,
+Attack costs): Energy discarded or put back, "any amount" discarded for a Knock Out, damage to
+itself and to its own Bench, the attacker returned to the hand, optional costs paid for a Knock Out.
+Damaging attack copies followed in full: tournament lists 73.3% → 81.0%, archetypes 73.1% → 80.1%,
+theme decks 60.9% → 63.4%, the Standard pool 62.4% → 69.8%.
+
+Tournament lists hold on every judge: attacking by turn 3 50%, damage per turn 87, wins against the
+field 60%, the ladders within two points of before. Built decks measure 22% and 58 damage a turn
+(from 20% and 61): the first run with costs paid fell to 53, because the score counted a
+"discard all" attack as landing every turn and the corpus was seeded by printed damage, so it was
+built around such attackers; the sustained figure now divides by the Energy a mandatory cost takes,
+and the corpus seeds by sustained damage (`built.ts`), which changes the built decks. A typed count
+of the opponent's Energy is credited one card on the typical board (Sunflora's Redirected Sunlight
+was 180). Coverage on the tournament lists stands at Trainers 30.3%, Abilities 23.4%, Special Energy
+0%, attacks 81.0%.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus
