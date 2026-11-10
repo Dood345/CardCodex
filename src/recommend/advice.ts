@@ -9,6 +9,9 @@ import type { CatalogCard } from '@/data/types';
 import { suggestAdds, suggestSwaps, type SuggestOptions } from './builder';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, Suggestion } from './types';
 
+/** Games behind the playtest numbers the screens show. */
+export const PLAY_GAMES = 400;
+
 export interface SourceOption {
   id: BuildOptions['source'];
   label: string;

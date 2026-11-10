@@ -15,14 +15,14 @@ import { createDeck, summarizeDeck, useClaims, useDecks } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { hasRecommender } from '@/recommend';
-import { builtDeckName, defaultFormat, describeMove, evaluatorFor, formatsOf, namesInDecks, namesToVary, seedIdeas } from '@/recommend/advice';
+import { builtDeckName, defaultFormat, describeMove, evaluatorFor, formatsOf, namesInDecks, namesToVary, PLAY_GAMES, seedIdeas } from '@/recommend/advice';
 import { buildDeck, type BuildResult } from '@/recommend/builder';
 import { canTune, tuneRound, tuneStart, type TuneState } from '@/recommend/tune';
 import type { BuildOptions, PlaySummary } from '@/recommend/types';
 import { EmptyState, Img, TopBar } from '@/ui/components';
 import { CloseIcon } from '@/ui/icons';
 import { href, navigate } from '@/ui/router';
-import { advisorMemory, BuildChoices, PLAY_GAMES, PlayLines, PracticeBlock, SCORE_NOTE, ScoreParts, useEvaluator, usePool } from './deck/DeckAdvisor';
+import { advisorMemory, BuildChoices, PlayLines, PracticeBlock, SCORE_NOTE, ScoreParts, useEvaluator, usePool } from './deck/DeckAdvisor';
 import { DeckSections } from './DeckSections';
 
 const MAX_SEEDS = 3;

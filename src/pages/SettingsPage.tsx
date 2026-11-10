@@ -9,6 +9,7 @@ import { importDecks } from '@/data/decks';
 import { clearImageCache, imageCacheStats } from '@/data/imageCache';
 import { YGOPRODECK_IMAGES } from '@/data/types';
 import { GAMES } from '@/games';
+import { aboutRecommender } from '@/recommend/about';
 import { Chip, Sheet, Toast, TopBar, useToast } from '@/ui/components';
 import { GAME_BLURB } from '@/ui/GameSwitch';
 
@@ -82,6 +83,8 @@ export default function SettingsPage() {
         ? `${new Set(index.catalog.cards.map((c) => c.oid)).size.toLocaleString()} distinct cards`
         : `${index.archetypes.length} archetypes, ${index.cardsByPasscode.size.toLocaleString()} distinct cards`;
   const rebuildCommand = game.id === 'pokemon' ? 'npm run catalog' : `npm run catalog:${game.id}`;
+  // What the deck check and the deck builder look at, for the active game (src/recommend/about.ts).
+  const recommender = aboutRecommender(game.id);
 
   return (
     <>
@@ -286,6 +289,16 @@ export default function SettingsPage() {
             Company, Konami, Shueisha or 4K Media.
           </p>
           <p className="hint">{GAMES.find((g) => g.id === 'mtg')?.text.disclaimer}</p>
+          {recommender && (
+            <details className="about-details">
+              <summary>How decks are recommended ({game.short})</summary>
+              {recommender.paragraphs.map((p) => (
+                <p key={p} className="hint">
+                  {p}
+                </p>
+              ))}
+            </details>
+          )}
         </section>
       </div>
 
