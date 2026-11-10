@@ -26,6 +26,8 @@
  * (coverage.ts): a pattern that matched is not the same as a text obeyed.
  */
 import { COST_LETTERS } from '../card-text';
+import type { DamageMod } from './damage';
+import { parseDamageMods } from './damage-text';
 
 export type CardFilter = (
   | { k: 'any' }
@@ -75,6 +77,8 @@ export interface ParsedText {
   chance: number;
   /** "your turn ends". */
   endsTurn: boolean;
+  /** Attacks: what the text does to the damage (damage.ts), applied by the engine at attack time. */
+  mods: DamageMod[];
   /** Why nothing could be read, when `effects` is empty. */
   unread: string;
   /** Every sentence of the text and what became of it. */
@@ -97,6 +101,7 @@ function countOf(s: string): number {
 export function normalizeEnergySymbols(t: string): string {
   return t
     .replace(/<[^>]+>/g, '')
+    .replace(/’/g, "'")
     .replace(/\s+/g, ' ')
     .replace(/\{([A-Z])\}/g, (_, l: string) => Object.keys(COST_LETTERS).find((n) => COST_LETTERS[n] === l) ?? l)
     .trim();
@@ -292,14 +297,33 @@ const RE_COST = /only if you discard (another|\d+ other|a|an) cards? from your h
 const RE_CONDITION = /\bonly if\b|\bcan't use this card unless\b/i;
 const RE_ENDS_TURN = /your turn ends/i;
 
-/** Read one text (a Trainer's effect, an Ability, an attack's effect). */
-export function parseText(raw: string): ParsedText {
-  const t = normalizeEnergySymbols(raw);
-  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: RE_ENDS_TURN.test(t), unread: '', sentences: [], followed: false };
-  const fail = (why: string): ParsedText => ({ ...out, unread: why, sentences: unreadAll(t, why), followed: false });
-  if (!t.trim()) return { ...out, unread: 'no text', sentences: [], followed: true };
-  if (/Flip (?:\d+|two|three) coins|until you get tails|for each heads/i.test(t)) return fail('coin flips');
+/**
+ * Read one text (a Trainer's effect, an Ability, an attack's effect). In `attack` mode the damage
+ * wordings are read first (`parseDamageMods`); the sentences they consume are blanked, positions
+ * kept, before the rest of the text is read like any other.
+ */
+export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): ParsedText {
+  const t0 = normalizeEnergySymbols(raw);
+  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: RE_ENDS_TURN.test(t0), mods: [], unread: '', sentences: [], followed: false };
   const marks: Mark[] = [];
+  let t = t0;
+  if (mode === 'attack' && t0.trim()) {
+    const dm = parseDamageMods(splitSentences(t0));
+    out.mods = dm.mods;
+    for (const [start, end] of dm.spans) {
+      marks.push({ start, end, exact: true });
+      t = t.slice(0, start) + ' '.repeat(end - start) + t.slice(end);
+    }
+  }
+  const fail = (why: string): ParsedText => ({ ...out, unread: why, sentences: unreadAll(t0, why), followed: false });
+  if (!t0.trim()) return { ...out, unread: 'no text', sentences: [], followed: true };
+  if (!t.trim() && out.mods.length) {
+    out.unread = 'damage only';
+    out.sentences = account(t0, marks, 1);
+    out.followed = out.sentences.every((s) => s.status !== 'unread');
+    return out;
+  }
+  if (/Flip (?:\d+|two|three) coins|until you get tails|for each heads/i.test(t)) return fail('coin flips');
   let m: RegExpExecArray | null;
   if ((m = /^Flip a coin\. If heads,/i.exec(t))) {
     out.chance = 0.5;
@@ -391,7 +415,7 @@ export function parseText(raw: string): ParsedText {
   ef.sort((a, b) => a.at - b.at);
   out.effects = ef.map((x) => x.e);
   if (!out.effects.length) out.unread = 'other';
-  out.sentences = account(t, marks, out.chance);
+  out.sentences = account(t0, marks, out.chance);
   out.followed = out.sentences.every((s) => s.status !== 'unread');
   return out;
 }
@@ -403,7 +427,7 @@ export function parseText(raw: string): ParsedText {
  */
 export function parseEnergyText(raw: string): ParsedText {
   const t = normalizeEnergySymbols(raw);
-  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: false, unread: '', sentences: [], followed: true };
+  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: '', sentences: [], followed: true };
   if (!t) return out;
   const marks: Mark[] = [];
   for (const m of t.matchAll(/(?:As long as|While) this card is attached to a Pokémon, (?:it|this card) provides (?:[A-Z][a-z]+ Energy|every type of Energy but provides only 1 Energy at a time)\./gi)) {
@@ -431,7 +455,7 @@ export function attackRest(effect: string): 0 | 1 | 2 {
 
 /** The rest sentence of an attack, which the engine honours (`attackRest`), is read. */
 export function parseAttackText(raw: string): ParsedText {
-  const fx = parseText(raw);
+  const fx = parseText(raw, 'attack');
   if (!attackRest(raw)) return fx;
   const re = /During your next turn, this Pokémon can't (?:attack|use attacks|use [^.]+)\.?|This Pokémon can't (?:attack|use attacks|use [^.]+?) during your next turn\.?/i;
   for (const s of fx.sentences) if (s.status === 'unread' && re.test(s.text) && !/^If (?:tails|heads),/i.test(s.text)) {
@@ -484,6 +508,6 @@ export function parseAbility(kind: string, name: string, text: string): ParsedAb
     activeOnly,
     limitName: limit ? (limit[1] ?? limit[2]) : '',
     vstar: /VSTAR/i.test(kind) || /VSTAR Power in a game/i.test(text),
-    fx: trigger === 'passive' ? { effects: [], discardCost: 0, chance: 1, endsTurn: false, unread: 'passive', sentences: unreadAll(normalizeEnergySymbols(text), 'passive'), followed: false } : parseText(body.replace(/^you may /i, '')),
+    fx: trigger === 'passive' ? { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: 'passive', sentences: unreadAll(normalizeEnergySymbols(text), 'passive'), followed: false } : parseText(body.replace(/^you may /i, '')),
   };
 }

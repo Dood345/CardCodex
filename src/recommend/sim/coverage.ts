@@ -137,7 +137,7 @@ function countCard(ts: Record<CoverageId, Tally>, c: SimCard, w: number): void {
 }
 
 function emptyText(): ParsedText {
-  return { effects: [], discardCost: 0, chance: 1, endsTurn: false, unread: 'other', sentences: [], followed: false };
+  return { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: 'other', sentences: [], followed: false };
 }
 
 function finish(ts: Record<CoverageId, Tally>): Coverage {

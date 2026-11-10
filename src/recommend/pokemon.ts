@@ -28,7 +28,8 @@ import type { CatalogCard } from '@/data/types';
 import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-rules';
 import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, ScorePart } from './types';
-import { attackRest } from './sim/effects';
+import { expectedDamage, pokeMatches, staticView, sustainedOf, type DamageMod, type DeckSupply, type PokeLike } from './sim/damage';
+import { attackRest, parseAttackText } from './sim/effects';
 
 /* ---------- features ---------- */
 
@@ -55,14 +56,25 @@ export interface AttackFeature {
   costN: number;
   /** Typed cost letters, each once. */
   types: string[];
+  /** The printed number ("60+" → 60, "20×" → 20). */
   damage: number;
+  /** The damage as printed: "60+", "20×", "" when none. */
+  printed: string;
   effect: string;
+  /** What the text does to the damage (sim/damage.ts). */
+  mods: DamageMod[];
+  /**
+   * The damage expected on the stated typical board (`staticView`): the printed number plus what the text adds,
+   * coin flips at their expectation, a conditional bonus half. The one figure the plan choice, the Power part
+   * and the playtest's plan line share.
+   */
+  expected: number;
   /** 1: its user cannot attack next turn; 2: it cannot use this attack next turn; 0: neither (sim/effects.ts). */
   rest: 0 | 1 | 2;
   /**
-   * Damage a turn the attack keeps up. The printed damage, except for an attack that rests its user: that
-   * one lands every other turn, with the card's next attack (at no higher cost) in between when only the
-   * attack itself is barred.
+   * Damage a turn the attack keeps up: `expected`, except for an attack that rests its user: that one lands
+   * every other turn, with the card's next attack (at no higher cost) in between when only the attack itself
+   * is barred.
    */
   sustained: number;
 }
@@ -556,22 +568,13 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     if (f) return f;
     const t = text.byId.get(card.id)?.text;
     const isPokemon = card.cat === 'Pokemon';
-    const attacks: AttackFeature[] = (t?.a ?? []).map((a) => ({
-      name: a.n,
-      cost: a.c,
-      costN: costCount(a.c),
-      types: costTypes(a.c),
-      damage: damageValue(a.d),
-      effect: a.e ?? '',
-      rest: attackRest(a.e ?? ''),
-      sustained: damageValue(a.d),
-    }));
-    for (const a of attacks) {
-      if (!a.rest || a.damage <= 0) continue;
-      let other = 0;
-      if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.damage);
-      a.sustained = (a.damage + other) / 2;
-    }
+    const attacks: AttackFeature[] = (t?.a ?? []).map((a) => {
+      const damage = damageValue(a.d);
+      const mods = damage > 0 && a.e ? parseAttackText(a.e).mods : [];
+      const expected = damage > 0 ? expectedDamage(damage, mods, staticView(costCount(a.c))) : 0;
+      return { name: a.n, cost: a.c, costN: costCount(a.c), types: costTypes(a.c), damage, printed: a.d ?? '', effect: a.e ?? '', mods, expected, rest: attackRest(a.e ?? ''), sustained: expected };
+    });
+    for (const a of attacks) a.sustained = sustainedOf(a, attacks);
     // The best attack is the one that does the most turn after turn, not the biggest number on the card.
     let best: AttackFeature | undefined;
     for (const a of attacks) if (a.damage > 0 && (!best || a.sustained > best.sustained)) best = a;
@@ -839,18 +842,30 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     }
     parts.push(part('draw', 'Draw and search', 0.5 * Math.min(1, draw / 8) + 0.5 * Math.min(1, search / 10), `${Math.round(draw * 10) / 10} draw, ${Math.round(search)} search cards`));
 
-    // power
+    // power: the best attack's sustained damage on the typical board, crediting only the conditions this deck
+    // holds the means for (sim/damage.ts staticView), the same figure the playtest's plan uses.
     let top = 0;
     let topName = '';
     let topCostN = 0;
     const era = ctx.eraMin ? eraHp(ctx.eraMin, ctx.eraMax) : 120;
+    const pokeLike = (f: PokemonFeatures): PokeLike => ({ stage: f.stage === 'Stage 2' ? 2 : f.evolvesFrom ? 1 : 0, types: f.types.join(''), suffix: f.suffix, key: f.key, name: f.card.name, abilities: (f.text?.b ?? []).map((b) => ({ name: b.n })), attacks: f.attacks });
+    const supply: DeckSupply = {
+      pokemon: (t) => pokemon.reduce((n, l) => n + (pokeMatches(pokeLike(l.f), t) ? l.qty : 0), 0),
+      energy: (type, special) => lines.reduce((n, l) => n + (l.f.isEnergy && (!special || !l.f.isBasicEnergy) && (!type || l.f.provides === '*' || [...l.f.provides].some((ch) => type.includes(ch))) ? l.qty : 0), 0),
+    };
+    const inDeck = new Map<AttackFeature, number>();
+    for (const l of attackers) {
+      const best = l.f.best!;
+      const attacks = l.f.attacks.map((a) => ({ ...a, expected: a.mods.length ? expectedDamage(a.damage, a.mods, staticView(a.costN, supply)) : a.expected }));
+      inDeck.set(best, sustainedOf(attacks[l.f.attacks.indexOf(best)], attacks));
+    }
     for (const l of attackers) {
       // Full credit at three copies: with fewer the attacker is too often prized or not found in time (playtest).
       // Copies count by name, over the printings that hit at least as hard: two printings of one Pokemon are
       // two copies of the attacker, not two attackers of one copy each.
       let copies = 0;
-      for (const o of attackers) if (o.f.key === l.f.key && o.f.best!.sustained >= l.f.best!.sustained) copies += o.qty;
-      const d = l.f.best!.sustained * Math.min(1, copies / 3);
+      for (const o of attackers) if (o.f.key === l.f.key && inDeck.get(o.f.best!)! >= inDeck.get(l.f.best!)!) copies += o.qty;
+      const d = inDeck.get(l.f.best!)! * Math.min(1, copies / 3);
       // On a tie the cheaper attack is the one a deck plays toward.
       if (d > top || (d === top && d > 0 && l.f.best!.costN < topCostN)) {
         top = d;

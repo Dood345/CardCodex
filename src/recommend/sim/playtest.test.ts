@@ -276,7 +276,7 @@ describe('attacks that rest their user', () => {
     const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' };
     const p: Player = newPlayer(du, 1, false, 6, 5);
     const dark = card('Darkness Energy');
-    const active: Mon = { c: card('Umbreon'), under: [], energy: [dark, dark, dark], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '' };
+    const active: Mon = { c: card('Umbreon'), under: [], energy: [dark, dark, dark], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
     p.active = active;
     p.turn = 2;
     expect(attack(g, p, null)).toBe(140);
@@ -296,7 +296,7 @@ describe('Trainers that look at the top of the deck', () => {
     const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' };
     const p = newPlayer(du, 1, false, 6, 5);
     p.turn = 2;
-    p.active = { c: card('Eevee'), under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '' };
+    p.active = { c: card('Eevee'), under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
     p.hand = hand.map((n) => card(n).i);
     // The top of the deck is the end of the list.
     p.deck = library.map((n) => card(n).i);

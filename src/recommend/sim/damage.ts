@@ -1,0 +1,281 @@
+/**
+ * Attack damage that is not the printed number: "+" and "×" damage that
+ * scales by a count (Energy attached, Benched Pokémon, damage counters,
+ * Prize cards taken, cards in a hand or discard pile, heads flipped), bonus
+ * damage on a condition, attacks that do nothing unless something holds, and
+ * damage that ignores Weakness, Resistance or effects. The wordings are read
+ * in effects.ts (`parseDamageMods`); this file holds the model and the one
+ * figure every caller shares: `expectedDamage(base, mods, view)`.
+ *
+ * A `DamageView` answers the counts and conditions for one board. The
+ * engine builds one from a game (engine.ts `gameView`), where coins are
+ * flipped with the game's seeded generator; the plan choice (cards.ts) and
+ * the score's Power part (pokemon.ts) use `staticView`, a stated typical
+ * board, so the deck page never names two different attacks. In a solo game
+ * the opponent is a mirror: every count or check of the opponent's side reads
+ * the pilot's own side.
+ */
+
+export type Side = 'self' | 'opponent' | 'both';
+
+/** A test on a Pokémon in play, as attack text names it ("Pokémon ex", "Basic Pokémon", "Fire Pokémon", "Lunatone"). */
+export interface PokeTest {
+  basic?: boolean;
+  evolution?: boolean;
+  stage?: number;
+  type?: string;
+  suffix?: string;
+  /** Normalized card name(s); any of them. */
+  names?: string[];
+  /** An Ability of this name. */
+  ability?: string;
+  /** An attack of this name. */
+  attack?: string;
+  /** Owner prefix of the card name ("Hop's", "Team Rocket's"). */
+  owner?: string;
+}
+
+/** A test on a card in a hand or discard pile. */
+export interface CardTest {
+  energy?: boolean;
+  basicEnergy?: boolean;
+  energyType?: string;
+  supporter?: boolean;
+  /** A card whose name holds this text. */
+  nameHas?: string;
+  /** A Pokémon with an Ability of this name. */
+  ability?: string;
+  pokemon?: boolean;
+}
+
+export type Count =
+  | { k: 'heads'; flips: number | 'untilTails' | { per: Count } }
+  /** `type`: one or more type letters, any of them ("for each Fire Energy and each Lightning Energy"). */
+  | { k: 'energy'; on: 'self' | 'all' | 'opponentActive' | 'opponentAll' | 'bothActive'; type?: string; basic?: boolean; special?: boolean }
+  | { k: 'bench'; side: Side; t?: PokeTest }
+  | { k: 'inPlay'; side: Side; t?: PokeTest }
+  | { k: 'counters'; on: 'self' | 'opponentActive' | 'opponentAll' | 'bench' }
+  | { k: 'prizesTaken'; side: 'self' | 'opponent' }
+  | { k: 'hand'; side: 'self' | 'opponent' }
+  | { k: 'discard'; side: 'self' | 'opponent'; t: CardTest }
+  | { k: 'retreatCost'; on: 'opponentActive' };
+
+export type Cond =
+  /** Heads on one coin. */
+  | { k: 'coin' }
+  | { k: 'opponentActive'; t: PokeTest; not?: boolean }
+  | { k: 'opponentActiveDamaged'; not?: boolean }
+  | { k: 'selfDamaged'; not?: boolean }
+  /** This Pokémon has Energy of a kind attached, or at least `extra` beyond the attack's cost. */
+  | { k: 'selfEnergy'; type?: string; special?: boolean; extra?: number }
+  | { k: 'selfTool' }
+  | { k: 'movedThisTurn' }
+  /** One of your Pokémon (of an owner) was Knocked Out by an attack during the opponent's last turn. */
+  | { k: 'koLastTurn'; owner?: string }
+  | { k: 'stadium'; not?: boolean }
+  /** At least `min` Pokémon matching `t` on a side's Bench or in play. */
+  | { k: 'inPlay'; side: Side; t: PokeTest; min: number; bench?: boolean; not?: boolean }
+  | { k: 'energyInPlay'; type?: string; min: number }
+  | { k: 'discard'; side: 'self' | 'opponent'; t: CardTest; min: number }
+  | { k: 'prizes'; side: 'self' | 'opponent'; max?: number; exactly?: number[] }
+  | { k: 'prizesMore'; side: 'self' | 'opponent' }
+  | { k: 'hand'; side: 'self' | 'opponent'; max?: number; exactly?: number }
+  | { k: 'sameType' }
+  | { k: 'sameEnergy' }
+  | { k: 'benchDamaged' }
+  | { k: 'not'; c: Cond }
+  | { k: 'any'; cs: Cond[] };
+
+export type DamageMod =
+  /** base + n per count ("30 more damage for each …"). */
+  | { k: 'plus'; n: number; per: Count }
+  /** n per count, the printed number being the multiplier ("20× … for each …"). */
+  | { k: 'times'; n: number; per: Count }
+  | { k: 'minus'; n: number; per: Count }
+  | { k: 'bonus'; n: number; if: Cond }
+  /** "this attack does nothing" unless the condition holds. */
+  | { k: 'nothing'; unless: Cond }
+  | { k: 'ignore'; weakness?: boolean; resistance?: boolean; effects?: boolean }
+  /** "If you go second, you can't use this attack during your first turn." */
+  | { k: 'firstTurnBarred' };
+
+/** What a Pokémon card looks like to a `PokeTest` (a SimCard, or the evaluator's features). */
+export interface PokeLike {
+  stage: number;
+  /** Type letters. */
+  types: string;
+  suffix: string;
+  /** Normalized name. */
+  key: string;
+  name: string;
+  abilities: readonly { name: string }[];
+  attacks: readonly { name: string }[];
+}
+
+/** What a card looks like to a `CardTest`. */
+export interface CardLike {
+  kind: 'pokemon' | 'trainer' | 'energy';
+  basicEnergy: boolean;
+  provides: string;
+  tt: string;
+  name: string;
+  abilities: readonly { name: string }[];
+}
+
+export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
+  if (t.basic && c.stage !== 0) return false;
+  if (t.evolution && c.stage === 0) return false;
+  if (t.stage !== undefined && c.stage !== t.stage) return false;
+  if (t.type && !c.types.includes(t.type)) return false;
+  if (t.suffix && c.suffix !== t.suffix) return false;
+  if (t.names && !t.names.includes(c.key)) return false;
+  if (t.ability && !c.abilities.some((a) => a.name === t.ability)) return false;
+  if (t.attack && !c.attacks.some((a) => a.name === t.attack)) return false;
+  if (t.owner && !c.name.startsWith(t.owner)) return false;
+  return true;
+}
+
+export function cardMatches(c: CardLike, t: CardTest): boolean {
+  if ((t.energy || t.basicEnergy || t.energyType) && c.kind !== 'energy') return false;
+  if (t.basicEnergy && !c.basicEnergy) return false;
+  if (t.energyType && c.provides !== t.energyType) return false;
+  if (t.supporter && c.tt !== 'Supporter') return false;
+  if (t.pokemon && c.kind !== 'pokemon') return false;
+  if (t.nameHas && !c.name.includes(t.nameHas)) return false;
+  if (t.ability && !c.abilities.some((a) => a.name === t.ability)) return false;
+  return true;
+}
+
+/** Whether an Energy card provides a type among `type` (letters, any of them), and is basic or special as asked. */
+export const energyMatches = (e: { provides: string; basicEnergy: boolean }, type?: string, basic?: boolean, special?: boolean): boolean =>
+  (!type || e.provides === '*' || [...e.provides].some((ch) => type.includes(ch))) && (!basic || e.basicEnergy) && (!special || !e.basicEnergy);
+
+/** What a deck holds, for the static view: whether a condition's means are in the list at all. */
+export interface DeckSupply {
+  /** Copies of Pokémon matching the test. */
+  pokemon(t: PokeTest): number;
+  /** Copies of Energy of the type (letters, any) and kind. */
+  energy(type?: string, special?: boolean): number;
+}
+
+export interface DamageView {
+  /** The number the count stands for on this board (an expectation when nothing is rolled). */
+  count(c: Count): number;
+  /** 0..1: whether the condition holds (a probability for the static view). */
+  holds(c: Cond): number;
+}
+
+/** Expected number of heads: n flips give n/2; flipping until tails gives 1. */
+export function expectedHeads(flips: number | 'untilTails'): number {
+  return flips === 'untilTails' ? 1 : flips / 2;
+}
+
+/**
+ * The damage an attack does on this board, before Weakness and Resistance: the printed base plus
+ * what its text adds. With a rolling view the result is one outcome; with an expectation view it
+ * is the mean. "Nothing unless" multiplies by the chance the condition holds.
+ */
+export function expectedDamage(base: number, mods: readonly DamageMod[], view: DamageView): number {
+  let d = base;
+  let scale = 1;
+  for (const m of mods) {
+    switch (m.k) {
+      case 'plus':
+        d += m.n * view.count(m.per);
+        break;
+      case 'times':
+        d = m.n * view.count(m.per);
+        break;
+      case 'minus':
+        d -= m.n * view.count(m.per);
+        break;
+      case 'bonus':
+        d += m.n * view.holds(m.if);
+        break;
+      case 'nothing':
+        scale *= view.holds(m.unless);
+        break;
+      case 'ignore':
+      case 'firstTurnBarred':
+        break;
+    }
+  }
+  return Math.max(0, d) * scale;
+}
+
+/**
+ * The stated typical board behind the plan choice and the score's Power part. Counts: the attacker
+ * carries exactly its cost in Energy (two more across its side), each player has three Benched
+ * Pokémon (four in play), five cards in hand, no Prize cards taken and no damage counters (a
+ * deck opens with its plan before the opponent has taken anything), a discard pile of three
+ * Energy and two Supporters, and an Active with a Retreat Cost of two; a count narrowed to a kind
+ * of Pokémon or card is one.
+ *
+ * Conditions are credited by whether the pilot can bring them about: a coin, the opponent's side,
+ * damage taken, a Knock Out, a Stadium, the hand and the Prize cards count half (the game decides);
+ * Energy of a type on this Pokémon or in play, and a named or kind of Pokémon in play, count in
+ * full when the deck holds the means (`supply`; assumed when none is given) and nothing otherwise;
+ * extra Energy beyond the cost counts half when the deck has it; a Tool attached, having moved up
+ * this turn and cards in a discard pile count nothing, because nothing in the pilot works toward
+ * them.
+ */
+export function staticView(costN: number, supply?: DeckSupply): DamageView {
+  const count = (c: Count): number => {
+    switch (c.k) {
+      case 'heads':
+        return typeof c.flips === 'object' ? count(c.flips.per) / 2 : expectedHeads(c.flips);
+      case 'energy': {
+        const own = c.type || c.basic || c.special ? Math.max(1, Math.ceil(costN / 2)) : costN;
+        return c.on === 'self' || c.on === 'opponentActive' ? own : c.on === 'bothActive' ? 2 * own : own + 2;
+      }
+      case 'bench':
+        return (c.t ? 1 : 3) * (c.side === 'both' ? 2 : 1);
+      case 'inPlay':
+        return (c.t ? 1 : 4) * (c.side === 'both' ? 2 : 1);
+      case 'counters':
+        return 0;
+      case 'prizesTaken':
+        return 0;
+      case 'hand':
+        return 5;
+      case 'discard':
+        return c.t.energy || c.t.basicEnergy || c.t.energyType ? 3 : c.t.supporter ? 2 : 1;
+      case 'retreatCost':
+        return 2;
+    }
+  };
+  const holds = (c: Cond): number => {
+    switch (c.k) {
+      case 'not':
+        return 1 - holds(c.c);
+      case 'any':
+        return Math.max(...c.cs.map(holds));
+      case 'selfEnergy':
+        if (c.extra !== undefined) return !supply || supply.energy() >= costN + c.extra ? 0.5 : 0;
+        return !supply || supply.energy(c.type, c.special) > 0 ? 1 : 0;
+      case 'energyInPlay':
+        return !supply || supply.energy(c.type) >= c.min ? 1 : 0;
+      case 'inPlay':
+        if (c.side === 'opponent') return 0.5;
+        return (!supply || supply.pokemon(c.t) >= c.min) !== !!c.not ? 1 : 0;
+      case 'selfTool':
+      case 'movedThisTurn':
+      case 'discard':
+        return 0;
+      default:
+        return 0.5;
+    }
+  };
+  return { count, holds };
+}
+
+/**
+ * Damage a turn an attack keeps up: its expected damage, halved for one that rests its user, with
+ * half of the card's next attack (at no higher cost) when only the attack itself is barred.
+ */
+export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number }>(a: A, attacks: readonly A[]): number {
+  if (!a.rest || a.damage <= 0) return a.expected;
+  let other = 0;
+  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected);
+  return (a.expected + other) / 2;
+}

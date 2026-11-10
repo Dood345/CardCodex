@@ -98,7 +98,9 @@ describe('Pokémon evaluator', () => {
 
   it('scores the test deck the same from run to run', () => {
     // Pinned so that a change to any part shows up here. 90.3 until the Energy amount and the attacker copies
-    // were calibrated against the playtest simulator (six Energy read as fewer than fit, and so they are).
+    // were calibrated against the playtest simulator (six Energy read as fewer than fit, and so they are). The
+    // Power part reads attack text since 2026-11-10 (Burning Darkness: 180 plus 30 per Prize card the opponent has
+    // taken, none on the typical board, so 180 as before).
     expect(ev.score(cards).total).toBe(89.3);
   });
 

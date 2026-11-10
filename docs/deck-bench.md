@@ -158,6 +158,33 @@ putting the attacker back into the hand (Meowth ex; 5%), bonus damage on a condi
 Benched Pokémon (4%), Special Conditions (4%), Bench damage (4%) and damage per Energy (4%). No
 Special Energy is followed beyond the type it provides.
 
+## Attack text read (2026-11-10)
+
+The pilot reads what an attack's text does to its damage (`deck-playtest.md`, Expected damage):
+scaling by a count, a bonus on a condition, coin flips on the game's stream, "does nothing" unless,
+Weakness and Resistance ignored. The plan, the Power part and the plan line share one figure on a
+stated typical board. Damaging attack copies followed in full: tournament lists 52.3% → 73.3%,
+archetypes 52.0% → 73.1%, theme decks 43.6% → 60.9%, the Standard pool 44.6% → 62.4%.
+
+| Judge, tournament lists | Before | After |
+| --- | --- | --- |
+| Attacking by turn 3 (mean) | 44% | 50% |
+| Attacking by turn 4 (mean) | 59% | 64% |
+| Damage per turn (mean) | 72 | 87 |
+| Damage per turn, rank correlation with real win rates | 0.16 | 0.29 |
+| Attacking by turn 3, the same | 0.01 | 0.22 |
+| Wins against the field, beats pile | 97% | 95% |
+
+The ladders of the tournament lists are within a few points of before either way: coin flips add
+variance to 200-game means, so near ties fall either side. Two wrong turns were found on the way and
+are recorded in `deck-playtest.md`: crediting every condition half made Dhelmise's conditional 130
+the plan over Banette's 80 (the deck's damage halved: a condition now counts only when the pilot can
+bring it about and the deck holds the means), and crediting two Prize cards taken made Pecharunt ex's
+60-per-Prize-card attack a plan that hit for nothing against random piles (the typical board now has
+none taken). Built decks measure lower under the new pilot (attacking by turn 3 23% → 20%, damage 64
+→ 61): the decks the old score built measure 21% and 62 under it, so most of the drop is the honest
+recount of coin flips and conditions, and a little is the score now building toward scaling attacks.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus
