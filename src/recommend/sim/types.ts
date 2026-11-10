@@ -61,7 +61,7 @@ export interface PlaytestReport {
 
 export interface PokemonPlaytestReport extends PlaytestReport {
   game: 'pokemon';
-  /** Mean damage per own turn over the first six turns (or `turns`, when fewer), attack damage as printed. */
+  /** Mean damage per own turn over the first six turns (or `turns`, when fewer): the attack text read, coins flipped, the opponent a mirror. */
   meanDamagePerTurn: number;
   /** Mean damage on each own turn. */
   damageByTurn: number[];

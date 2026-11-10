@@ -9,16 +9,22 @@ import type { DeckCard } from '@/data/db';
 import type { CatalogCard } from '@/data/types';
 import { COST_LETTERS } from '../card-text';
 import type { PokemonEvaluator } from '../pokemon';
+import { energyMatches, expectedDamage, pokeMatches, staticView, sustainedOf, type DeckSupply } from './damage';
 import type { UnreadCard } from './types';
-import { parseAbility, parseText, type ParsedAbility, type ParsedText } from './effects';
+import { parseAbility, parseAttackText, parseEnergyText, parseText, type ParsedAbility, type ParsedText } from './effects';
 import { prizeValue } from './rules';
 
 export interface SimAttack {
   name: string;
   cost: string;
   costN: number;
+  /** The printed number; `printed` keeps its "+" or "×". */
   damage: number;
+  printed: string;
+  /** The text's effects; `fx.mods` is what it does to the damage, applied at attack time (engine.ts `gameView`). */
   fx: ParsedText | null;
+  /** Expected damage on the typical board (`AttackFeature.expected`): what the pilot compares attacks by before a game. */
+  expected: number;
   /** 1: the Pokémon cannot attack on its next turn; 2: it cannot use this attack; 0: neither. */
   rest: 0 | 1 | 2;
   /** Damage a turn the attack keeps up (`AttackFeature.sustained`). */
@@ -51,6 +57,7 @@ export interface SimCard {
   suffix: string;
   /** Trainer subtype: Item, Supporter, Stadium, Tool. */
   tt: string;
+  /** A Trainer's text, or a Special Energy's (whose effects the pilot does not act on: `provides` is what it reads). */
   fx: ParsedText | null;
   /** Energy: type letters provided, "*" for any; "" for non-Energy. */
   provides: string;
@@ -117,12 +124,13 @@ function parsePairs(xs: string[] | undefined): [string, string][] {
 
 const NOT_FROM_HAND = new Set(['V-UNION', 'RESTORED', 'LEVEL-UP', 'BREAK', 'MEGA']);
 
-function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCard {
+/** One card of the table; `i` is its index. Exported for the coverage measure, which compiles a pool one card at a time. */
+export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCard {
   const f = ev.features(card);
   const t = f.text;
   const kind = f.isPokemon ? 'pokemon' : f.isEnergy ? 'energy' : 'trainer';
   // A braced unknown symbol in a cost counts as one Colorless.
-  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, fx: a.effect ? parseText(a.effect) : null, rest: a.rest, sustained: a.sustained }));
+  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, printed: a.printed, fx: a.effect ? parseAttackText(a.effect) : null, expected: a.expected, rest: a.rest, sustained: a.sustained }));
   const abilities = (t?.b ?? []).map((b) => parseAbility(b.k, b.n, b.e));
   let fx: ParsedText | null = null;
   let unread = '';
@@ -141,6 +149,9 @@ function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number): SimCar
       const roles = [...f.roles];
       unread = roles.find((r) => r === 'gust' || r === 'heal' || r === 'recover' || r === 'disrupt') ?? (fx.unread || 'other');
     }
+  } else if (kind === 'energy' && !f.isBasicEnergy) {
+    // What a Special Energy provides comes from the features; its text is kept for the coverage measure.
+    fx = parseEnergyText(t?.fx ?? '');
   }
   const w = parsePairs(t?.w);
   const r = parsePairs(t?.r);
@@ -237,6 +248,17 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[], onl
   for (const c of cards) if (c.kind === 'energy') for (const ch of c.provides) provided.add(ch);
   const payable = (cost: string) => [...cost].every((ch) => ch === 'C' || provided.has(ch) || provided.has('*'));
 
+  // Expected damage on the typical board, crediting only the conditions this deck holds the means for.
+  const supply: DeckSupply = {
+    pokemon: (t) => cards.reduce((n, c) => n + (c.kind === 'pokemon' && pokeMatches(c, t) ? (copies.get(c.key) ?? 0) : 0), 0),
+    energy: (type, special) => list.reduce((n, i) => n + (cards[i].kind === 'energy' && energyMatches(cards[i], type, undefined, special) ? 1 : 0), 0),
+  };
+  for (const c of cards) {
+    if (c.kind !== 'pokemon') continue;
+    for (const a of c.attacks) if (a.damage > 0 && a.fx?.mods.length) a.expected = expectedDamage(a.damage, a.fx.mods, staticView(a.costN, supply));
+    for (const a of c.attacks) a.sustained = sustainedOf(a, c.attacks);
+  }
+
   // Main attacker: the attack that does the most turn after turn, on a line the deck plays in numbers. An
   // attack that rests its user counts for the damage it keeps up (every other turn). The line counts by all
   // its copies, Basics included: counting only its scarcer end, or the odds of drawing both ends, named the
@@ -255,7 +277,8 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[], onl
       const s = a.sustained * Math.min(1, lineCopies / 4) * (payable(a.cost) ? 1 : 0.25) / Math.max(1, a.costN) ** 0.25;
       if (s > bestScore) {
         bestScore = s;
-        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.damage}${a.rest ? ', every other turn' : ''})` };
+        const about = Math.round(a.expected) !== a.damage ? `, about ${Math.round(a.expected)}` : '';
+        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.printed || a.damage}${about}${a.rest ? ', every other turn' : ''})` };
       }
     }
   }

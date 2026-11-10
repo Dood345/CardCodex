@@ -32,6 +32,16 @@ swap-12 > swap-24 > pile, 1 is perfect), and, when the corpus knows how strong i
 **strength** (rank correlation of the rating with that strength). `roundRobin` turns a duel function
 (`simulatedDuel`) into a strength per deck, for corpora that have no real results.
 
+**Card text followed.** Alongside the judges, the harness measures how much of the cards' text the
+test pilot follows (`src/recommend/sim/coverage.ts`, described in `deck-playtest.md`): per corpus, by
+copies, the share of Trainer copies played with every sentence of their text accounted for, of
+Ability copies used the same way, of Special Energy copies whose text is followed beyond the type
+provided, and of damaging attack copies whose text is fully acted on; and the same four over the
+Standard pool, one printing per name (`standard-pool`). A sentence counts only when the engine
+applies it or it is on the explicit no-op list, never because a pattern matched. The shares sit in
+the baseline next to the judges and any drop fails the run; the report lists the largest groups not
+followed with example card names.
+
 ## Running it
 
 - `npm test` runs `bench.test.ts`: the arithmetic, and a small run over decks the engine builds from
@@ -122,6 +132,58 @@ What the runs showed, in the order they changed the engine:
   see. This column is the one to move.
 - Deck rules, Basic Pokémon, Synergy and Era sit near 50% everywhere: checks a pile passes as easily
   as a deck, not measures of quality.
+
+## Card text followed (2026-11-10, first measurement)
+
+Share of copies whose text the pilot follows in full, as `coverage.ts` counts it (every sentence read
+into an effect the engine applies, or on the no-op list). These are the numbers before any card
+family was read more closely; the 1.10.8 audit's looser count (a pattern matched somewhere in the
+text) gave 57% of Trainer copies and 41% of Ability copies for the tournament lists.
+
+| Corpus | Trainers | Abilities | Special Energy | Damaging attacks |
+| --- | --- | --- | --- | --- |
+| Tournament lists (`limitless-lists`, 346) | 30.3% of 10,678 | 23.4% of 3,682 | 0% of 843 | 52.3% of 7,142 |
+| Tournament archetypes (46) | 31.6% | 21.9% | 0% | 52.0% |
+| Theme decks (`pokemon-tcg-data`, 186) | 30.5% | 9.9% | 0% | 43.6% |
+| Built by the engine (40) | 35.0% | 26.2% | 0% | 54.1% |
+| Standard pool, one printing per name | 14.4% of 229 | 11.8% of 229 | 0% of 18 | 44.6% of 1,448 |
+
+The largest groups not followed on the tournament lists: for Trainers, an `instead` or `only if`
+clause (Lillie's Determination, Special Red Card, Rosa's Encouragement; 12%), a search narrower than
+the pilot's ("a Pokémon that doesn't have a Rule Box", Poké Pad; 9%), gust (8%), text about the
+opponent's hand or deck (Judge, Area Zero Underdepths, Prism Tower; 7%), recovery from the discard
+pile (Night Stretcher; 6%); for Abilities, passive ones (35%) and a condition on an activated one
+(Munkidori, Fezandipiti ex, Teal Mask Ogerpon ex; 23%); for attacks, coin flips (7%), locks (5%),
+putting the attacker back into the hand (Meowth ex; 5%), bonus damage on a condition (4%), damage per
+Benched Pokémon (4%), Special Conditions (4%), Bench damage (4%) and damage per Energy (4%). No
+Special Energy is followed beyond the type it provides.
+
+## Attack text read (2026-11-10)
+
+The pilot reads what an attack's text does to its damage (`deck-playtest.md`, Expected damage):
+scaling by a count, a bonus on a condition, coin flips on the game's stream, "does nothing" unless,
+Weakness and Resistance ignored. The plan, the Power part and the plan line share one figure on a
+stated typical board. Damaging attack copies followed in full: tournament lists 52.3% → 73.3%,
+archetypes 52.0% → 73.1%, theme decks 43.6% → 60.9%, the Standard pool 44.6% → 62.4%.
+
+| Judge, tournament lists | Before | After |
+| --- | --- | --- |
+| Attacking by turn 3 (mean) | 44% | 50% |
+| Attacking by turn 4 (mean) | 59% | 64% |
+| Damage per turn (mean) | 72 | 87 |
+| Damage per turn, rank correlation with real win rates | 0.16 | 0.29 |
+| Attacking by turn 3, the same | 0.01 | 0.22 |
+| Wins against the field, beats pile | 97% | 95% |
+
+The ladders of the tournament lists are within a few points of before either way: coin flips add
+variance to 200-game means, so near ties fall either side. Two wrong turns were found on the way and
+are recorded in `deck-playtest.md`: crediting every condition half made Dhelmise's conditional 130
+the plan over Banette's 80 (the deck's damage halved: a condition now counts only when the pilot can
+bring it about and the deck holds the means), and crediting two Prize cards taken made Pecharunt ex's
+60-per-Prize-card attack a plan that hit for nothing against random piles (the typical board now has
+none taken). Built decks measure lower under the new pilot (attacking by turn 3 23% → 20%, damage 64
+→ 61): the decks the old score built measure 21% and 62 under it, so most of the drop is the honest
+recount of coin flips and conditions, and a little is the score now building toward scaling attacks.
 
 ## Limits
 

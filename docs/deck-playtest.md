@@ -49,7 +49,7 @@ opening its combo, and a Magic one as casting on curve.
 | `keyPieceStuckRate` | Share of games where every copy of something the plan needs is prized (see below) |
 | `unread`, `unreadCopies`, `unreadDrawsPerGame` | Cards the pilot cannot read, with the kind of effect; how often one is in hand |
 | `partlyRead` | Cards it plays without using them in full: Pokémon whose Ability it does not use (passive ones, or activated ones whose text was not read), such as Radiant Charizard's cost reduction |
-| `meanDamagePerTurn`, `damageByTurn` | Pokémon only: printed damage per own turn, mean over the first six turns |
+| `meanDamagePerTurn`, `damageByTurn` | Pokémon only: damage per own turn as the attack text makes it (coins flipped, counts read, the opponent a mirror), mean over the first six turns |
 
 **What counts as a stuck key piece.** Any one of these, in the Prize cards from the start of the game:
 
@@ -114,12 +114,48 @@ those from `features(card).text`.
 The highest score wins. Counting copies across the whole line keeps a one-copy Radiant Charizard
 (250) behind a 3-1-3 Charizard ex line (180).
 
-**Sustained damage** is the printed damage, except for an attack that rests its user ("During your
-next turn, this Pokémon can't attack", or "can't use" the attack itself): that one lands every other
-turn, so it counts half, plus half of the card's next attack when only the attack itself is barred
-(`AttackFeature.sustained`, shared with the score's Power part). A rest that hangs on a coin flip is
-not counted. Before this, a 2-2 Umbreon line (140, every other turn) was the plan of a deck that
-also held a 2-2 Exeggutor line (130 every turn).
+**Sustained damage** is the attack's expected damage (below), except for an attack that rests its
+user ("During your next turn, this Pokémon can't attack", or "can't use" the attack itself): that
+one lands every other turn, so it counts half, plus half of the card's next attack when only the
+attack itself is barred (`AttackFeature.sustained`, shared with the score's Power part). A rest that
+hangs on a coin flip is not counted. Before this, a 2-2 Umbreon line (140, every other turn) was the
+plan of a deck that also held a 2-2 Exeggutor line (130 every turn).
+
+**Expected damage** (`AttackFeature.expected`, `damage.ts`, since 2026-11-10). An attack's text is
+read into damage modifiers (`damage-text.ts`): "+" or "×" damage per count (Energy attached to this
+Pokémon, to all of yours, to the opponent's Active or to both Actives, by type; Benched or in-play
+Pokémon of either or both sides, by kind or name; damage counters; Prize cards taken; cards in a hand
+or discard pile, by kind; heads on N coins, on coins until tails, or on one coin per count), "N more
+damage if" a condition, "does nothing" unless one, damage that ignores Weakness, Resistance or
+effects, and "can't use this attack on your first turn going second". The conditions read are: a
+coin; the opponent's Active being a kind of Pokémon (ex, V, Basic, Evolution, Stage N, a type, a
+name) or damaged; this Pokémon damaged or not, carrying Energy of a type or N beyond the cost, or
+having moved up this turn; one of your Pokémon Knocked Out by an attack last turn; a Stadium in play
+or none; a named Pokémon on your Bench; N cards of a kind in a discard pile; N Energy of a type in
+play; Prize cards remaining (yours or theirs, a number, a bound, more than the opponent); hand sizes;
+the same Energy count or a shared type with the opponent's Pokémon; damage on your Bench.
+
+One figure serves every caller: the plan choice, the Power part and the playtest's plan line ("200+,
+about 250") all use `expectedDamage` on the **typical board** (`staticView`): the attacker carries
+exactly its cost in Energy and two more across its side, each player has three Benched Pokémon
+(four in play), five cards in hand, no Prize cards taken and no damage counters (a deck opens with
+its plan before the opponent has taken anything: credited two Prize cards, Pecharunt ex's 60 per
+Prize card the opponent has taken became a list's plan and the list decked out against random piles
+that never took one), a discard pile of three Energy and two Supporters, and an Active with a Retreat
+Cost of two; a count narrowed to a kind of Pokémon or card is one. A condition is credited by whether the pilot can bring it about: a coin,
+the opponent's side, damage taken, a Knock Out, a Stadium, hand sizes and Prize cards count half (the
+game decides); Energy of a type on this Pokémon or in play, and a named or kind of Pokémon in play,
+count in full when the deck holds the means and nothing otherwise; extra Energy beyond the cost
+counts half when the deck has it; a Tool attached, having moved up this turn and cards in a discard
+pile count nothing, because nothing in the pilot works toward them (Dhelmise's Vengeful Anchor,
+30 plus 120 with four Hide 'n' Sneak Pokémon in the discard pile, counts 30: credited half, it had
+become the plan of its deck over Banette's 80 and the deck's damage halved). The deck page's Power
+line reads the deck the same way. In a game the
+engine reads the real board (`gameView`): coins are flipped on the player's seeded stream, counts
+and conditions are checked as they stand, and in a solo game **the opponent is a mirror**: every
+count or check of the opponent's side reads the pilot's own side (Energy on both Actives is twice
+the pilot's; the opponent's Active is "a Pokémon ex" when the pilot's is). The pilot chooses its
+attack on the expectation (coins at their mean) and then rolls it.
 
 Two other ways to count a line were measured on the tournament lists (2026-11-09, how often the plan
 names a Pokémon in the deck's archetype name, of 346 lists): all copies of the line 234, the scarcer
@@ -132,6 +168,39 @@ off Rare Candy), the compiler looks up what the missing stage evolves from in th
 
 **Support lines.** Pokémon whose Abilities the pilot can use, plus what they evolve from, form the
 support lines.
+
+### What the pilot follows: the coverage measure (`coverage.ts`)
+
+A pattern that matched is not a text obeyed. Since 2026-11-10 every text the parser reads is also
+accounted for sentence by sentence (`ParsedText.sentences`), and a card counts as **followed** only
+when no sentence is left unread:
+
+- **read**: an effect the engine applies was taken from the sentence, and nothing in it was skipped.
+  A sentence is not read when it carries a condition (`if`, `unless`, `only`, `as long as`, `while`,
+  `except`, `otherwise`), an `instead`, a `for each`, a clause about the opponent (`your opponent`,
+  `each player`, `their hand`), a `Choose 1:` or a search clause with words the filter does not model
+  (`that doesn't have a Rule Box`, `of different types`, `Team Rocket's`, `or`). Clauses the engine
+  does honour are taken out before the check: a discard cost, `Flip a coin. If heads,`, `your turn
+  ends`, Rare Candy's own rules, an Ability's trigger, its Active-only clause and its per-turn limit,
+  and an attack's "can't attack next turn".
+- **noop**: on the explicit list `NOOP` in `effects.ts`, each entry with its reason: "Then, shuffle
+  your deck" (a search already shuffles), "Shuffle the other cards back into your deck" (a look at
+  the top cards already does), the rule-box reminder, "Damage is not an effect", "Don't apply
+  Weakness and Resistance for Benched Pokémon" (the engine applies them to the Active only), "Apply
+  Weakness as ×2", "You still need the necessary Energy", the one-VSTAR-Power note, "The effect of X
+  doesn't stack", "This includes new Pokémon that come into play", "Your opponent chooses the new
+  Active Pokémon" (the engine lets the switched-out player promote), the first-turn evolution
+  reminder, "Damage from attacks is still taken", "Shuffle your deck afterward" and "You can play only
+  one Supporter card each turn" (older printings).
+- **unread**: everything else.
+
+Four shares come out of it, by copies over a corpus and by name over the Standard pool: Trainer
+copies played with every sentence followed, Ability copies used the same way, Special Energy copies
+whose text is followed beyond the type it provides (the "provides" sentence is read through the
+evaluator's `provides`), and damaging attack copies whose text is fully acted on (an attack with no
+text counts). What is not followed is grouped by the kind of its first unread sentence
+(`kindOf`), with example card names, so the report says what to read next. The benchmark records the
+shares in its baseline and fails on any drop (`docs/deck-bench.md`).
 
 ### The pilot (`engine.ts`)
 
@@ -184,8 +253,9 @@ support lines.
   goes to it right after the line's lead. Searches then rank Energy and Switch at the top.
 - **Deck reserve.** Draw effects are passed up when they would leave fewer than 6 cards in the
   deck, because decking out loses.
-- **The attack** is the hardest-hitting payable attack. A setup attack (Pidgey's Call for Family) is
-  used instead when the damage would be under 50 and would not knock out.
+- **The attack** is the payable attack with the highest expected damage on the board as it stands.
+  A setup attack (Pidgey's Call for Family) is used instead when the damage would be under 50 and
+  would not knock out.
 
 Cards whose text is not read are never played. The report counts them (`unread`).
 
@@ -259,8 +329,9 @@ opponent, then attacks.
   2. the hardest hitter it can pay for;
   3. the main line;
   4. the most HP left, counting a multi-Prize Pokémon as 100 HP less per extra Prize.
-- **Choosing an attack.** The pilot picks the attack with the most damage against the defender. A
-  setup attack yields to any attack that knocks out.
+- **Choosing an attack.** The pilot picks the attack with the most expected damage against the
+  defender, its text read against the real board (a Pokémon ex across the table, the Prize cards
+  taken, the Energy on both Actives). A setup attack yields to any attack that knocks out.
 - **Resting.** A Pokémon whose attack bars it from attacking next turn sits that turn out (or uses
   another attack when only the one is barred). The bar lifts when it goes to the Bench, so with a
   second ready attacker there the pilot switches or retreats to it.
@@ -304,9 +375,13 @@ discards the one in play.
   "once during each player's turn", conditional cards ("only if …") and multi-coin effects. The report names them in two groups:
   cards that need an opponent to matter (gust, disruption, healing) and cards the pilot does not
   know how to play.
-- **Damage modifiers.** "+" and "×" damage counts its printed base. Tools, Abilities and Stadiums
-  that change damage are ignored. Of the attack drawbacks, "can't attack next turn" is played; discarding
-  Energy and self-damage are ignored, as are Special Conditions.
+- **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
+  Stadiums that change damage are not. Still unread in attack text: a count the parser does not
+  model (Benched Pokémon by HP, damage counters on an owner's Pokémon), a bonus tied to a Special
+  Condition, a Tool attached, a healed Pokémon or a named Special Energy, and "N damage for each card
+  you discarded in this way" (the discard is an attack cost, the next family). Of the attack
+  drawbacks, "can't attack next turn" and "not on your first turn going second" are played;
+  discarding Energy and self-damage are ignored, as are Special Conditions.
 - **Special Energy conditions.** A Special Energy provides what `features.provides` says.
 - **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
   and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This

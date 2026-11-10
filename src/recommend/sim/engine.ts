@@ -13,6 +13,7 @@
  * State is mutated in place for speed; a game is reproduced from its seed.
  */
 import type { CompiledDeck, SimAttack, SimCard } from './cards';
+import { cardMatches, energyMatches, expectedDamage, expectedHeads, pokeMatches, type Cond, type Count, type DamageMod, type DamageView } from './damage';
 import type { AttachTarget, CardFilter, Effect, ParsedAbility, ParsedText } from './effects';
 import { Rng, shuffleInPlace } from './rng';
 import type { PokemonRuleSet } from './rules';
@@ -31,6 +32,8 @@ export interface Mon {
   restTurn: number;
   /** The one attack barred during `restTurn`, "" for all of them. */
   restAtk: string;
+  /** Own turn it last moved from the Bench to the Active Spot by a retreat or switch (0: never). */
+  movedTurn: number;
 }
 
 export interface Player {
@@ -66,6 +69,9 @@ export interface Player {
   deadTurns: number;
   unreadDraws: number;
   taken: number;
+  /** Own turn before which one of this player's Pokémon was Knocked Out by an attack (0: none), and its name. */
+  koBefore: number;
+  koName: string;
 }
 
 export interface Game {
@@ -108,6 +114,8 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
     deadTurns: 0,
     unreadDraws: 0,
     taken: 0,
+    koBefore: 0,
+    koName: '',
   };
 }
 
@@ -127,7 +135,7 @@ function draw(p: Player, n: number): number {
 }
 
 function newMon(c: SimCard, turn: number): Mon {
-  return { c, under: [], energy: [], dmg: 0, entered: turn, abilityTurn: -1, restTurn: 0, restAtk: '' };
+  return { c, under: [], energy: [], dmg: 0, entered: turn, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
 }
 
 function* inPlay(p: Player): Generator<Mon> {
@@ -189,7 +197,7 @@ function targetAttack(p: Player, m: Mon): SimAttack | null {
   const plan = p.d.plan;
   if (plan && plan.line.includes(m.c.key)) return plan.attack;
   let best: SimAttack | null = null;
-  for (const a of m.c.attacks) if (a.damage > 0 && (!best || a.damage > best.damage)) best = a;
+  for (const a of m.c.attacks) if (a.damage > 0 && (!best || a.expected > best.expected)) best = a;
   return best ?? m.c.attacks[0] ?? null;
 }
 
@@ -257,7 +265,7 @@ function mainReady(p: Player, m: Mon): boolean {
 
 function bestPayable(m: Mon): SimAttack | null {
   let best: SimAttack | null = null;
-  for (const a of m.c.attacks) if (a.damage > 0 && missing(a.cost, m.energy) === '' && (!best || a.damage > best.damage)) best = a;
+  for (const a of m.c.attacks) if (a.damage > 0 && missing(a.cost, m.energy) === '' && (!best || a.expected > best.expected)) best = a;
   return best;
 }
 
@@ -489,7 +497,7 @@ function switchTarget(p: Player, o: Player | null): Mon | null {
   let bestD = 0;
   for (const m of p.bench) {
     const atk = bestPayable(m);
-    const d = atk ? damageAgainst(m, o?.active ?? null, atk.damage) : 0;
+    const d = atk ? damageAgainst(m, o?.active ?? null, atk.expected, atk.fx?.mods) : 0;
     if (d > bestD) {
       best = m;
       bestD = d;
@@ -505,6 +513,7 @@ function swapActive(p: Player, m: Mon): void {
   p.active.restTurn = 0;
   p.bench[at] = p.active;
   p.active = m;
+  m.movedTurn = p.turn;
 }
 
 function shuffleHandDraw(p: Player, n: number, bottom: boolean): void {
@@ -1044,13 +1053,138 @@ export function mainPhase(g: Game, p: Player, o: Player | null): void {
   if (g.trace) g.trace(`  end: active ${p.active?.c.name} [${p.active?.energy.map((e) => e.provides).join('')}] bench ${p.bench.map((m) => `${m.c.name}[${m.energy.map((e) => e.provides).join('')}]`).join(', ')}; hand ${names(p, p.hand)}`);
 }
 
-/** Damage after Weakness and Resistance of the defending Pokémon (none in a solo game). */
-export function damageAgainst(att: Mon, def: Mon | null, base: number): number {
+/** Damage after Weakness and Resistance of the defending Pokémon (none in a solo game), unless the attack's text ignores them. */
+export function damageAgainst(att: Mon, def: Mon | null, base: number, mods?: readonly DamageMod[]): number {
   if (!def || base <= 0) return base;
   let d = base;
-  for (const w of def.c.weak) if (w.t && att.c.types.includes(w.t)) d = d * w.mul + w.add;
-  for (const r of def.c.resist) if (r.t && att.c.types.includes(r.t)) d -= r.amt;
+  const ignore = mods?.find((m) => m.k === 'ignore');
+  if (!(ignore?.k === 'ignore' && ignore.weakness)) for (const w of def.c.weak) if (w.t && att.c.types.includes(w.t)) d = d * w.mul + w.add;
+  if (!(ignore?.k === 'ignore' && ignore.resistance)) for (const r of def.c.resist) if (r.t && att.c.types.includes(r.t)) d -= r.amt;
   return Math.max(0, d);
+}
+
+/* ---------- damage that is not the printed number ---------- */
+
+/**
+ * The board an attack's text reads, for `expectedDamage`. `o` is the opponent; in a solo game
+ * (`o` null) the opponent is a mirror and every count of the other side reads the pilot's own.
+ * With `roll` the coins are flipped on the player's stream; without it they count their expectation.
+ */
+export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimAttack, roll: boolean): DamageView {
+  const opp = o ?? p;
+  const mons = (side: 'self' | 'opponent' | 'both', bench: boolean): Mon[] => {
+    const out: Mon[] = [];
+    if (side !== 'opponent') out.push(...(bench ? p.bench : [...inPlay(p)]));
+    if (side !== 'self') out.push(...(bench ? opp.bench : [...inPlay(opp)]));
+    return out;
+  };
+  const flip = () => p.rng.next() < 0.5;
+  const count = (c: Count): number => {
+    switch (c.k) {
+      case 'heads': {
+        if (typeof c.flips === 'object') {
+          const n = Math.round(count(c.flips.per));
+          if (!roll) return n / 2;
+          let h = 0;
+          for (let k = 0; k < n; k++) if (flip()) h++;
+          return h;
+        }
+        if (!roll) return expectedHeads(c.flips);
+        let h = 0;
+        if (c.flips === 'untilTails') while (flip()) h++;
+        else for (let k = 0; k < c.flips; k++) if (flip()) h++;
+        return h;
+      }
+      case 'energy': {
+        const pool: SimCard[] = [];
+        if (c.on === 'self' || c.on === 'bothActive') pool.push(...m.energy);
+        if (c.on === 'all') for (const x of inPlay(p)) pool.push(...x.energy);
+        if ((c.on === 'opponentActive' || c.on === 'bothActive') && opp.active) pool.push(...opp.active.energy);
+        if (c.on === 'opponentAll') for (const x of inPlay(opp)) pool.push(...x.energy);
+        return pool.filter((e) => energyMatches(e, c.type, c.basic, c.special)).length;
+      }
+      case 'bench':
+        return mons(c.side, true).filter((x) => !c.t || pokeMatches(x.c, c.t)).length;
+      case 'inPlay':
+        return mons(c.side, false).filter((x) => !c.t || pokeMatches(x.c, c.t)).length;
+      case 'counters': {
+        const xs = c.on === 'self' ? [m] : c.on === 'opponentActive' ? (opp.active ? [opp.active] : []) : c.on === 'opponentAll' ? [...inPlay(opp)] : p.bench;
+        return xs.reduce((n, x) => n + Math.floor(x.dmg / 10), 0);
+      }
+      case 'prizesTaken':
+        return c.side === 'self' ? p.taken : opp.taken;
+      case 'hand':
+        return c.side === 'self' ? p.hand.length : opp.hand.length;
+      case 'discard':
+        return (c.side === 'self' ? p : opp).discard.filter((i) => cardMatches(cardOf(p, i), c.t)).length;
+      case 'retreatCost':
+        return opp.active?.c.retreat ?? 0;
+    }
+  };
+  const holds = (c: Cond): number => {
+    switch (c.k) {
+      case 'coin':
+        return roll ? (flip() ? 1 : 0) : 0.5;
+      case 'not':
+        return 1 - holds(c.c);
+      case 'any':
+        return Math.max(...c.cs.map(holds));
+      case 'opponentActive': {
+        const a = opp.active;
+        const yes = !!a && pokeMatches(a.c, c.t);
+        return yes !== !!c.not ? 1 : 0;
+      }
+      case 'opponentActiveDamaged':
+        return (opp.active ? opp.active.dmg > 0 : false) !== !!c.not ? 1 : 0;
+      case 'selfDamaged':
+        return m.dmg > 0 !== !!c.not ? 1 : 0;
+      case 'selfEnergy':
+        if (c.extra !== undefined) return m.energy.length - atk.costN >= c.extra ? 1 : 0;
+        return m.energy.some((e) => energyMatches(e, c.type, undefined, c.special)) ? 1 : 0;
+      case 'selfTool':
+        return 0;
+      case 'movedThisTurn':
+        return m.movedTurn === p.turn ? 1 : 0;
+      case 'koLastTurn':
+        return p.koBefore === p.turn && (!c.owner || p.koName.startsWith(c.owner)) ? 1 : 0;
+      case 'stadium':
+        return !!g.stadium !== !!c.not ? 1 : 0;
+      case 'inPlay': {
+        const n = mons(c.side, !!c.bench).filter((x) => pokeMatches(x.c, c.t)).length;
+        return n >= c.min !== !!c.not ? 1 : 0;
+      }
+      case 'energyInPlay': {
+        let n = 0;
+        for (const x of inPlay(p)) n += x.energy.filter((e) => energyMatches(e, c.type)).length;
+        return n >= c.min ? 1 : 0;
+      }
+      case 'discard':
+        return (c.side === 'self' ? p : opp).discard.filter((i) => cardMatches(cardOf(p, i), c.t)).length >= c.min ? 1 : 0;
+      case 'prizes': {
+        const left = (c.side === 'self' ? p : opp).prizes.length;
+        if (c.max !== undefined) return left <= c.max ? 1 : 0;
+        return c.exactly?.includes(left) ? 1 : 0;
+      }
+      case 'prizesMore':
+        return (c.side === 'self' ? p.prizes.length > opp.prizes.length : opp.prizes.length > p.prizes.length) ? 1 : 0;
+      case 'hand': {
+        const n = (c.side === 'self' ? p : opp).hand.length;
+        if (c.max !== undefined) return n <= c.max ? 1 : 0;
+        return n === c.exactly ? 1 : 0;
+      }
+      case 'sameType': {
+        const theirs = new Set<string>();
+        for (const x of inPlay(opp)) for (const ch of x.c.types) theirs.add(ch);
+        for (const x of inPlay(p)) for (const ch of x.c.types) if (theirs.has(ch)) return 1;
+        return 0;
+      }
+      case 'sameEnergy':
+        return opp.active && opp.active.energy.length === m.energy.length ? 1 : 0;
+      case 'benchDamaged':
+        return p.bench.some((x) => x.dmg > 0) ? 1 : 0;
+    }
+  };
+  return { count, holds };
 }
 
 /** The attack step. Returns the damage done (base damage when there is no opponent). */
@@ -1064,8 +1198,10 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   let setupAtk: SimAttack | null = null;
   for (const atk of a.c.attacks) {
     if (resting(p, a, atk) || missing(atk.cost, a.energy) !== '') continue;
+    if (atk.fx?.mods.some((x) => x.k === 'firstTurnBarred') && p.turn === 1 && !p.first) continue;
     if (atk.damage > 0) {
-      const d = damageAgainst(a, def, atk.damage);
+      // Chosen on its expectation (coins at their mean), then rolled.
+      const d = damageAgainst(a, def, expectedDamage(atk.damage, atk.fx?.mods ?? [], gameView(g, p, o, a, atk, false)), atk.fx?.mods);
       if (d > bestD) {
         bestD = d;
         best = atk;
@@ -1082,7 +1218,7 @@ export function attack(g: Game, p: Player, o: Player | null): number {
     a.restAtk = use.rest === 1 ? '' : use.name;
   }
   if (use.damage <= 0) return 0;
-  const d = def ? bestD : use.damage;
+  const d = damageAgainst(a, def, use.fx?.mods.length ? expectedDamage(use.damage, use.fx.mods, gameView(g, p, o, a, use, true)) : use.damage, use.fx?.mods);
   if (p.turn <= p.damage.length) p.damage[p.turn - 1] += d;
   if (!p.firstOnline && p.d.plan && a.c.key === p.d.plan.attacker) p.firstOnline = p.turn;
   if (o && def) {
@@ -1092,11 +1228,13 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   return d;
 }
 
-function knockOut(g: Game, p: Player, o: Player): void {
+export function knockOut(g: Game, p: Player, o: Player): void {
   const m = o.active!;
   o.discard.push(m.c.i, ...m.under);
   for (const e of m.energy) o.discard.push(e.i);
   o.active = null;
+  o.koBefore = o.turn + 1;
+  o.koName = m.c.name;
   const n = Math.min(m.c.prize, p.prizes.length);
   for (let k = 0; k < n; k++) p.hand.push(p.prizes.pop()!);
   p.taken += n;
@@ -1125,7 +1263,7 @@ function promote(o: Player, p: Player): void {
     const s = mainReady(o, m)
       ? 10000
       : atk
-        ? 5000 + damageAgainst(m, p.active, atk.damage)
+        ? 5000 + damageAgainst(m, p.active, atk.expected, atk.fx?.mods)
         : (o.d.plan?.line.includes(m.c.key) ? 3000 : 0) + m.c.hp - m.dmg - 100 * (m.c.prize - 1);
     if (s > best) {
       best = s;
