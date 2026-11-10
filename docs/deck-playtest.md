@@ -575,21 +575,22 @@ over the 346 tournament lists and by name over the Standard pool, with the large
 
 | Measure | Tournament lists | Standard pool |
 | --- | --- | --- |
-| Trainer copies played with every sentence followed | 90.2% | 46.7% |
+| Trainer copies played with every sentence followed | 92.8% | 49.8% |
 | Ability copies used with every sentence followed | 84.4% | 34.9% |
 | Special Energy copies followed beyond what they provide | 97.2% | 83.3% |
-| Damaging attack copies fully acted on | 97.5% | 83.2% |
+| Damaging attack copies fully acted on | 97.5% | 83.4% |
 
-- **Markers the catalog does not carry** (Area Zero Underdepths, 175 copies on the lists with the
+- **Markers the source does not carry** (Area Zero Underdepths, 175 copies on the lists with the
   other "opponent's hand or deck" Trainers; Iron Crown ex's Cobalt Command, "attacks used by your
-  Future Pokémon"): Tera, Future and Ancient are not in the card data, so nothing about them can be
-  checked. Needs a marker from the catalog builder.
-- **A Trainer's damage bonus for the turn** (152 copies: Premium Power Pro, Black Belt's Training:
-  "During this turn, attacks used by your Pokémon do N more damage to your opponent's Active
-  Pokémon"): the damage model takes modifiers from attack text, Tools, Abilities and Stadiums, not
-  from a Trainer played this turn.
-- **Searches worded wider than the filter** (133 copies: Bug Catching Set, Ethan's Adventure: "up
-  to N in any combination of" two kinds).
+  Future Pokémon"): Tera, Future and Ancient are not in the card data and not in the source. The
+  TCGdex card object (checked on Charizard ex sv03-125, a Tera ex, and Gouging Fire ex sv05-038, a
+  Future Pokémon, fetched one at a time, and on the cached GraphQL downloads) has no field for them:
+  its fields are category, dexId, hp, id, illustrator, image, legal, localId, name, pricing,
+  rarity, regulationMark, retreat, set, stage, suffix, types, updated, variants, weaknesses,
+  abilities, attacks, description, and `suffix` is only "ex" and the like. The Tera rule-box
+  sentence is not in any card's text either (no text in the catalog carries it), so there is
+  nothing exact to derive a marker from. Left unread; a marker would have to come from another
+  source.
 - **Healing in other wordings** (72 copies: Wally's Compassion heals all damage from a Mega
   Evolution Pokémon ex and returns its Energy; Jacinthe heals 150 from a Psychic Pokémon): the
   engine heals a number of damage counters from a Pokémon of any type.

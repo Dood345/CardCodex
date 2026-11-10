@@ -345,6 +345,15 @@ damage per turn on the lists 90.1 → 91.5 and attacking by turn 3 and 4 up a po
 now fetch); the duel judge's swap ladders rose (lists swap-6 0.872 → 0.923, swap-12 0.885 → 0.936)
 and its correlation with real win rates slipped 0.305 → 0.278, inside the seed band.
 
+## Tera, Future and Ancient (2026-11-10)
+
+Not read, and not readable from the data: the TCGdex card objects carry no marker for Tera, Future
+or Ancient Pokémon (checked on fetched Tera and Future cards and on the cached downloads), and no
+card text in the catalog carries the Tera rule-box sentence, so nothing exact can be derived
+(`deck-playtest.md`, What is still not followed). Coverage after the three groups: tournament
+lists Trainers 92.8%, Abilities 84.4%, Special Energy 97.2%, attacks 97.5%; the Standard pool 49.8% / 34.9% /
+83.3% / 83.4%.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus
