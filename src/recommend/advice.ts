@@ -107,14 +107,15 @@ export function namesInDecks(ev: DeckEvaluator, decks: readonly Deck[], exceptId
   return out;
 }
 
-/** The same for one built deck, for "build another": everything it plays except its seeds and the any-number cards. */
+/** The same for one built deck, for "build another": everything it plays except its seeds, what they evolve from, and the any-number cards. */
 export function namesToVary(ev: DeckEvaluator, cards: readonly DeckCard[], seeds: readonly CatalogCard[]): Set<string> {
+  const inDeck = cards.map((l) => ev.card(l.cardId)).filter((c): c is CatalogCard => !!c);
+  // A seed keeps what it cannot be played without (a Stage 2 its Stage 1 and its Basic): with those names
+  // avoided, "build another" could not put the seed into play and built a deck without it.
   const keep = new Set(seeds.map((c) => c.name));
+  for (const seed of seeds) for (const need of ev.requirements(seed, [], inDeck)) keep.add(need.name);
   const out = new Set<string>();
-  for (const l of cards) {
-    const card = ev.card(l.cardId);
-    if (card && !keep.has(card.name) && Number.isFinite(ev.rules.copyLimit(card))) out.add(card.name);
-  }
+  for (const card of inDeck) if (!keep.has(card.name) && Number.isFinite(ev.rules.copyLimit(card))) out.add(card.name);
   return out;
 }
 

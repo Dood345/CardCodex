@@ -13,6 +13,8 @@ import { dealOpening, playtest } from './sim';
 import type { DeckEvaluator, PlayOptions, PlaySummary, PracticeHand } from './types';
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+/** Unread cards whose effect is aimed at the other player's side or at damage taken: nothing to do in a solo game. */
+const NEEDS_OPPONENT = new Set(['gust', 'heal', 'disrupt']);
 
 export function pokemonPlaytest(ev: PokemonEvaluator, cards: readonly DeckCard[], options: PlayOptions): PlaySummary {
   const r = playtest(ev, cards, { games: options.games, seed: options.seed });
@@ -26,12 +28,24 @@ export function pokemonPlaytest(ev: PokemonEvaluator, cards: readonly DeckCard[]
     `Opening hand redrawn in ${pct(r.mulliganRate)} of games`,
   ];
   if (r.keyPieceStuckRate >= 0.03) lines.push(`A piece the plan needs is stuck in the Prize cards in ${pct(r.keyPieceStuckRate)} of games`);
-  if (r.unreadCopies > 0) {
-    const names = r.unread
+  // Two kinds of card do nothing in these games, for different reasons, and the report says which is which.
+  const solo = r.unread.filter((u) => NEEDS_OPPONENT.has(u.reason));
+  const blind = r.unread.filter((u) => !NEEDS_OPPONENT.has(u.reason));
+  const list = (us: typeof r.unread) => {
+    const n = us.reduce((k, u) => k + u.copies, 0);
+    const names = us
       .slice(0, 3)
       .map((u) => u.name)
       .join(', ');
-    lines.push(`The test pilot cannot use ${r.unreadCopies} of the cards (${names}${r.unread.length > 3 ? ', …' : ''}), so they count as blanks`);
+    return { n, names: `${names}${us.length > 3 ? ', …' : ''}` };
+  };
+  if (solo.length) {
+    const { n, names } = list(solo);
+    lines.push(`${n} ${n === 1 ? 'card needs' : 'cards need'} an opponent to matter (${names}): with nobody across the table there is nothing to heal or disrupt, so ${n === 1 ? 'it sits' : 'they sit'} unused`);
+  }
+  if (blind.length) {
+    const { n, names } = list(blind);
+    lines.push(`The test pilot does not know how to play ${n} of the cards (${names}), so ${n === 1 ? 'it counts as a blank' : 'they count as blanks'}`);
   }
   return { value: r.meanDamagePerTurn * (0.7 + 0.3 * (1 - r.deadTurnRate)), plan: r.plan, lines, games: r.games };
 }

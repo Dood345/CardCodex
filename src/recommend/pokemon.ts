@@ -28,6 +28,7 @@ import type { CatalogCard } from '@/data/types';
 import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-rules';
 import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, ScorePart } from './types';
+import { attackRest } from './sim/effects';
 
 /* ---------- features ---------- */
 
@@ -45,6 +46,9 @@ export interface Mentions {
   species: Set<number>;
 }
 
+/** What an evolution card evolves from when the card data does not say and no other printing of the name does. */
+export const UNKNOWN_STAGE = 'an earlier stage the card data does not name';
+
 export interface AttackFeature {
   name: string;
   cost: string;
@@ -53,6 +57,14 @@ export interface AttackFeature {
   types: string[];
   damage: number;
   effect: string;
+  /** 1: its user cannot attack next turn; 2: it cannot use this attack next turn; 0: neither (sim/effects.ts). */
+  rest: 0 | 1 | 2;
+  /**
+   * Damage a turn the attack keeps up. The printed damage, except for an attack that rests its user: that
+   * one lands every other turn, with the card's next attack (at no higher cost) in between when only the
+   * attack itself is barred.
+   */
+  sustained: number;
 }
 
 export interface PokemonFeatures {
@@ -67,6 +79,8 @@ export interface PokemonFeatures {
   isBasic: boolean;
   /** Normalized name of the card this evolves from, "" when none. */
   evolvesFrom: string;
+  /** The same as printed ("Cosmoem"), for messages; UNKNOWN_STAGE when no printing of the card says. */
+  evolvesFromName: string;
   /** "Stage 1" | "Stage 2" | "" (Basic or a non-staged evolution such as VMAX). */
   stage: string;
   suffix: string;
@@ -497,6 +511,13 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
   const hpByYear = new Map<number, number[]>();
   // Printing years per name, to tell whether a card had a printing in the deck's era.
   const yearsByName = new Map<string, number[]>();
+  // What a name evolves from, as some printing says it: 143 Stage 1 and Stage 2 cards (the 30th-anniversary
+  // set, Team Magma vs Team Aqua, ...) come without it in the card data.
+  const evolvesFromByName = new Map<string, string>();
+  for (const card of index.catalog.cards) {
+    const from = card.cat === 'Pokemon' ? text.byId.get(card.id)?.text.ev : undefined;
+    if (from && !evolvesFromByName.has(normalizeText(card.name))) evolvesFromByName.set(normalizeText(card.name), from);
+  }
   for (const card of index.catalog.cards) {
     const year = yearOf(card);
     if (!year) continue;
@@ -542,9 +563,18 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       types: costTypes(a.c),
       damage: damageValue(a.d),
       effect: a.e ?? '',
+      rest: attackRest(a.e ?? ''),
+      sustained: damageValue(a.d),
     }));
+    for (const a of attacks) {
+      if (!a.rest || a.damage <= 0) continue;
+      let other = 0;
+      if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.damage);
+      a.sustained = (a.damage + other) / 2;
+    }
+    // The best attack is the one that does the most turn after turn, not the biggest number on the card.
     let best: AttackFeature | undefined;
-    for (const a of attacks) if (a.damage > 0 && (!best || a.damage > best.damage)) best = a;
+    for (const a of attacks) if (a.damage > 0 && (!best || a.sustained > best.sustained)) best = a;
     const roleTexts = [...(t?.b ?? []).map((b) => b.e), t?.fx ?? ''];
     const roles = new Set<Role>();
     for (const [role, re] of ROLE_RULES) if (roleTexts.some((x) => re.test(x))) roles.add(role);
@@ -554,14 +584,20 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     const energy = card.cat === 'Energy' && !isBasicEnergy(card) ? (parseEnergyText(t?.fx ?? '') ?? undefined) : undefined;
     let nameMax = Infinity;
     for (const rule of NAME_LIMITS) nameMax = Math.min(nameMax, rule.max(card, t) ?? Infinity);
+    // A Stage 1 or Stage 2 whose printing does not say what it evolves from takes it from another printing of
+    // the name. One that no printing places is still an evolution, with an earlier stage nobody can supply:
+    // never a Basic (a deck of four such Stage 2 "Basics" scored well and could not put one into play).
+    const evolution = isPokemon && (card.stage === 'Stage1' || card.stage === 'Stage2');
+    const from = t?.ev ?? (evolution ? (evolvesFromByName.get(normalizeText(card.name)) ?? UNKNOWN_STAGE) : '');
     f = {
       card,
       text: t,
       key: normalizeText(card.name),
       year: yearOf(card),
       isPokemon,
-      isBasic: isPokemon && !t?.ev,
-      evolvesFrom: t?.ev ? normalizeText(t.ev) : '',
+      isBasic: isPokemon && !from,
+      evolvesFrom: from ? normalizeText(from) : '',
+      evolvesFromName: from,
       stage: card.stage === 'Stage1' ? 'Stage 1' : card.stage === 'Stage2' ? 'Stage 2' : '',
       suffix: m ? (m[2] ?? m[4] ?? 'Radiant') : '',
       types: (card.types ?? []).map((x) => COST_LETTERS[x]).filter(Boolean),
@@ -681,7 +717,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
           pre += Math.min(rareCandy, basic);
         }
         const r = pre ? Math.min(1, pre / l.qty) : 0;
-        if (!pre) missing.push(`${l.card.name} (needs ${l.f.text?.ev})`);
+        if (!pre) missing.push(`${l.card.name} (needs ${l.f.evolvesFromName})`);
         else if (r < 1) thin.push(`${l.card.name} ${l.qty} on ${pre}`);
         sum += r * l.qty;
         w += l.qty;
@@ -703,15 +739,18 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     const energyCount = energyLines.reduce((n, l) => n + l.qty, 0);
     // Basic Energy covers a type outright. A Special Energy covers it for the attackers its text lets it
     // provide to (energyCredit): fully when the text says so, half where a condition could not be read.
-    const basicProvided = new Set<string>();
+    // One or two Basic Energy of a type do not power an attacker that asks for it: the type counts in full
+    // from three copies (a deck built on Psychic Energy with a single Metal Energy once passed for covering
+    // four Pokemon with Metal attacks, which then never attacked in practice games).
+    const basicCount = new Map<string, number>();
     const specials: EnergyRule[] = [];
     for (const l of energyLines) {
-      if (l.f.isBasicEnergy) for (const ch of l.f.provides) basicProvided.add(ch);
+      if (l.f.isBasicEnergy) for (const ch of l.f.provides) basicCount.set(ch, (basicCount.get(ch) ?? 0) + l.qty);
       else if (l.f.energy) specials.push(l.f.energy);
     }
     const creditFor = (a: PokemonFeatures, t: string): number => {
-      if (basicProvided.has(t)) return 1;
-      let best = 0;
+      let best = Math.min(1, (basicCount.get(t) ?? 0) / 3);
+      if (best >= 1) return 1;
       for (const rule of specials) best = Math.max(best, energyCredit(rule, a, t));
       return best;
     };
@@ -803,13 +842,20 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     // power
     let top = 0;
     let topName = '';
+    let topCostN = 0;
     const era = ctx.eraMin ? eraHp(ctx.eraMin, ctx.eraMax) : 120;
     for (const l of attackers) {
       // Full credit at three copies: with fewer the attacker is too often prized or not found in time (playtest).
-      const d = l.f.best!.damage * Math.min(1, l.qty / 3);
-      if (d > top) {
+      // Copies count by name, over the printings that hit at least as hard: two printings of one Pokemon are
+      // two copies of the attacker, not two attackers of one copy each.
+      let copies = 0;
+      for (const o of attackers) if (o.f.key === l.f.key && o.f.best!.sustained >= l.f.best!.sustained) copies += o.qty;
+      const d = l.f.best!.sustained * Math.min(1, copies / 3);
+      // On a tie the cheaper attack is the one a deck plays toward.
+      if (d > top || (d === top && d > 0 && l.f.best!.costN < topCostN)) {
         top = d;
-        topName = `${l.card.name}'s ${l.f.best!.name}`;
+        topCostN = l.f.best!.costN;
+        topName = `${l.card.name}'s ${l.f.best!.name}${l.f.best!.rest ? ' (every other turn)' : ''}`;
       }
     }
     parts.push(part('power', 'Power', attackers.length ? top / (0.75 * era) : 0, attackers.length ? `${topName} for ${Math.round(top)} against ${era} HP Pokémon of the era` : 'No attacks'));

@@ -10,7 +10,9 @@
  * (Pokémon with stage/type/HP limits, Trainer subtypes, Energy, any card) to
  * the hand, the Bench or attached, attaching Energy from the hand or discard
  * pile, getting Energy back from the discard pile, switching the Active
- * Pokémon, Rare Candy, a discard cost ("only if you discard 2 other cards"),
+ * Pokémon, Rare Candy, looking at the top cards of the deck for a kind of card
+ * (Great Ball, Pokégear 3.0, Bill's Transfer), searching for cards to put on
+ * top of the deck, a discard cost ("only if you discard 2 other cards"),
  * one coin flip ("Flip a coin. If heads, …"), and for Abilities when they
  * trigger. Anything else leaves the card unread; the report counts those.
  */
@@ -34,7 +36,10 @@ export type Effect =
   | { k: 'discardHandDraw'; n: number }
   /** Hand shuffled into the deck (or put on its bottom), then draw n; n = -1: one per remaining Prize card. */
   | { k: 'shuffleHandDraw'; n: number; bottom: boolean }
-  | { k: 'search'; n: number; f: CardFilter; to: 'hand' | 'bench' | 'attach'; target?: AttachTarget }
+  /** `top`: only the top cards of the deck are looked at (Great Ball: the top 7), and the rest is shuffled back. */
+  | { k: 'search'; n: number; f: CardFilter; to: 'hand' | 'bench' | 'attach'; target?: AttachTarget; top?: number }
+  /** Search the deck for n cards and put them on top of it (Ciphermaniac's Codebreaking). */
+  | { k: 'stack'; n: number }
   | { k: 'attach'; n: number; from: 'discard' | 'hand'; f: CardFilter; target: AttachTarget }
   | { k: 'recover'; n: number; f: CardFilter }
   | { k: 'switch' }
@@ -116,6 +121,8 @@ const RE_DISCARD_DRAW = /discard your hand and draw (\d+) cards/i;
 const RE_DRAW_UNTIL = /draw cards until you have (\d+) cards in your hand/i;
 const RE_DRAW = /(^|[^a-z])(opponent )?draws? (up to )?(\d+|a|an|one|two|three|four|five|six|seven) cards?\b/gi;
 const RE_SEARCH = /search your deck for ([^.]*?)(?:,? (?:reveal|show) (?:it|them)(?: to your opponent)?,?)? and (put (?:it|them) (?:into your hand|onto your Bench)|attach (?:it|them) to ([^.]*))/gi;
+const RE_LOOK = /Look at the top (\d+) cards of your deck\. You may reveal (a|an|up to \d+|any number of) ([^.]*?) you find there,? and put (?:it|them) into your hand/gi;
+const RE_STACK = /Search your deck for (\d+|a|an|up to \d+) cards?, shuffle your deck, then put (?:those cards|that card|it) on top of it/i;
 const RE_ATTACH = /attach (a|an|\d+|up to \d+) ((?:Basic )?(?:[A-Z][a-z]+ )?)Energy cards? from (?:your|their) (discard pile|hand) to ([^.]*)/gi;
 const RE_RECOVER = /put (a|an|\d+|up to \d+) ((?:Basic )?(?:[A-Z][a-z]+ )?)Energy cards? from your discard pile into your hand/i;
 const RE_SWITCH = /switch your Active Pokémon with 1 of your Benched Pokémon|switch this Pokémon with 1 of your Benched Pokémon/i;
@@ -170,6 +177,12 @@ export function parseText(raw: string): ParsedText {
       ef.push({ at: s.index ?? 0, e: { k: 'search', n: countOf(p), f, to, target: to === 'attach' ? parseTarget(s[3] ?? '') : undefined } });
     }
   }
+  for (const l of t.matchAll(RE_LOOK)) {
+    const f = parseFilter(l[3]);
+    if (!f) continue;
+    ef.push({ at: l.index ?? 0, e: { k: 'search', n: /any number/i.test(l[2]) ? 99 : countOf(l[2]), f, to: 'hand', top: Number(l[1]) } });
+  }
+  if ((m = RE_STACK.exec(t))) ef.push({ at: m.index, e: { k: 'stack', n: countOf(m[1]) } });
   for (const a of t.matchAll(RE_ATTACH)) {
     const f = parseFilter(`${a[2]}Energy`) ?? { k: 'energy' };
     ef.push({ at: a.index ?? 0, e: { k: 'attach', n: countOf(a[1]), from: a[3] === 'hand' ? 'hand' : 'discard', f, target: parseTarget(a[4]) } });
@@ -181,6 +194,20 @@ export function parseText(raw: string): ParsedText {
   out.effects = ef.map((x) => x.e);
   if (!out.effects.length) out.unread = 'other';
   return out;
+}
+
+/**
+ * What an attack costs its user on the next turn: 1 when the Pokémon cannot
+ * attack at all ("During your next turn, this Pokémon can't attack"), 2 when
+ * it cannot use that attack again, 0 when neither. A rest that hangs on a
+ * coin flip is not counted.
+ */
+export function attackRest(effect: string): 0 | 1 | 2 {
+  const m = /During your next turn, this Pokémon can't (attack|use attacks|use [^.]+)|This Pokémon can't (attack|use attacks|use [^.]+?) during your next turn/i.exec(effect);
+  if (!m) return 0;
+  if (/If (?:tails|heads),[^.]*$/i.test(effect.slice(0, m.index))) return 0;
+  const what = (m[1] ?? m[2]).toLowerCase();
+  return what === 'attack' || what === 'use attacks' ? 1 : 2;
 }
 
 export type AbilityTrigger = 'evolve' | 'bench' | 'turn' | 'repeat' | 'passive';

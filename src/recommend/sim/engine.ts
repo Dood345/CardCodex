@@ -27,6 +27,10 @@ export interface Mon {
   entered: number;
   /** Own turn its once-per-turn Ability was last used. */
   abilityTurn: number;
+  /** Own turn during which its last attack bars it from attacking (0: none); lifted when it leaves the Active Spot. */
+  restTurn: number;
+  /** The one attack barred during `restTurn`, "" for all of them. */
+  restAtk: string;
 }
 
 export interface Player {
@@ -123,7 +127,7 @@ function draw(p: Player, n: number): number {
 }
 
 function newMon(c: SimCard, turn: number): Mon {
-  return { c, under: [], energy: [], dmg: 0, entered: turn, abilityTurn: -1 };
+  return { c, under: [], energy: [], dmg: 0, entered: turn, abilityTurn: -1, restTurn: 0, restAtk: '' };
 }
 
 function* inPlay(p: Player): Generator<Mon> {
@@ -240,10 +244,15 @@ function energyNeed(p: Player, without: SimCard | null = null): string {
   return missing(plan.attack.cost, pool);
 }
 
+/** Barred this turn by the attack `m` used on its last one ("During your next turn, this Pokémon can't attack"). */
+function resting(p: Player, m: Mon, atk: SimAttack): boolean {
+  return m.restTurn === p.turn && (!m.restAtk || m.restAtk === atk.name);
+}
+
 /** Can `m` use the plan's attack right now? */
 function mainReady(p: Player, m: Mon): boolean {
   const plan = p.d.plan;
-  return !!plan && m.c.key === plan.attacker && missing(plan.attack.cost, m.energy) === '';
+  return !!plan && m.c.key === plan.attacker && !resting(p, m, plan.attack) && missing(plan.attack.cost, m.energy) === '';
 }
 
 function bestPayable(m: Mon): SimAttack | null {
@@ -334,7 +343,8 @@ export function want(p: Player, c: SimCard, inHand = false, shallow = false): nu
     if (e.k === 'search' && e.to !== 'attach') {
       if (e.to === 'bench' && p.bench.length >= p.benchSize) continue;
       const j = bestInDeck(p, e.f, e.to, null, 0, true);
-      if (j >= 0) v = Math.max(v, 0.9 * want(p, cardOf(p, p.deck[j]), false, true) * (c.fx.discardCost ? 0.8 : 1));
+      // A look at the top few cards finds the card less often than a search of the whole deck.
+      if (j >= 0) v = Math.max(v, 0.9 * want(p, cardOf(p, p.deck[j]), false, true) * (c.fx.discardCost ? 0.8 : 1) * (e.top ? 0.6 : 1));
     } else if (e.k === 'draw' || e.k === 'attach' || (e.k === 'search' && e.to === 'attach')) v = Math.max(v, 35);
   }
   return v;
@@ -396,10 +406,11 @@ function energyTarget(p: Player, e: SimCard, targets: Mon[]): Mon | null {
 }
 
 /** Most wanted card in the deck matching the effect, as an index into the deck, or -1. */
-function bestInDeck(p: Player, f: CardFilter, to: 'hand' | 'bench' | 'attach', targets: Mon[] | null, minWant: number, shallow = false): number {
+function bestInDeck(p: Player, f: CardFilter, to: 'hand' | 'bench' | 'attach', targets: Mon[] | null, minWant: number, shallow = false, top = 0): number {
   let best = -1;
   let bestW = minWant;
-  for (let j = 0; j < p.deck.length; j++) {
+  // The top of the deck is the end of the array.
+  for (let j = top > 0 ? Math.max(0, p.deck.length - top) : 0; j < p.deck.length; j++) {
     const c = cardOf(p, p.deck[j]);
     if (!matches(c, f)) continue;
     if (to === 'bench' && !c.basic) continue;
@@ -419,7 +430,8 @@ function search(g: Game, p: Player, e: Extract<Effect, { k: 'search' }>, self: M
   for (let k = 0; k < e.n; k++) {
     if (e.to === 'bench' && p.bench.length >= g.rules.benchSize) break;
     const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, self) : null;
-    const j = bestInDeck(p, e.f, e.to, targets, e.to === 'bench' ? 2 : 1);
+    if (e.top && e.top - got <= 0) break;
+    const j = bestInDeck(p, e.f, e.to, targets, e.to === 'bench' ? 2 : 1, false, e.top ? e.top - got : 0);
     if (j < 0) break;
     const i = p.deck[j];
     p.deck.splice(j, 1);
@@ -489,6 +501,8 @@ function switchTarget(p: Player, o: Player | null): Mon | null {
 function swapActive(p: Player, m: Mon): void {
   const at = p.bench.indexOf(m);
   if (at < 0 || !p.active) return;
+  // Effects of its own attack leave a Pokémon that goes to the Bench.
+  p.active.restTurn = 0;
   p.bench[at] = p.active;
   p.active = m;
 }
@@ -504,6 +518,29 @@ function shuffleHandDraw(p: Player, n: number, bottom: boolean): void {
   }
   p.hand.length = 0;
   draw(p, count);
+}
+
+/** The `n` most wanted cards of the deck, each of a different name, put on top of it: the most wanted is drawn first. */
+function stack(p: Player, n: number): void {
+  const picked: number[] = [];
+  for (let k = 0; k < n; k++) {
+    let at = -1;
+    let w = 1;
+    for (let j = 0; j < p.deck.length; j++) {
+      const c = cardOf(p, p.deck[j]);
+      if (picked.some((i) => cardOf(p, i).key === c.key)) continue;
+      const v = want(p, c);
+      if (v > w) {
+        w = v;
+        at = j;
+      }
+    }
+    if (at < 0) break;
+    picked.push(p.deck[at]);
+    p.deck.splice(at, 1);
+  }
+  shuffleInPlace(p.deck, p.rng);
+  for (let k = picked.length - 1; k >= 0; k--) p.deck.push(picked[k]);
 }
 
 function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon | null): void {
@@ -532,6 +569,9 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         break;
       case 'recover':
         recover(p, e);
+        break;
+      case 'stack':
+        stack(p, e.n);
         break;
       case 'switch': {
         const m = switchTarget(p, o);
@@ -573,6 +613,9 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
       case 'recover':
         if ((energyNeed(p) || retreatBlocked(p)) && p.discard.some((i) => matches(cardOf(p, i), e.f))) return true;
         break;
+      case 'stack':
+        if (p.deck.length > DECK_RESERVE && bestInDeck(p, { k: 'any' }, 'hand', null, 40) >= 0) return true;
+        break;
       case 'switch':
         if (switchTarget(p, o)) return true;
         break;
@@ -607,6 +650,10 @@ function supporterValue(g: Game, p: Player, o: Player | null, fx: ParsedText): n
       const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, null) : null;
       const j = bestInDeck(p, e.f, e.to, targets, 5);
       if (j >= 0) v += (e.to === 'attach' ? 50 : want(p, cardOf(p, p.deck[j]))) / 25 + 0.5 * (e.n - 1);
+    } else if (e.k === 'stack') {
+      // The card arrives with the next draw, not now: worth about half a search.
+      const j = bestInDeck(p, { k: 'any' }, 'hand', null, 40);
+      if (j >= 0) v += want(p, cardOf(p, p.deck[j])) / 50 + 0.3 * (e.n - 1);
     } else if (e.k === 'switch') v += switchTarget(p, o) ? 2 : 0;
     else if (e.k === 'attach' || e.k === 'recover') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 * e.n : 0;
     else v += drawValue(p, e);
@@ -1016,7 +1063,7 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   let bestD = 0;
   let setupAtk: SimAttack | null = null;
   for (const atk of a.c.attacks) {
-    if (missing(atk.cost, a.energy) !== '') continue;
+    if (resting(p, a, atk) || missing(atk.cost, a.energy) !== '') continue;
     if (atk.damage > 0) {
       const d = damageAgainst(a, def, atk.damage);
       if (d > bestD) {
@@ -1030,6 +1077,10 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   if (!use) return 0;
   g.trace?.(`attack ${use.name}`);
   if (use.fx?.effects.length) runEffects(g, p, o, use.fx, a);
+  if (use.rest) {
+    a.restTurn = p.turn + 1;
+    a.restAtk = use.rest === 1 ? '' : use.name;
+  }
   if (use.damage <= 0) return 0;
   const d = def ? bestD : use.damage;
   if (p.turn <= p.damage.length) p.damage[p.turn - 1] += d;

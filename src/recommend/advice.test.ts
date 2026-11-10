@@ -1,6 +1,7 @@
 /** What the deck screens ask of the recommender, on the real Pokémon catalog and card text. */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { normalizeText } from '@/data/normalize';
 import { buildIndex } from '@/data/catalog';
 import type { Deck, DeckCard } from '@/data/db';
 import type { Catalog, CatalogCard, SpeciesFile } from '@/data/types';
@@ -108,6 +109,11 @@ describe('advice for the deck screens', () => {
     const names = new Set(second.cards.map((l) => ev.card(l.cardId)!.name));
     expect(names.has(seed.name)).toBe(true);
     for (const n of avoid) expect(names.has(n), n).toBe(false);
+    // The seed is a Stage 2: the second deck still holds the line it stands on.
+    const f = ev.features(seed);
+    expect(f.evolvesFrom).not.toBe('');
+    expect([...names].some((n) => normalizeText(n) === f.evolvesFrom) || names.has('Rare Candy')).toBe(true);
+    expect(avoid.has(f.evolvesFromName)).toBe(false);
   });
 
   it('offers distinct cards to start from', () => {

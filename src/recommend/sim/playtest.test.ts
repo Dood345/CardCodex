@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 import type { DeckCard } from '@/data/db';
 import { mulliganChance } from '../pokemon';
 import { compileDeck } from './cards';
-import { parseText } from './effects';
+import { pokemonPlaytest } from '../pokemon-play';
+import { attackRest, parseText } from './effects';
+import { attack, mainPhase, newPlayer, type Game, type Mon, type Player } from './engine';
 import { BLANK, CHARIZARD, deck, loadEvaluator, randomPile, withBlanks } from './fixtures';
 import { compiledDeck, playtest } from './playtest';
 import { dealOpening, drawNext } from './practice';
@@ -208,5 +210,176 @@ describe('practice draw', () => {
     const deals = [1, 2, 3, 4, 5, 6, 7, 8].map((s) => dealOpening(ev, few, s));
     expect(deals.some((d) => d.mulligans.length > 0)).toBe(true);
     for (const d of deals) expect(d.hand).toContain('sv04.5-007');
+  });
+});
+
+/**
+ * A deck of thin lines whose biggest number is an attack that rests its user,
+ * with the Trainers that look at the top of the deck: what a first home-made
+ * deck looks like (reported 2026-11-09: "plays toward Umbreon" although its
+ * attack lands every other turn, and six cards counted as blanks).
+ */
+const THIN: [string, number][] = [
+  ['sv03-130', 2], // Umbreon: Pitch-Black Blade 140, "During your next turn, this Pokémon can't attack."
+  ['swsh10.5-054', 2], // Eevee
+  ['sv08.5-002', 2], // Exeggutor: Solar Beam 130
+  ['sv08.5-001', 2], // Exeggcute
+  ['swsh12-015', 1], // Chesnaught V: Touchdown 130, one copy
+  ['swsh1-164', 2], // Great Ball
+  ['sv01-186', 1], // Pokégear 3.0
+  ['sv03.5-156', 1], // Bill's Transfer
+  ['sv08.5-104', 1], // Ciphermaniac's Codebreaking
+  ['swsh1-177', 1], // Potion
+  ['swsh1-165', 4], // Hop
+  ['sve-009', 21], // Grass Energy
+  ['sve-007', 20], // Darkness Energy
+];
+
+describe('attacks that rest their user', () => {
+  const thin = deck(THIN);
+  const d = compileDeck(ev, thin);
+
+  it('reads the rest from the attack text, and leaves coin flips and the opponent\'s turn alone', () => {
+    expect(attackRest("During your next turn, this Pokémon can't attack.")).toBe(1);
+    expect(attackRest("This Pokémon can't attack during your next turn.")).toBe(1);
+    expect(attackRest("During your next turn, this Pokémon can't use attacks.")).toBe(1);
+    expect(attackRest("During your next turn, this Pokémon can't use Slashing Strike.")).toBe(2);
+    expect(attackRest("Does 30 damage times the amount of Grass Energy attached to this Pokémon. This Pokémon can't use Hundred Furious Lashes during your next turn.")).toBe(2);
+    expect(attackRest("Flip a coin. If tails, during your next turn, this Pokémon can't attack.")).toBe(0);
+    expect(attackRest("During your opponent's next turn, the Defending Pokémon can't retreat.")).toBe(0);
+    expect(attackRest('')).toBe(0);
+  });
+
+  it('values such an attack at what it keeps up, in the features and in the score', () => {
+    const umbreon = ev.features(index.cardsById.get('sv03-130')!);
+    expect(umbreon.best).toMatchObject({ name: 'Pitch-Black Blade', damage: 140, rest: 1, sustained: 70 });
+    expect(ev.features(index.cardsById.get('sv08.5-002')!).best).toMatchObject({ name: 'Solar Beam', rest: 0, sustained: 130 });
+    const power = ev.score(thin).parts.find((p) => p.id === 'power')!;
+    expect(power.detail).not.toMatch(/Umbreon/);
+    // Two printings of Exeggutor are two copies of one attacker: the Power line names the deck's plan.
+    const split = ev.score(deck([...THIN.filter(([id]) => id !== 'sv08.5-002'), ['sv08.5-002', 1], ['swsh9-002', 1]])).parts.find((p) => p.id === 'power')!;
+    expect(split.detail).toMatch(/^Exeggutor's Solar Beam for /);
+    expect(split.score).toBeCloseTo(power.score, 5);
+  });
+
+  it('plays toward the attack that lands every turn, not the bigger one that lands every other turn', () => {
+    expect(d.plan?.attackerName).toBe('Exeggutor');
+    expect(d.plan?.detail).toBe("Exeggutor's Solar Beam (GGC, 130)");
+    // One copy of a Pokémon V is not a plan: the deck finds it too seldom.
+    expect(d.plan?.attackerName).not.toBe('Chesnaught V');
+    expect(compileDeck(ev, thin, 'umbreon').plan?.detail).toBe("Umbreon's Pitch-Black Blade (DCC, 140, every other turn)");
+  });
+
+  it('keeps a rested Pokémon from attacking on its next turn, and lets it attack on the one after', () => {
+    const du = compileDeck(ev, thin, 'umbreon');
+    const card = (name: string) => du.cards.find((c) => c.name === name)!;
+    const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' };
+    const p: Player = newPlayer(du, 1, false, 6, 5);
+    const dark = card('Darkness Energy');
+    const active: Mon = { c: card('Umbreon'), under: [], energy: [dark, dark, dark], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '' };
+    p.active = active;
+    p.turn = 2;
+    expect(attack(g, p, null)).toBe(140);
+    p.turn = 3;
+    expect(attack(g, p, null)).toBe(0);
+    p.turn = 4;
+    expect(attack(g, p, null)).toBe(140);
+    expect(p.damage.slice(1, 4)).toEqual([140, 0, 140]);
+  });
+});
+
+describe('Trainers that look at the top of the deck', () => {
+  const thin = deck(THIN);
+  const du = compileDeck(ev, thin, 'umbreon');
+  const card = (name: string) => du.cards.find((c) => c.name === name)!;
+  const table = (hand: string[], library: string[]): { g: Game; p: Player } => {
+    const g: Game = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '' };
+    const p = newPlayer(du, 1, false, 6, 5);
+    p.turn = 2;
+    p.active = { c: card('Eevee'), under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '' };
+    p.hand = hand.map((n) => card(n).i);
+    // The top of the deck is the end of the list.
+    p.deck = library.map((n) => card(n).i);
+    return { g, p };
+  };
+  const grass = (n: number) => new Array<string>(n).fill('Grass Energy');
+
+  it('reads them from the card text', () => {
+    expect(card('Great Ball').fx?.effects).toMatchObject([{ k: 'search', n: 1, f: { k: 'pokemon' }, to: 'hand', top: 7 }]);
+    expect(card('Pokégear 3.0').fx?.effects).toMatchObject([{ k: 'search', n: 1, f: { k: 'trainer', tt: 'Supporter' }, to: 'hand', top: 7 }]);
+    expect(card("Bill's Transfer").fx?.effects).toMatchObject([{ k: 'search', n: 99, f: { k: 'pokemon' }, to: 'hand', top: 8 }]);
+    expect(card("Ciphermaniac's Codebreaking").fx?.effects).toEqual([{ k: 'stack', n: 2 }]);
+    // Potion heals, and nothing is hurt in a game against nobody: the only card left out.
+    expect(du.unread).toEqual([{ id: 'swsh1-177', name: 'Potion', copies: 1, reason: 'heal' }]);
+  });
+
+  it('finds a Pokémon among the top seven cards with Great Ball', () => {
+    const { g, p } = table(['Great Ball'], [...grass(10), 'Umbreon', ...grass(3)]);
+    mainPhase(g, p, null);
+    expect(p.active?.c.name).toBe('Umbreon');
+    expect(p.discard).toContain(card('Great Ball').i);
+    expect(p.deck.length).toBe(13);
+  });
+
+  it('misses one that lies deeper', () => {
+    const { g, p } = table(['Great Ball'], ['Umbreon', ...grass(13)]);
+    mainPhase(g, p, null);
+    expect(p.active?.c.name).toBe('Eevee');
+    expect(p.discard).toContain(card('Great Ball').i);
+    expect(p.deck).toContain(card('Umbreon').i);
+  });
+
+  it('puts the card it wants most on top of the deck with Ciphermaniac\'s Codebreaking', () => {
+    const { g, p } = table(["Ciphermaniac's Codebreaking"], ['Umbreon', ...grass(13)]);
+    mainPhase(g, p, null);
+    expect(p.discard).toContain(card("Ciphermaniac's Codebreaking").i);
+    expect(p.deck[p.deck.length - 1]).toBe(card('Umbreon').i);
+    expect(p.deck.length).toBe(14);
+  });
+
+  it('says in the report which cards sit unused and why', () => {
+    const r = pokemonPlaytest(ev, thin, { games: 60, seed: 1 });
+    expect(r.plan).toBe("Exeggutor's Solar Beam (GGC, 130)");
+    const text = r.lines.join(' | ');
+    expect(text).toMatch(/1 card needs an opponent to matter \(Potion\)/);
+    expect(text).not.toMatch(/does not know how to play/);
+    const charizard = pokemonPlaytest(ev, cards, { games: 20, seed: 1 }).lines.join(' | ');
+    expect(charizard).toMatch(/need an opponent to matter \([^)]*Boss's Orders/);
+    expect(charizard).toMatch(/The test pilot does not know how to play \d+ of the cards/);
+  });
+});
+
+describe('gaps the built decks fell into', () => {
+  it('takes what an evolution evolves from from another printing when its own does not say', () => {
+    // The 30th-anniversary Solgaleo is a Stage 2 with no "evolves from" in the card data.
+    const solgaleo = ev.features(index.cardsById.get('30th-105')!);
+    expect(solgaleo.text?.ev).toBeUndefined();
+    expect(solgaleo.isBasic).toBe(false);
+    expect(solgaleo.evolvesFromName).toBe('Cosmoem');
+    expect(solgaleo.evolvesFrom).toBe('cosmoem');
+    // No Stage 1 or Stage 2 of the catalog passes for a Basic, whether or not a printing places it.
+    let evolutions = 0;
+    for (const c of index.catalog.cards) {
+      if (c.cat !== 'Pokemon' || (c.stage !== 'Stage1' && c.stage !== 'Stage2')) continue;
+      evolutions++;
+      const f = ev.features(c);
+      expect(f.isBasic, c.id).toBe(false);
+      expect(f.evolvesFrom, c.id).not.toBe('');
+    }
+    expect(evolutions).toBeGreaterThan(5000);
+    // Four of them with nothing under them are a broken line, and the deck check says what is missing.
+    const lines = ev.score(deck([['30th-105', 4], ['sve-008', 16]])).parts.find((p) => p.id === 'lines')!;
+    expect(lines.score).toBe(0);
+    expect(lines.detail).toBe('Missing: Solgaleo (needs Cosmoem)');
+  });
+
+  it('does not take one Energy of a type for the Energy of the attackers that need it', () => {
+    // Exeggutor attacks for GGC. One Grass Energy among Darkness does not cover it; three do.
+    const energy = (grass: number) =>
+      ev.score(deck([['sv08.5-002', 4], ['sv08.5-001', 4], ['sve-009', grass], ['sve-007', 14 - grass]])).parts.find((p) => p.id === 'energy')!.score;
+    expect(energy(0)).toBeLessThan(energy(1));
+    expect(energy(1)).toBeLessThan(energy(2));
+    expect(energy(2)).toBeLessThan(energy(3));
+    expect(energy(3)).toBeLessThan(energy(14));
   });
 });

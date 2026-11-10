@@ -79,6 +79,8 @@ those from `features(card).text`.
 | Discard hand, draw | Professor's Research | discard hand, draw N |
 | Shuffle hand in, draw | Judge style | shuffle hand into deck, draw N |
 | Hand to the bottom, draw per Prize | Iono | hand to bottom, draw one per remaining Prize card |
+| Look at the top cards | Great Ball, Pokégear 3.0, Bill's Transfer | a search of the top N cards only ("a", "up to 2" or "any number of" a kind of card), the rest shuffled back; the pilot plays it when the deck holds a card it wants, without knowing whether the top N do |
+| Search to the top of the deck | Ciphermaniac's Codebreaking | the N most wanted cards, of different names, on top of the deck, the most wanted drawn first |
 | Deck search | Ultra Ball, Nest Ball, Poffin, Arven | what kind (Pokémon by Basic, stage, type, HP limit or suffix; Item, Supporter, Tool or Stadium; Energy by type and basic-ness; any card); how many; where to (hand, Bench, or attached); Arven reads as two searches |
 | Energy attachment | Magma Basin | attach from hand or discard pile, to Active, Bench, self, or Pokémon of a type |
 | Energy recovery | Energy Retrieval | discard pile to hand |
@@ -107,10 +109,22 @@ those from `features(card).text`.
 
 **Main attacker.** For each damaging attack the compiler scores:
 
-> damage × min(1, copies of the whole line / 4) × (1 if the deck's Energy can pay the typed cost, else ¼) ÷ cost^¼
+> sustained damage × min(1, copies of the whole line / 4) × (1 if the deck's Energy can pay the typed cost, else ¼) ÷ cost^¼
 
 The highest score wins. Counting copies across the whole line keeps a one-copy Radiant Charizard
 (250) behind a 3-1-3 Charizard ex line (180).
+
+**Sustained damage** is the printed damage, except for an attack that rests its user ("During your
+next turn, this Pokémon can't attack", or "can't use" the attack itself): that one lands every other
+turn, so it counts half, plus half of the card's next attack when only the attack itself is barred
+(`AttackFeature.sustained`, shared with the score's Power part). A rest that hangs on a coin flip is
+not counted. Before this, a 2-2 Umbreon line (140, every other turn) was the plan of a deck that
+also held a 2-2 Exeggutor line (130 every turn).
+
+Two other ways to count a line were measured on the tournament lists (2026-11-09, how often the plan
+names a Pokémon in the deck's archetype name, of 346 lists): all copies of the line 234, the scarcer
+of its two ends 228, the odds of drawing both ends in 14 cards 191. The last two also took the
+Basics of the old theme decks' 3-2-1 lines for their attackers. All copies stayed.
 
 **Stages a deck skips.** When a deck skips a stage (Pidgey → Pidgeot ex with no Pidgeotto, played
 off Rare Candy), the compiler looks up what the missing stage evolves from in the catalog through
@@ -247,6 +261,9 @@ opponent, then attacks.
   4. the most HP left, counting a multi-Prize Pokémon as 100 HP less per extra Prize.
 - **Choosing an attack.** The pilot picks the attack with the most damage against the defender. A
   setup attack yields to any attack that knocks out.
+- **Resting.** A Pokémon whose attack bars it from attacking next turn sits that turn out (or uses
+  another attack when only the one is barred). The bar lifts when it goes to the Bench, so with a
+  second ready attacker there the pilot switches or retreats to it.
 
 **How a game ends.**
 
@@ -284,11 +301,12 @@ discards the one in play.
 
 - **Cards whose text is not read.** The pilot never plays them. That covers gust, disruption,
   healing, recovery other than Energy, every Tool except a lent VSTAR Power, Stadiums other than
-  "once during each player's turn", conditional cards ("only if …"), multi-coin effects, and "look
-  at the top N cards".
+  "once during each player's turn", conditional cards ("only if …") and multi-coin effects. The report names them in two groups:
+  cards that need an opponent to matter (gust, disruption, healing) and cards the pilot does not
+  know how to play.
 - **Damage modifiers.** "+" and "×" damage counts its printed base. Tools, Abilities and Stadiums
-  that change damage are ignored. Attack drawbacks are ignored ("can't attack next turn", discarding
-  Energy, self-damage), as are Special Conditions.
+  that change damage are ignored. Of the attack drawbacks, "can't attack next turn" is played; discarding
+  Energy and self-damage are ignored, as are Special Conditions.
 - **Special Energy conditions.** A Special Energy provides what `features.provides` says.
 - **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
   and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This

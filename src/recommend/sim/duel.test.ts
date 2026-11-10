@@ -69,7 +69,7 @@ describe('duel', () => {
     const grass = index.catalog.cards.find((c) => c.cat === 'Pokemon' && c.set.startsWith('sv') && c.types?.length === 1 && c.types[0] === 'Grass')!;
     const fighting = index.catalog.cards.find((c) => c.cat === 'Pokemon' && c.set.startsWith('sv') && c.types?.length === 1 && c.types[0] === 'Fighting')!;
     const d = compileDeck(ev, [charizard, pidgey, grass, fighting].map((c) => ({ cardId: c.id, qty: 1 })));
-    const mon = (id: string): Mon => ({ c: d.cards.find((c) => c.card.id === id)!, under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1 });
+    const mon = (id: string): Mon => ({ c: d.cards.find((c) => c.card.id === id)!, under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: "" });
     expect(damageAgainst(mon(grass.id), mon(charizard.id), 60)).toBe(120);
     expect(damageAgainst(mon(fighting.id), mon(pidgey.id), 60)).toBe(30);
     expect(damageAgainst(mon(fighting.id), mon(pidgey.id), 20)).toBe(0);
