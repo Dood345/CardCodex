@@ -185,6 +185,107 @@ none taken). Built decks measure lower under the new pilot (attacking by turn 3 
 → 61): the decks the old score built measure 21% and 62 under it, so most of the drop is the honest
 recount of coin flips and conditions, and a little is the score now building toward scaling attacks.
 
+## Attack costs read (2026-11-10)
+
+The pilot pays what an attack's text costs its user and does to its own side (`deck-playtest.md`,
+Attack costs): Energy discarded or put back, "any amount" discarded for a Knock Out, damage to
+itself and to its own Bench, the attacker returned to the hand, optional costs paid for a Knock Out.
+Damaging attack copies followed in full: tournament lists 73.3% → 81.0%, archetypes 73.1% → 80.1%,
+theme decks 60.9% → 63.4%, the Standard pool 62.4% → 69.8%.
+
+Tournament lists hold on every judge: attacking by turn 3 50%, damage per turn 87, wins against the
+field 60%, the ladders within two points of before. Built decks measure 22% and 58 damage a turn
+(from 20% and 61): the first run with costs paid fell to 53, because the score counted a
+"discard all" attack as landing every turn and the corpus was seeded by printed damage, so it was
+built around such attackers; the sustained figure now divides by the Energy a mandatory cost takes,
+and the corpus seeds by sustained damage (`built.ts`), which changes the built decks. A typed count
+of the opponent's Energy is credited one card on the typical board (Sunflora's Redirected Sunlight
+was 180). Coverage on the tournament lists stands at Trainers 30.3%, Abilities 23.4%, Special Energy
+0%, attacks 81.0%.
+
+## Items and Supporters read (2026-11-10)
+
+The pilot follows the Trainer wordings the tournament lists lean on (`deck-playtest.md`, Card
+reading): searches narrowed by Rule Box, owner or name, "draw N instead" alternatives, both players
+shuffling, "only if" conditions, recovery from the discard pile, Energy moves, looks that keep the
+best cards, Crispin, Gwynn, healing. Ability conditions and costs ("if …, you may", "You must
+discard … in order to use this Ability") are honoured too: before, Fezandipiti ex's Flip the Script
+drew three cards every turn. Trainer copies followed in full: tournament lists 30.3% → 68.8%,
+archetypes 31.6% → 68.2%, built decks 34.1% → 63.6%, the Standard pool 14.4% → 30.1%; Abilities
+23.4% → 25.1% on the lists.
+
+| Judge, tournament lists | Before | After |
+| --- | --- | --- |
+| Attacking by turn 3 (mean) | 50% | 52% |
+| Attacking by turn 4 (mean) | 64% | 67% |
+| Damage per turn (mean) | 87 | 93 |
+| Turns with a play (mean) | 90% | 87% |
+| Beats swapped Trainers (attacking by turn 3 / damage / wins) | 81% / 75% / 55% | 87% / 85% / 69% |
+| Wins against the field, rank correlation with real win rates | 0.05 | 0.33 |
+| Wins against the field, beats pile / order | 95% / 0.81 | 92% / 0.73 |
+
+Reading Trainers is what the "swapped Trainers" ladder was waiting for: every played judge now sees a
+third of the Trainers swapped far better. Simulated wins follow real win rates for the first time
+(0.33). Turns with a play fell three points because an Ability with an unmet condition no longer
+counts as a play. The duel ladder's pile and order columns gave a little: three of the thirty-nine
+sampled lists rate at or below a random pile against the field (two before), decks whose strategy the
+pilot cannot play yet (N's Zoroark, Dhelmise, Team Rocket's Honchkrow lean on Abilities and
+discard-pile counts, the next families), and field decks that deck out in thirty-turn games against a
+pile. Playing Trainers as written made the pilot draw itself out: a flat reserve of six cards became
+one draw a turn for the Knock Outs still needed plus two, and under twenty cards it draws only into a
+hand of fewer than five; before that rule five of the thirty-nine lists lost head-to-head to their
+own random pile.
+
+## Tools and Stadiums read (2026-11-10)
+
+A Tool's or a Stadium's standing effect is applied while the card is in play (`deck-playtest.md`,
+Card reading): HP, Retreat Cost, damage, Prize cards, cards drawn when hit, Abilities or Tools
+turned off, counters on benched Basics, evolving the turn played, damage taken; Stadiums each player
+may use read like Trainers. Trainer copies followed in full: tournament lists 68.8% → 76.7%, the
+Standard pool 30.1% → 40.6%.
+
+Tournament lists: attacking by turn 3 53%, damage per turn 94, duels' beats-pile 95% and order 0.82
+(back where they were before the Trainer family). Two ladders gave within the noise of a 240-pair
+sample: damage per turn against half the Energy swapped 82% → 77%, and wins against a third of the
+Trainers swapped 69% → 54% (a random Trainer of the era is now often a Tool or Stadium the pilot can
+use). The archetypes' duel judge moved the same way on a 40-deck, one-repeat sample. Still unread
+among Trainers: gust and the opponent's hand or Energy (the duel family), Tools and Stadiums tied to
+Special Conditions or to the opponent's attacks, Tera cards (no marker in the card data), and a few
+wordings (Academy at Night, Kieran, Naveen, Salvatore).
+
+## Abilities read (2026-11-10)
+
+Activated Abilities' conditions, costs and "in this way" follow-ups are honoured, three more looks
+at the top of the deck are read, and passive Abilities are standing effects like Tools
+(`deck-playtest.md`, Abilities). Ability copies followed in full: tournament lists 25.1% → 62.6%,
+the Standard pool 21.8% → 27.9%.
+
+Tournament lists: attacking by turn 3 53% (unchanged), by turn 4 65% (68%), damage per turn 92 (94),
+turns with a play 88% (87%); the attacking-by-turn-4 ladder gave three to five points. That is the
+honest cost of two of the most played engines no longer cheating: Fezandipiti ex's Flip the Script
+(205 copies) drew three cards every turn whatever its Knock-Out clause said, and Dudunsparce (133)
+stayed on the Bench drawing three a turn instead of shuffling itself back into the deck as its text
+says. The duel judge's order and swapped-Energy and Pokémon columns rose on the archetypes. Still
+unread among Abilities: effects on the opponent's Pokémon (Cursed Blast, Adrena-Brain, gusts),
+"prevent all effects" and Bench protection (Hide 'n' Sneak, Flower Curtain: nothing in the engine
+does those yet), Festival Lead and Memory Helix, and kinds the card data does not mark (Future,
+Tera).
+
+## Special Energy read (2026-11-10)
+
+A Special Energy's rule (what it provides, to whom, when more, how many at a time) is resolved
+against the deck's Pokémon and applied by the engine; its other sentences are read like a Tool's or
+as an effect on attaching (`deck-playtest.md`, Special Energy). Before, a Special Energy provided its
+widest reading to every holder (Neo Upper Energy was any type on anything). Special Energy copies
+followed in full: tournament lists 0% → 74.4%, the Standard pool 0% → 72.2%.
+
+Tournament lists: the swapped-Energy ladder is what moved, because random Special Energy of the era
+now shows for what it is: damage per turn beats half the Energy swapped 74% → 86%, attacking by turn
+4 73% → 80%, wins against the field 80% → 87%; the other columns held or rose a point or two. Still
+unread: Mist and Rocky Fighting Energy (prevent effects of attacks), Bubbly Water and Therapeutic
+Energy (Special Conditions), Reversal Energy (a condition on Prize cards). Coverage on the
+tournament lists stands at Trainers 76.8%, Abilities 62.6%, Special Energy 74.4%, attacks 81.1%.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

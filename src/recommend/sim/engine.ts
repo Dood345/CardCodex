@@ -13,7 +13,7 @@
  * State is mutated in place for speed; a game is reproduced from its seed.
  */
 import type { CompiledDeck, SimAttack, SimCard } from './cards';
-import { cardMatches, energyMatches, expectedDamage, expectedHeads, pokeMatches, type Cond, type Count, type DamageMod, type DamageView } from './damage';
+import { cardMatches, energyMatches, expectedDamage, expectedHeads, pokeMatches, type Cond, type Count, type DamageMod, type DamageView, type StaticEffect } from './damage';
 import type { AttachTarget, CardFilter, Effect, ParsedAbility, ParsedText } from './effects';
 import { Rng, shuffleInPlace } from './rng';
 import type { PokemonRuleSet } from './rules';
@@ -34,6 +34,8 @@ export interface Mon {
   restAtk: string;
   /** Own turn it last moved from the Bench to the Active Spot by a retreat or switch (0: never). */
   movedTurn: number;
+  /** The Pokémon Tool attached (its card is also in `under`, to be discarded with the Pokémon). */
+  tool?: SimCard | null;
 }
 
 export interface Player {
@@ -68,10 +70,23 @@ export interface Player {
   damage: number[];
   deadTurns: number;
   unreadDraws: number;
+  /** Table indices of cards that reached the hand, and of Trainers played, this game. */
+  held: Set<number>;
+  played: Set<number>;
   taken: number;
   /** Own turn before which one of this player's Pokémon was Knocked Out by an attack (0: none), and its name. */
   koBefore: number;
   koName: string;
+  /** During an attack: cards its own text discarded "in this way", and whether its optional cost was paid. */
+  attackDiscarded: number;
+  attackPaid: boolean;
+  /** Boomerang Energy the attack's own text discarded, to come back after it. */
+  boomerangs: SimCard[];
+  /** Once-per-game effects already spent, by card name (Legacy Energy's Prize card). */
+  onceUsed: Set<string>;
+  /** The game this player sits at (set by setup and each turn), for the Stadium in play, and the opponent when there is one. */
+  game?: Game;
+  opp?: Player | null;
 }
 
 export interface Game {
@@ -114,15 +129,28 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
     deadTurns: 0,
     unreadDraws: 0,
     taken: 0,
+    held: new Set(),
+    played: new Set(),
     koBefore: 0,
     koName: '',
+    attackDiscarded: 0,
+    attackPaid: false,
+    boomerangs: [],
+    onceUsed: new Set(),
   };
 }
 
 const cardOf = (p: Player, i: number) => p.d.cards[i];
 
-/** Draw effects are passed up when they would leave fewer cards than this in the deck. */
-const DECK_RESERVE = 6;
+/**
+ * Draw effects are passed up when they would leave fewer cards than this in the deck: one draw a turn for
+ * the Knock Outs still needed (a Prize card each) and two more, never under six. Decking out loses, and a
+ * game that drags on (nothing across the table to Knock Out) is where a pilot that draws every turn loses.
+ */
+const reserve = (p: Player) => Math.max(6, p.prizes.length + 2);
+/** The deck is getting thin: from here on the pilot draws only into a hand of fewer than five cards. */
+const thin = (p: Player) => p.deck.length < 20;
+const glutted = (p: Player) => thin(p) && p.hand.length >= 5;
 
 function draw(p: Player, n: number): number {
   let k = 0;
@@ -130,6 +158,7 @@ function draw(p: Player, n: number): number {
     const i = p.deck.pop()!;
     p.hand.push(i);
     if (p.d.cards[i].unread) p.unreadDraws++;
+    p.held.add(i);
   }
   return k;
 }
@@ -137,6 +166,157 @@ function draw(p: Player, n: number): number {
 function newMon(c: SimCard, turn: number): Mon {
   return { c, under: [], energy: [], dmg: 0, entered: turn, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
 }
+
+/* ---------- Tools and Stadiums in play ---------- */
+
+const stadiumOf = (p: Player): SimCard | null => p.game?.stadium?.c ?? null;
+
+const reaches = (x: StaticEffect, m: Mon) => !('t' in x) || !x.t || pokeMatches(m.c, x.t);
+
+/**
+ * The static effects that reach `m` on `p`'s side: its Tool's (unless a Stadium turns Tools off),
+ * the Stadium's that name its kind, and the passive Abilities of `p`'s Pokémon in play (their own
+ * when the scope is the holder, their side's when "your Pokémon"); `from` adds the opponent's
+ * Abilities that reach across the table ("each of your opponent's Dragon Pokémon").
+ */
+function statics(p: Player, m: Mon, from: Player | null = null): StaticEffect[] {
+  const st = stadiumOf(p)?.fx?.statics ?? [];
+  const out: StaticEffect[] = [];
+  if (!st.some((x) => x.k === 'noTools')) for (const x of m.tool?.fx?.statics ?? []) if (reaches(x, m)) out.push(x);
+  for (const e of m.energy) for (const x of e.fx?.statics ?? []) if (reaches(x, m)) out.push(x);
+  for (const x of st) if (reaches(x, m)) out.push(x);
+  for (const holder of inPlay(p)) {
+    for (const ab of holder.c.abilities) {
+      if (ab.trigger !== 'passive' || !ab.fx.statics?.length || abilitiesOff(p, holder, true)) continue;
+      for (const x of ab.fx.statics) {
+        if (x.activeOnly && holder !== p.active) continue;
+        const scope = x.scope ?? 'self';
+        if (scope === 'opponent') continue;
+        if (scope === 'self' ? holder === m : reaches(x, m)) out.push(x);
+      }
+    }
+  }
+  if (from) for (const holder of inPlay(from)) for (const ab of holder.c.abilities) {
+    if (ab.trigger !== 'passive' || !ab.fx.statics?.length) continue;
+    for (const x of ab.fx.statics) if (x.scope === 'opponent' && (!x.activeOnly || holder === from.active) && reaches(x, m)) out.push(x);
+  }
+  return out;
+}
+
+/** The Energy on `m` as its attacks may spend it: a type an Ability doubles counts twice (Wild Growth). */
+function energyOf(p: Player, m: Mon): EnergyLike[] {
+  const doubled = statics(p, m).filter((x) => x.k === 'energyDouble');
+  const out: EnergyLike[] = [];
+  for (const e of m.energy) {
+    const pr = providesFor(e, m.c);
+    for (let k = 0; k < pr.amount; k++) out.push({ provides: pr.letters, basicEnergy: e.basicEnergy });
+    if (e.basicEnergy && doubled.some((x) => x.k === 'energyDouble' && e.provides === x.type)) out.push(e);
+  }
+  return out;
+}
+
+/** What an Energy card provides on a given holder: a Special Energy's rule may give more to some Pokémon (Neo Upper on a Stage 2) and more than one at a time. */
+function providesFor(e: SimCard, holder: SimCard): { letters: string; amount: number } {
+  if (!e.energy) return { letters: e.provides, amount: 1 };
+  if (e.energy.onlyKeys && !e.energy.onlyKeys.has(holder.key)) return { letters: '', amount: 0 };
+  for (const u of e.energy.upgrades) if (u.keys.has(holder.key)) return { letters: u.types, amount: u.amount };
+  return { letters: e.provides, amount: e.energy.amount };
+}
+
+/** May this Energy card go onto this Pokémon at all? ("This card can only be attached to a Team Rocket's Pokémon.") */
+const attachable = (e: SimCard, holder: SimCard) => !e.energy?.onlyKeys || e.energy.onlyKeys.has(holder.key);
+
+/** The Pokémon's HP with its Tool and the Stadium (Hero's Cape, Gravity Mountain). */
+export function maxHp(p: Player, m: Mon): number {
+  let hp = m.c.hp;
+  for (const x of statics(p, m)) if (x.k === 'hp') hp += x.delta;
+  return Math.max(10, hp);
+}
+
+/** The Retreat Cost with its Tool and the Stadium (Air Balloon, N's Castle, Rescue Board). */
+export function retreatCost(p: Player, m: Mon): number {
+  let r = m.c.retreat;
+  for (const x of statics(p, m)) {
+    if (x.k !== 'retreat') continue;
+    if (x.noCostBelowHp !== undefined && maxHp(p, m) - m.dmg <= x.noCostBelowHp) return 0;
+    r += x.delta;
+  }
+  return Math.max(0, r);
+}
+
+/** The attack's cost after a Tool or Ability that makes it cheaper (Hop's Choice Band, Seasoned Skill): Colorless symbols go first. */
+function attackCost(p: Player, m: Mon, atk: SimAttack): string {
+  let less = 0;
+  for (const x of statics(p, m)) {
+    if (x.k !== 'costLess' || (x.attack && x.attack !== atk.name)) continue;
+    less += x.per ? x.n * Math.round(gameView(p.game ?? { rules: { } as Game['rules'], stadium: null, winner: null, ending: '' }, p, p.opp ?? null, m, atk, false).count(x.per)) : x.n;
+  }
+  let cost = atk.cost;
+  for (; less > 0 && cost; less--) cost = cost.includes('C') ? cost.replace('C', '') : cost.slice(0, -1);
+  return cost;
+}
+
+/** Damage a Tool or Stadium adds to this attack before Weakness and Resistance (Brave Bangle, Maximum Belt, Postwick). */
+function staticDamage(p: Player, o: Player | null, m: Mon, def: Mon | null): number {
+  let n = 0;
+  const target = def ?? m; // the mirror in a solo game
+  for (const x of statics(p, m)) {
+    if (x.k !== 'damage') continue;
+    if (x.ruleBoxFree && hasRuleBox(m.c)) continue;
+    if (x.vs && !pokeMatches(target.c, x.vs)) continue;
+    n += x.n;
+  }
+  return o || !def ? n : n;
+}
+
+/** The type `def` is weak to when an Ability across the table says so (Fairy Zone), else undefined. */
+function weaknessOf(o: Player, p: Player, def: Mon): string | undefined {
+  for (const x of statics(o, def, p)) if (x.k === 'weakness') return x.to;
+  return undefined;
+}
+
+/** Prize cards a Knock Out of `m` gives, less what its Tool withholds (Lillie's Pearl). */
+function prizesFor(p: Player, m: Mon): number {
+  let n = m.c.prize;
+  for (const x of statics(p, m)) {
+    if (x.k !== 'prizeLess') continue;
+    if (x.once) {
+      // Legacy Energy: once per game; the card that carries it names the effect.
+      const name = m.energy.find((e) => e.fx?.statics?.includes(x))?.name ?? m.tool?.name ?? m.c.name;
+      if (p.onceUsed.has(name)) continue;
+      p.onceUsed.add(name);
+    }
+    n -= x.n;
+  }
+  return Math.max(0, n);
+}
+
+/** An Energy attached from the hand: Enriching Energy draws cards, Telepathic Psychic Energy searches. */
+function onAttach(g: Game, p: Player, e: SimCard, m: Mon): void {
+  for (const x of e.fx?.effects ?? []) if (x.k === 'onAttach' && (!x.t || pokeMatches(m.c, x.t))) runEffects(g, p, p.opp ?? null, { effects: x.effects, discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: '', sentences: [], followed: true }, m);
+}
+
+/** Energy that leaves at the end of its owner's turn (Ignition Energy). */
+function discardAtTurnEnd(p: Player): void {
+  for (const m of inPlay(p)) {
+    for (const e of m.energy.slice()) if (e.fx?.statics?.some((x) => x.k === 'discardAtTurnEnd')) {
+      removeEnergy(m, e);
+      p.discard.push(e.i);
+    }
+  }
+}
+
+/** A Basic put onto the Bench under a Stadium that marks it (Risky Ruins). */
+function benchCounters(p: Player, m: Mon): void {
+  for (const x of statics(p, m)) if (x.k === 'benchCounters') m.dmg += 10 * x.n;
+}
+
+/** A Stadium turns the Pokémon's Abilities off (`stadiumOnly`: the Stadium alone, to avoid asking the Abilities themselves). */
+const abilitiesOff = (p: Player, m: Mon, stadiumOnly = false): boolean => {
+  const st = stadiumOf(p)?.fx?.statics ?? [];
+  if (st.some((x) => x.k === 'noAbilities' && reaches(x, m))) return true;
+  return stadiumOnly ? false : statics(p, m).some((x) => x.k === 'noAbilities');
+};
 
 function* inPlay(p: Player): Generator<Mon> {
   if (p.active) yield p.active;
@@ -159,7 +339,12 @@ function removeFromHand(p: Player, at: number): number {
 /* ---------- Energy ---------- */
 
 /** The cost letters `energy` leaves unpaid ("" = payable). Typed symbols take a matching Energy first, then any-type Energy. */
-export function missing(cost: string, energy: readonly SimCard[]): string {
+export interface EnergyLike {
+  provides: string;
+  basicEnergy: boolean;
+}
+
+export function missing(cost: string, energy: readonly EnergyLike[]): string {
   if (!cost) return '';
   let used = 0; // bit mask over energy (at most 31 attached)
   let out = '';
@@ -190,7 +375,10 @@ export function missing(cost: string, energy: readonly SimCard[]): string {
   return out;
 }
 
-const covers = (e: SimCard, ch: string) => ch === 'C' || e.provides === '*' || e.provides.includes(ch);
+const covers = (e: SimCard, ch: string, holder?: SimCard) => {
+  const letters = holder ? providesFor(e, holder).letters : e.provides;
+  return ch === 'C' ? !holder || attachable(e, holder) : letters === '*' || letters.includes(ch);
+};
 
 /** The attack a Pokémon is being built for: the plan's attack on the main line, else its strongest. */
 function targetAttack(p: Player, m: Mon): SimAttack | null {
@@ -204,7 +392,7 @@ function targetAttack(p: Player, m: Mon): SimAttack | null {
 /** An Active off the main line, short of its Retreat Cost, with the line waiting on the Bench: Energy on it buys the retreat. */
 function payingRetreat(p: Player, m: Mon): boolean {
   const plan = p.d.plan;
-  if (!plan || m !== p.active || plan.line.includes(m.c.key) || m.energy.length >= m.c.retreat || bestPayable(m)) return false;
+  if (!plan || m !== p.active || plan.line.includes(m.c.key) || m.energy.length >= retreatCost(p, m) || bestPayable(p, m)) return false;
   return p.bench.some((b) => plan.line.includes(b.c.key));
 }
 
@@ -212,8 +400,9 @@ function needs(p: Player, m: Mon, e: SimCard): boolean {
   if (payingRetreat(p, m)) return true;
   const a = targetAttack(p, m);
   if (!a) return false;
-  const miss = missing(a.cost, m.energy);
-  for (const ch of miss) if (covers(e, ch)) return true;
+  if (!attachable(e, m.c)) return false;
+  const miss = missing(attackCost(p, m, a), energyOf(p, m));
+  for (const ch of miss) if (covers(e, ch, m.c)) return true;
   return false;
 }
 
@@ -260,12 +449,12 @@ function resting(p: Player, m: Mon, atk: SimAttack): boolean {
 /** Can `m` use the plan's attack right now? */
 function mainReady(p: Player, m: Mon): boolean {
   const plan = p.d.plan;
-  return !!plan && m.c.key === plan.attacker && !resting(p, m, plan.attack) && missing(plan.attack.cost, m.energy) === '';
+  return !!plan && m.c.key === plan.attacker && !resting(p, m, plan.attack) && missing(attackCost(p, m, plan.attack), energyOf(p, m)) === '';
 }
 
-function bestPayable(m: Mon): SimAttack | null {
+function bestPayable(p: Player, m: Mon): SimAttack | null {
   let best: SimAttack | null = null;
-  for (const a of m.c.attacks) if (a.damage > 0 && missing(a.cost, m.energy) === '' && (!best || a.expected > best.expected)) best = a;
+  for (const a of m.c.attacks) if (a.damage > 0 && missing(attackCost(p, m, a), energyOf(p, m)) === '' && (!best || a.expected > best.expected)) best = a;
   return best;
 }
 
@@ -284,7 +473,7 @@ const isSupporter = (c: SimCard) => c.tt === 'Supporter' && !c.unread && !!c.fx;
 /** A better attacker waits on the Bench and the Active can neither retreat (too little Energy) nor be switched from the hand. */
 function retreatBlocked(p: Player): boolean {
   const a = p.active;
-  if (!a || a.energy.length >= a.c.retreat) return false;
+  if (!a || a.energy.length >= retreatCost(p, a)) return false;
   if (p.hand.some((i) => isSwitchCard(cardOf(p, i)))) return false;
   return !!switchTarget(p, null);
 }
@@ -366,7 +555,24 @@ function stuck(p: Player): boolean {
   return true;
 }
 
+/** ex, V, VMAX, VSTAR, GX, EX, Radiant and Mega Pokémon carry a Rule Box. */
+const hasRuleBox = (c: SimCard) => c.prize > 1 || /^Radiant /.test(c.name);
+
 function matches(c: SimCard, f: CardFilter): boolean {
+  if (!matchesKind(c, f)) return false;
+  if (f.ruleBox === false && hasRuleBox(c)) return false;
+  if (f.owner && !c.name.startsWith(f.owner)) return false;
+  if (f.nameHas && !c.name.includes(f.nameHas)) return false;
+  return true;
+}
+
+/** The effect's filter or any of its alternatives. */
+function matchesAny(c: SimCard, e: { f: CardFilter; alts?: CardFilter[] }): boolean {
+  if (matches(c, e.f)) return true;
+  return !!e.alts && e.alts.some((f) => matches(c, f));
+}
+
+function matchesKind(c: SimCard, f: CardFilter): boolean {
   switch (f.k) {
     case 'any':
       return true;
@@ -414,13 +620,14 @@ function energyTarget(p: Player, e: SimCard, targets: Mon[]): Mon | null {
 }
 
 /** Most wanted card in the deck matching the effect, as an index into the deck, or -1. */
-function bestInDeck(p: Player, f: CardFilter, to: 'hand' | 'bench' | 'attach', targets: Mon[] | null, minWant: number, shallow = false, top = 0): number {
+function bestInDeck(p: Player, f: CardFilter | { f: CardFilter; alts?: CardFilter[] }, to: 'hand' | 'bench' | 'attach', targets: Mon[] | null, minWant: number, shallow = false, top = 0, skip?: (c: SimCard) => boolean): number {
   let best = -1;
   let bestW = minWant;
+  const fe = 'f' in f ? f : { f };
   // The top of the deck is the end of the array.
   for (let j = top > 0 ? Math.max(0, p.deck.length - top) : 0; j < p.deck.length; j++) {
     const c = cardOf(p, p.deck[j]);
-    if (!matches(c, f)) continue;
+    if (!matchesAny(c, fe) || skip?.(c)) continue;
     if (to === 'bench' && !c.basic) continue;
     let w: number;
     if (to === 'attach') w = c.kind === 'energy' && targets && energyTarget(p, c, targets) ? 50 : -1;
@@ -433,28 +640,39 @@ function bestInDeck(p: Player, f: CardFilter, to: 'hand' | 'bench' | 'attach', t
   return best;
 }
 
-function search(g: Game, p: Player, e: Extract<Effect, { k: 'search' }>, self: Mon | null): number {
+/** `notType`: an Energy type already fetched by another effect of the card (Crispin's "of different types"). Returns the types fetched. */
+function search(g: Game, p: Player, e: Extract<Effect, { k: 'search' }>, self: Mon | null, notType = ''): { got: number; types: string } {
   let got = 0;
+  let types = notType;
   for (let k = 0; k < e.n; k++) {
     if (e.to === 'bench' && p.bench.length >= g.rules.benchSize) break;
     const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, self) : null;
     if (e.top && e.top - got <= 0) break;
-    const j = bestInDeck(p, e.f, e.to, targets, e.to === 'bench' ? 2 : 1, false, e.top ? e.top - got : 0);
+    const skip = e.distinctTypes || notType ? (c: SimCard) => c.kind === 'energy' && [...c.provides].some((ch) => types.includes(ch)) : undefined;
+    const j = bestInDeck(p, e, e.to, targets, e.to === 'bench' ? 2 : 1, false, e.top ? e.top - got : 0, skip);
     if (j < 0) break;
     const i = p.deck[j];
     p.deck.splice(j, 1);
     const c = cardOf(p, i);
     if (e.to === 'hand') p.hand.push(i);
-    else if (e.to === 'bench') p.bench.push(newMon(c, p.turn));
+    else if (e.to === 'bench') {
+      const nm = newMon(c, p.turn);
+      p.bench.push(nm);
+      benchCounters(p, nm);
+    }
     else energyTarget(p, c, targets!)!.energy.push(c);
+    if (c.kind === 'energy') types += c.provides;
     got++;
   }
+  // "Discard the other cards": the rest of the looked-at cards leave the deck.
+  if (e.top && e.discardRest) for (let k = 0; k < e.top - got && p.deck.length; k++) p.discard.push(p.deck.pop()!);
   shuffleInPlace(p.deck, p.rng);
-  return got;
+  return { got, types: types.slice(notType.length) };
 }
 
-function attachFrom(p: Player, e: Extract<Effect, { k: 'attach' }>, self: Mon | null): number {
-  let got = 0;
+/** Returns the Pokémon last attached to, for "that Pokémon" in the sentence after. */
+function attachFrom(p: Player, e: Extract<Effect, { k: 'attach' }>, self: Mon | null): Mon | null {
+  let last: Mon | null = null;
   const src = e.from === 'hand' ? p.hand : p.discard;
   for (let k = 0; k < e.n; k++) {
     const targets = attachTargets(p, e.target, self);
@@ -470,21 +688,86 @@ function attachFrom(p: Player, e: Extract<Effect, { k: 'attach' }>, self: Mon | 
     const c = cardOf(p, src[pick]);
     src.splice(pick, 1);
     to.energy.push(c);
-    got++;
+    last = to;
   }
-  return got;
+  return last;
 }
 
-function recover(p: Player, e: Extract<Effect, { k: 'recover' }>): number {
+/** The most wanted card of the discard pile matching the effect (above `minWant`), as an index, or -1. */
+function bestInDiscard(p: Player, e: { f: CardFilter; alts?: CardFilter[] }, minWant: number): number {
+  let best = -1;
+  let bestW = minWant;
+  for (let j = 0; j < p.discard.length; j++) {
+    const c = cardOf(p, p.discard[j]);
+    if (!matchesAny(c, e)) continue;
+    const w = want(p, c);
+    if (w > bestW) {
+      bestW = w;
+      best = j;
+    }
+  }
+  return best;
+}
+
+function recover(p: Player, e: Extract<Effect, { k: 'recover' | 'recoverToDeck' }>): number {
   let got = 0;
   for (let k = 0; k < e.n; k++) {
-    const j = p.discard.findIndex((i) => matches(cardOf(p, i), e.f));
+    const j = bestInDiscard(p, e, e.k === 'recover' ? 0 : 39);
     if (j < 0) break;
-    p.hand.push(p.discard[j]);
+    (e.k === 'recover' ? p.hand : p.deck).push(p.discard[j]);
     p.discard.splice(j, 1);
     got++;
   }
+  if (e.k === 'recoverToDeck' && got) shuffleInPlace(p.deck, p.rng);
   return got;
+}
+
+/** An Energy on a Pokémon that does not need it, and a Pokémon that does: the pair an Energy move serves, or null. */
+function energyMove(p: Player, e: Extract<Effect, { k: 'moveEnergy' }>): [Mon, SimCard, Mon] | null {
+  const sources = e.from === 'bench' ? p.bench : [...inPlay(p)];
+  const targets = e.to === 'active' ? (p.active ? [p.active] : []) : attachTargets(p, { where: 'any' }, null);
+  for (const to of targets) {
+    for (const from of sources) {
+      if (from === to) continue;
+      for (const x of from.energy) {
+        if (e.basic && !x.basicEnergy) continue;
+        if (needs(p, from, x) || !needs(p, to, x)) continue;
+        return [from, x, to];
+      }
+    }
+  }
+  return null;
+}
+
+/** Cards of the hand the plan wants least that an effect may discard (Gwynn), lowest first. */
+function spareInHand(p: Player, f: CardFilter, maxWant: number): number[] {
+  const out: { at: number; w: number }[] = [];
+  for (let j = 0; j < p.hand.length; j++) {
+    const c = cardOf(p, p.hand[j]);
+    if (!matches(c, f)) continue;
+    const w = want(p, c, true);
+    if (w <= maxWant) out.push({ at: j, w });
+  }
+  return out.sort((a, b) => a.w - b.w).map((x) => x.at);
+}
+
+/** The Pokémon a heal may reach, most damaged first. */
+function healTargets(p: Player, e: Extract<Effect, { k: 'heal' }>): Mon[] {
+  const all = e.target === 'active' ? (p.active ? [p.active] : []) : [...inPlay(p)];
+  return all.filter((m) => m.dmg > 0 && (e.minEnergy === undefined || m.energy.length >= e.minEnergy) && (e.maxHpLeft === undefined || maxHp(p, m) - m.dmg <= e.maxHpLeft)).sort((a, b) => b.dmg - a.dmg);
+}
+
+/** Whether a Trainer's "only if" holds now (its conditions never read the attacker, so the Active stands in). */
+function condHolds(g: Game, p: Player, o: Player | null, c: Cond): boolean {
+  const stand: Mon = p.active ?? { c: p.d.cards[0], under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '', movedTurn: 0 };
+  const atk: SimAttack = stand.c.attacks[0] ?? { name: '', cost: '', costN: 0, damage: 0, printed: '', fx: null, expected: 0, drain: 0, rest: 0, sustained: 0 };
+  return gameView(g, p, o, stand, atk, false).holds(c) >= 1;
+}
+
+/** A Trainer may be played now: its "only if" holds and it is not barred on the first turn. */
+function playable(g: Game, p: Player, o: Player | null, fx: ParsedText): boolean {
+  if (fx.notFirstTurn && p.turn === 1) return false;
+  return !fx.cond || condHolds(g, p, o, fx.cond);
 }
 
 /** The Benched Pokémon that should be Active, or null when the Active is the right one. */
@@ -492,11 +775,11 @@ function switchTarget(p: Player, o: Player | null): Mon | null {
   const a = p.active;
   if (!a || mainReady(p, a)) return null;
   for (const m of p.bench) if (mainReady(p, m)) return m;
-  if (bestPayable(a)) return null;
+  if (bestPayable(p, a)) return null;
   let best: Mon | null = null;
   let bestD = 0;
   for (const m of p.bench) {
-    const atk = bestPayable(m);
+    const atk = bestPayable(p, m);
     const d = atk ? damageAgainst(m, o?.active ?? null, atk.expected, atk.fx?.mods) : 0;
     if (d > bestD) {
       best = m;
@@ -552,15 +835,88 @@ function stack(p: Player, n: number): void {
   for (let k = picked.length - 1; k >= 0; k--) p.deck.push(picked[k]);
 }
 
-function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon | null): void {
-  if (fx.chance < 1 && p.rng.next() >= fx.chance) return;
-  for (const e of fx.effects) {
+/** Effects of an attack's own text that come after its damage. */
+const POST_DAMAGE = new Set<Effect['k']>(['selfDamage', 'benchDamageOwn', 'selfToHand']);
+
+/**
+ * Pay an optional attack cost? Yes when the damage it adds Knocks Out the defender (the mirror of
+ * the attacker in a solo game), or is worth more than the attacks the lost Energy would have
+ * powered (`lost` Energy, each a turn of the attack's own base damage).
+ */
+function payWorthIt(g: Game, p: Player, o: Player | null, m: Mon, fx: ParsedText, lost: number): boolean {
+  const atk = m.c.attacks.find((a) => a.fx === fx);
+  if (!atk) return false;
+  const view = gameView(g, p, o, m, atk, false);
+  const unpaid = expectedDamage(atk.damage, atk.fx?.mods.filter((x) => !(x.k === 'bonus' && x.if.k === 'paid')) ?? [], view);
+  const paid = expectedDamage(atk.damage, atk.fx?.mods ?? [], { count: view.count, holds: (c) => (c.k === 'paid' ? 1 : view.holds(c)) });
+  const def = o?.active ?? m;
+  const left = maxHp(o ?? p, def) - def.dmg;
+  if (damageAgainst(m, o?.active ?? null, paid, atk.fx?.mods) >= left && damageAgainst(m, o?.active ?? null, unpaid, atk.fx?.mods) < left) return true;
+  return paid - unpaid >= lost * Math.max(10, unpaid);
+}
+
+/** The Energy of `m` an attack's cost may take: `type` letters (any), basic or special only. */
+function costEnergy(m: Mon, type?: string, basic?: boolean, special?: boolean): SimCard[] {
+  return m.energy.filter((e) => energyMatches(e, type, basic, special));
+}
+
+function removeEnergy(m: Mon, e: SimCard): void {
+  const at = m.energy.lastIndexOf(e);
+  if (at >= 0) m.energy.splice(at, 1);
+}
+
+/** A Pokémon of `p` leaves play Knocked Out by its own side: the opponent takes its Prize cards. */
+function ownKnockOut(g: Game, p: Player, o: Player | null, m: Mon): void {
+  p.discard.push(m.c.i, ...m.under);
+  for (const e of m.energy) p.discard.push(e.i);
+  if (m === p.active) p.active = null;
+  else p.bench.splice(p.bench.indexOf(m), 1);
+  g.trace?.(`${m.c.name} Knocked Out by its own side`);
+  if (o) takePrizes(g, o, p, prizesFor(p, m));
+}
+
+/** `p` takes `n` Prize cards for Knocking Out a Pokémon of `o`; the game ends when they were the last. */
+function takePrizes(g: Game, p: Player, o: Player, n: number): void {
+  if (g.winner) return;
+  const k = Math.min(n, p.prizes.length);
+  for (let i = 0; i < k; i++) p.hand.push(p.prizes.pop()!);
+  p.taken += k;
+  if (!p.prizes.length) {
+    g.winner = p;
+    g.ending = 'prizes';
+  } else if (!o.active && !o.bench.length && g.rules.noPokemonLoses) {
+    g.winner = p;
+    g.ending = 'no Pokémon';
+  }
+}
+
+/** After the Active left play: promote from the Bench, or lose for having no Pokémon (a solo game plays on with none). */
+function refillActive(g: Game, p: Player, o: Player | null): void {
+  if (p.active || g.winner) return;
+  if (p.bench.length) promote(p, o);
+  else if (o && g.rules.noPokemonLoses) {
+    g.winner = o;
+    g.ending = 'no Pokémon';
+  }
+}
+
+function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon | null, phase: 'all' | 'pre' | 'post' = 'all'): void {
+  if (phase !== 'post' && fx.chance < 1 && p.rng.next() >= fx.chance) return;
+  const altN = (e: { n: number; alt?: { if: Cond; n: number } }) => (e.alt && condHolds(g, p, o, e.alt.if) ? e.alt.n : e.n);
+  const fetched: string[] = [];
+  // "If you attached Energy to a Pokémon in this way, …": whether the effect before did anything, and to whom.
+  let did = true;
+  let that: Mon | null = null;
+  for (const [idx, e] of fx.effects.entries()) {
+    if (phase !== 'all' && (phase === 'post') !== POST_DAMAGE.has(e.k)) continue;
+    if (e.if?.k === 'did' && !did) continue;
+    did = true;
     switch (e.k) {
       case 'draw':
-        draw(p, e.n);
+        did = draw(p, altN(e)) > 0;
         break;
       case 'drawUntil':
-        draw(p, e.n - p.hand.length);
+        did = draw(p, altN(e) - p.hand.length) > 0;
         break;
       case 'discardHandDraw':
         p.discard.push(...p.hand);
@@ -568,17 +924,64 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         draw(p, e.n);
         break;
       case 'shuffleHandDraw':
-        shuffleHandDraw(p, e.n, e.bottom);
+        shuffleHandDraw(p, altN(e), e.bottom);
+        // Judge, Iono, Unfair Stamp: the opponent shuffles and draws too.
+        if (e.both && o) shuffleHandDraw(o, e.oppN ?? e.n, e.bottom);
         break;
-      case 'search':
-        search(g, p, e, self);
+      case 'search': {
+        const r = search(g, p, e, self, e.distinctFrom !== undefined ? (fetched[e.distinctFrom] ?? '') : '');
+        fetched[idx] = r.types;
+        did = r.got > 0;
+        if (e.to === 'attach' && r.got) that = self ?? that;
         break;
+      }
       case 'attach':
-        attachFrom(p, e, self);
+        that = attachFrom(p, e, self);
+        did = !!that;
         break;
       case 'recover':
-        recover(p, e);
+      case 'recoverToDeck':
+        did = recover(p, e) > 0;
         break;
+      case 'moveEnergy': {
+        for (let k = 0; k < e.n; k++) {
+          const mv = energyMove(p, e);
+          if (!mv) break;
+          const [from, x, to] = mv;
+          removeEnergy(from, x);
+          to.energy.push(x);
+          g.trace?.(`moves ${x.name} from ${from.c.name} to ${to.c.name}`);
+        }
+        break;
+      }
+      case 'discardDraw': {
+        const spare = spareInHand(p, e.f, 25).slice(0, e.max).sort((a, b) => b - a);
+        for (const at of spare) p.discard.push(removeFromHand(p, at));
+        draw(p, e.per * spare.length);
+        break;
+      }
+      case 'heal': {
+        const targets = e.target === 'that' ? (that && that.dmg > 0 ? [that] : []) : healTargets(p, e);
+        did = targets.length > 0;
+        for (const m of e.target === 'each' ? targets : targets.slice(0, 1)) m.dmg = Math.max(0, m.dmg - e.n);
+        break;
+      }
+      case 'selfToDeck': {
+        if (!self) break;
+        p.deck.push(self.c.i, ...self.under, ...self.energy.map((x) => x.i));
+        shuffleInPlace(p.deck, p.rng);
+        if (self === p.active) p.active = null;
+        else p.bench.splice(p.bench.indexOf(self), 1);
+        g.trace?.(`${self.c.name} shuffled into the deck`);
+        refillActive(g, p, o);
+        break;
+      }
+      case 'discardStadium': {
+        if (!g.stadium) break;
+        g.stadium.owner.discard.push(g.stadium.c.i);
+        g.stadium = null;
+        break;
+      }
       case 'stack':
         stack(p, e.n);
         break;
@@ -589,6 +992,97 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
       }
       case 'rareCandy':
         break;
+      case 'discardSelfEnergy': {
+        if (!self) break;
+        const pool = costEnergy(self, e.type, e.basic, e.special);
+        const n = Math.min(e.all ? pool.length : e.n, pool.length);
+        if (!n || (e.may && !payWorthIt(g, p, o, self, fx, n))) break;
+        for (const x of pool.slice(pool.length - n)) {
+          removeEnergy(self, x);
+          p.discard.push(x.i);
+          if (x.fx?.statics?.some((s) => s.k === 'boomerang')) p.boomerangs.push(x);
+        }
+        p.attackDiscarded += n;
+        p.attackPaid = true;
+        g.trace?.(`discards ${n} Energy from ${self.c.name}`);
+        break;
+      }
+      case 'discardAnyEnergy': {
+        // As many as a Knock Out needs (the mirror's HP in a solo game), else every one: the attack hits for them.
+        if (!self) break;
+        const atk = self.c.attacks.find((a) => a.fx === fx);
+        const per = atk?.fx?.mods.find((x) => (x.k === 'times' || x.k === 'plus') && x.per.k === 'discarded');
+        const def = o?.active ?? self;
+        const left = maxHp(o ?? p, def) - def.dmg;
+        const base = per?.k === 'plus' ? (atk?.damage ?? 0) : 0;
+        const need = per && per.k !== 'ignore' && per.k !== 'firstTurnBarred' && per.k !== 'bonus' && per.k !== 'nothing' && per.n > 0 ? Math.ceil(Math.max(0, left - base) / per.n) : 99;
+        const pool: [Mon, SimCard][] = [];
+        for (const m of p.bench) for (const x of costEnergy(m, e.type, e.basic, e.special)) pool.push([m, x]);
+        for (const x of costEnergy(self, e.type, e.basic, e.special)) pool.push([self, x]);
+        const n = Math.min(need, pool.length);
+        for (const [m, x] of pool.slice(0, n)) {
+          removeEnergy(m, x);
+          p.discard.push(x.i);
+          if (m === self && x.fx?.statics?.some((s) => s.k === 'boomerang')) p.boomerangs.push(x);
+        }
+        p.attackDiscarded += n;
+        if (n) p.attackPaid = true;
+        g.trace?.(`discards ${n} Energy from its Pokémon`);
+        break;
+      }
+      case 'energyToHand':
+      case 'energyToDeck': {
+        if (!self) break;
+        const pool = costEnergy(self, e.k === 'energyToHand' ? e.type : undefined);
+        const n = Math.min(e.k === 'energyToDeck' && e.all ? pool.length : e.n, pool.length);
+        if (!n || (e.may && !payWorthIt(g, p, o, self, fx, n))) break;
+        for (const x of pool.slice(pool.length - n)) {
+          removeEnergy(self, x);
+          if (e.k === 'energyToHand') p.hand.push(x.i);
+          else p.deck.push(x.i);
+        }
+        if (e.k === 'energyToDeck') shuffleInPlace(p.deck, p.rng);
+        p.attackPaid = true;
+        break;
+      }
+      case 'millSelf':
+        for (let k = 0; k < e.n && p.deck.length; k++) p.discard.push(p.deck.pop()!);
+        break;
+      case 'discardHand': {
+        if (e.may) {
+          // Only cards the plan wants least.
+          let spare = 0;
+          for (const i of p.hand) if (want(p, cardOf(p, i), true) <= 10) spare++;
+          if (spare < e.n) break;
+        }
+        discardLeast(p, e.n);
+        p.attackPaid = true;
+        break;
+      }
+      case 'selfDamage': {
+        if (!self || (e.ifPaid && !p.attackPaid)) break;
+        self.dmg += e.n;
+        if (self.dmg >= maxHp(p, self)) {
+          ownKnockOut(g, p, o, self);
+          refillActive(g, p, o);
+        }
+        break;
+      }
+      case 'benchDamageOwn': {
+        const targets = e.each ? p.bench.slice() : p.bench.length ? [p.bench.reduce((a, b) => (maxHp(p, b) - b.dmg > maxHp(p, a) - a.dmg ? b : a))] : [];
+        for (const m of targets) m.dmg += e.n;
+        for (const m of targets) if (m.dmg >= maxHp(p, m) && p.bench.includes(m)) ownKnockOut(g, p, o, m);
+        break;
+      }
+      case 'selfToHand': {
+        if (!self) break;
+        p.hand.push(self.c.i, ...self.under, ...self.energy.map((x) => x.i));
+        if (self === p.active) p.active = null;
+        else p.bench.splice(p.bench.indexOf(self), 1);
+        g.trace?.(`${self.c.name} returns to the hand`);
+        refillActive(g, p, o);
+        break;
+      }
     }
   }
 }
@@ -598,10 +1092,10 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
   for (const e of fx.effects) {
     switch (e.k) {
       case 'draw':
-        if (p.deck.length - e.n >= DECK_RESERVE) return true;
+        if (p.deck.length - e.n >= reserve(p) && !glutted(p)) return true;
         break;
       case 'drawUntil':
-        if (p.hand.length < e.n - 1 && p.deck.length - (e.n - p.hand.length) >= DECK_RESERVE) return true;
+        if (p.hand.length < e.n - 1 && p.deck.length - (e.n - p.hand.length) >= reserve(p)) return true;
         break;
       case 'discardHandDraw':
       case 'shuffleHandDraw':
@@ -609,8 +1103,10 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
         break;
       case 'search': {
         if (e.to === 'bench' && p.bench.length >= g.rules.benchSize) break;
+        // A look that discards the rest thins the deck like a draw.
+        if (e.top && e.discardRest && p.deck.length - e.top < reserve(p)) break;
         const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, self) : null;
-        if (bestInDeck(p, e.f, e.to, targets, e.to === 'bench' ? 10 : 25) >= 0) return true;
+        if (bestInDeck(p, e, e.to, targets, e.to === 'bench' ? 10 : 25) >= 0) return true;
         break;
       }
       case 'attach': {
@@ -620,10 +1116,27 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
         break;
       }
       case 'recover':
-        if ((energyNeed(p) || retreatBlocked(p)) && p.discard.some((i) => matches(cardOf(p, i), e.f))) return true;
+        if (bestInDiscard(p, e, 39) >= 0) return true;
+        break;
+      case 'recoverToDeck':
+        if (bestInDiscard(p, e, 49) >= 0) return true;
+        break;
+      case 'moveEnergy':
+        if (energyMove(p, e)) return true;
+        break;
+      case 'discardDraw': {
+        const spare = Math.min(e.max, spareInHand(p, e.f, 25).length);
+        if (spare && p.deck.length - e.per * spare >= reserve(p) && !glutted(p)) return true;
+        break;
+      }
+      case 'heal':
+        if (e.target !== 'that' && healTargets(p, e).some((m) => m.dmg >= Math.min(30, e.n))) return true;
+        break;
+      case 'discardStadium':
+        if (g.stadium && (g.stadium.owner !== p || stadiumFavours(p, o, g.stadium.c) < 0)) return true;
         break;
       case 'stack':
-        if (p.deck.length > DECK_RESERVE && bestInDeck(p, { k: 'any' }, 'hand', null, 40) >= 0) return true;
+        if (p.deck.length > reserve(p) && bestInDeck(p, { k: 'any' }, 'hand', null, 40) >= 0) return true;
         break;
       case 'switch':
         if (switchTarget(p, o)) return true;
@@ -639,14 +1152,17 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
 function drawValue(p: Player, e: Effect): number {
   // Drawing the deck thin loses the game at the start of a later turn (rules: deckOutLoses).
   const drawn = e.k === 'shuffleHandDraw' ? (e.n < 0 ? p.prizes.length : e.n) - p.hand.length : e.k === 'drawUntil' ? e.n - p.hand.length : 'n' in e ? e.n : 0;
-  if (p.deck.length - drawn < DECK_RESERVE) return -1;
+  if (p.deck.length - drawn < reserve(p)) return -1;
   let keep = 0;
   for (const i of p.hand) if (want(p, cardOf(p, i), true) >= 40) keep++;
   const bonus = stuck(p) ? 4 : 0;
-  if (e.k === 'discardHandDraw') return Math.min(e.n, p.deck.length) - keep * 1.2 + bonus;
-  if (e.k === 'shuffleHandDraw') return (e.n < 0 ? p.prizes.length : e.n) - p.hand.length * 0.5 - keep * 0.7 + bonus;
-  if (e.k === 'draw') return Math.min(e.n, p.deck.length);
+  // Cards drawn into a hand that already holds plenty are worth less: nothing in them is needed yet.
+  const glut = thin(p) ? Math.max(0, p.hand.length - 4) : 0;
+  if (e.k === 'discardHandDraw') return Math.min(e.n, p.deck.length) - keep * 1.2 + bonus - glut;
+  if (e.k === 'shuffleHandDraw') return (e.n < 0 ? p.prizes.length : e.n) - p.hand.length * 0.5 - keep * 0.7 + bonus - glut;
+  if (e.k === 'draw') return Math.min(e.n, p.deck.length) - glut;
   if (e.k === 'drawUntil') return Math.max(0, e.n - p.hand.length);
+  if (e.k === 'discardDraw') return e.per * Math.min(e.max, spareInHand(p, e.f, 25).length) * 0.8 - glut;
   return 0;
 }
 
@@ -664,6 +1180,8 @@ function supporterValue(g: Game, p: Player, o: Player | null, fx: ParsedText): n
       const j = bestInDeck(p, { k: 'any' }, 'hand', null, 40);
       if (j >= 0) v += want(p, cardOf(p, p.deck[j])) / 50 + 0.3 * (e.n - 1);
     } else if (e.k === 'switch') v += switchTarget(p, o) ? 2 : 0;
+    else if (e.k === 'moveEnergy' || e.k === 'heal' || e.k === 'recoverToDeck') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 : 0;
+    else if (e.k === 'discardDraw') v += Math.max(0, drawValue(p, e));
     else if (e.k === 'attach' || e.k === 'recover') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 * e.n : 0;
     else v += drawValue(p, e);
   }
@@ -690,8 +1208,9 @@ function discardLeast(p: Player, n: number): void {
 
 function triggerAbilities(g: Game, p: Player, o: Player | null, m: Mon, trigger: 'bench' | 'evolve'): void {
   for (const ab of m.c.abilities) {
-    if (ab.trigger !== trigger || !ab.fx.effects.length) continue;
+    if (ab.trigger !== trigger || !ab.fx.effects.length || abilitiesOff(p, m)) continue;
     if (ab.vstar && p.vstarUsed) continue;
+    if (ab.fx.cond && !condHolds(g, p, o, ab.fx.cond)) continue;
     if (!useful(g, p, o, ab.fx, m)) continue;
     if (ab.vstar) p.vstarUsed = true;
     g.trace?.(`ability ${ab.name}`);
@@ -718,14 +1237,18 @@ function benchBasic(g: Game, p: Player, o: Player | null): boolean {
   if (at < 0) return false;
   const m = newMon(cardOf(p, removeFromHand(p, at)), p.turn);
   p.bench.push(m);
+  benchCounters(p, m);
   p.acted++;
   g.trace?.(`bench ${m.c.name}`);
   triggerAbilities(g, p, o, m, 'bench');
   return true;
 }
 
-function canEvolve(g: Game, p: Player, m: Mon): boolean {
-  return (g.rules.evolveOnOwnFirstTurn || p.turn > 1) && (g.rules.evolveOnTurnPlayed || m.entered < p.turn);
+/** `c`: the evolution card; a Stadium may let a kind evolve the turn it was played (Forest of Vitality). */
+function canEvolve(g: Game, p: Player, m: Mon, c?: SimCard): boolean {
+  if (!(g.rules.evolveOnOwnFirstTurn || p.turn > 1)) return false;
+  if (g.rules.evolveOnTurnPlayed || m.entered < p.turn) return true;
+  return !!c && statics(p, m).some((x) => x.k === 'evolveSameTurn' && pokeMatches(c, x.t));
 }
 
 function evolve(g: Game, p: Player, o: Player | null, m: Mon, c: SimCard): void {
@@ -745,7 +1268,7 @@ function evolveAny(g: Game, p: Player, o: Player | null): boolean {
     const c = cardOf(p, p.hand[j]);
     if (c.kind !== 'pokemon' || !c.from) continue;
     for (const m of inPlay(p)) {
-      if (m.c.key !== c.from || !canEvolve(g, p, m)) continue;
+      if (m.c.key !== c.from || !canEvolve(g, p, m, c)) continue;
       const w = want(p, c);
       if (w > bestW) {
         bestW = w;
@@ -779,25 +1302,32 @@ function playCandy(g: Game, p: Player, o: Player | null): boolean {
   return false;
 }
 
-function abilityUsable(p: Player, m: Mon, ab: ParsedAbility): boolean {
-  if (!ab.fx.effects.length) return false;
+function abilityUsable(g: Game, p: Player, o: Player | null, m: Mon, ab: ParsedAbility): boolean {
+  if (!ab.fx.effects.length || abilitiesOff(p, m)) return false;
   if (ab.trigger !== 'turn' && ab.trigger !== 'repeat') return false;
   if (ab.activeOnly && p.active !== m) return false;
   if (ab.trigger === 'turn' && m.abilityTurn === p.turn) return false;
   if (ab.limitName && p.limitNames.includes(ab.limitName)) return false;
   if (ab.vstar && p.vstarUsed) return false;
+  if (ab.fx.cond && !condHolds(g, p, o, ab.fx.cond)) return false;
+  // A discard cost ("You must discard a card from your hand in order to use this Ability"): only with a spare card of the kind.
+  if (ab.fx.discardCost && spareInHand(p, ab.fx.discardCostF ?? { k: 'any' }, 30).length < ab.fx.discardCost) return false;
   return true;
 }
 
 function useAbility(g: Game, p: Player, o: Player | null, endsTurn: boolean): boolean {
   for (const m of inPlay(p)) {
     for (const ab of m.c.abilities) {
-      if (ab.fx.endsTurn !== endsTurn || !abilityUsable(p, m, ab) || !useful(g, p, o, ab.fx, m)) continue;
+      if (ab.fx.endsTurn !== endsTurn || !abilityUsable(g, p, o, m, ab) || !useful(g, p, o, ab.fx, m)) continue;
       m.abilityTurn = p.turn;
       if (ab.limitName) p.limitNames.push(ab.limitName);
       if (ab.vstar) p.vstarUsed = true;
       p.acted++;
       g.trace?.(`ability ${ab.name}`);
+      if (ab.fx.discardCost) {
+        const spare = spareInHand(p, ab.fx.discardCostF ?? { k: 'any' }, 30).slice(0, ab.fx.discardCost).sort((a, b) => b - a);
+        for (const at of spare) p.discard.push(removeFromHand(p, at));
+      }
       runEffects(g, p, o, ab.fx, m);
       if (ab.fx.endsTurn) p.turnEnded = true;
       return true;
@@ -817,8 +1347,9 @@ function playItem(g: Game, p: Player, o: Player | null): boolean {
   let lowCost = Infinity;
   for (let j = 0; j < p.hand.length; j++) {
     const c = cardOf(p, p.hand[j]);
-    if (c.kind !== 'trainer' || !c.fx || c.unread) continue;
+    if (c.kind !== 'trainer' || !c.fx || c.unread || !playable(g, p, o, c.fx)) continue;
     if (c.tt === 'Tool') {
+      if (c.fx.statics?.length) continue; // attached by attachTool
       // A Tool read here lends a VSTAR Power (Forest Seal Stone): it needs a Pokémon V and the game's one VSTAR Power.
       if (p.vstarUsed || !hasV(p)) continue;
     } else if (c.tt !== 'Item') continue;
@@ -848,21 +1379,89 @@ function playItem(g: Game, p: Player, o: Player | null): boolean {
   if (c.tt === 'Tool') p.vstarUsed = true;
   if (c.fx!.discardCost) discardLeast(p, c.fx!.discardCost);
   p.acted++;
+  p.played.add(c.i);
   g.trace?.(`item ${c.name}`);
   runEffects(g, p, o, c.fx!, null);
   return true;
 }
 
+/** Where a Tool should go: the plan's lead for what helps an attacker, the Active for a Retreat Cost; a Pokémon it names, without a Tool. */
+function toolTarget(p: Player, o: Player | null, c: SimCard): Mon | null {
+  const st = c.fx?.statics ?? [];
+  const fits = (m: Mon) => !m.tool && st.every((x) => !('t' in x) || !x.t || pokeMatches(m.c, x.t));
+  const lead = lineLead(p);
+  if (st.some((x) => x.k === 'retreat' && x.delta < 0)) {
+    const a = p.active;
+    if (a && fits(a) && switchTarget(p, o) && a.energy.length < retreatCost(p, a)) return a;
+  }
+  if (lead && fits(lead)) return lead;
+  for (const m of inPlay(p)) if (fits(m)) return m;
+  return null;
+}
+
+function attachTool(g: Game, p: Player, o: Player | null): boolean {
+  for (let j = 0; j < p.hand.length; j++) {
+    const c = cardOf(p, p.hand[j]);
+    if (c.tt !== 'Tool' || c.unread || !c.fx?.statics?.length || !playable(g, p, o, c.fx)) continue;
+    const m = toolTarget(p, o, c);
+    if (!m) continue;
+    removeFromHand(p, j);
+    m.tool = c;
+    m.under.push(c.i);
+    p.played.add(c.i);
+    p.acted++;
+    g.trace?.(`tool ${c.name} → ${m.c.name}`);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Does a Stadium's standing effect favour this player? What helps a Pokémon (HP, a cheaper retreat,
+ * damage, a cheaper attack, evolving at once, less damage taken) counts for each of the player's
+ * Pokémon it names, in play or still in the deck, against the opponent's in play; what hurts one
+ * (Abilities or Tools off, counters on benched Basics) counts the other way. In a solo game the
+ * other side is empty, so a Stadium is played when the deck has something to gain from it.
+ */
+function stadiumFavours(p: Player, o: Player | null, c: SimCard): number {
+  const st = c.fx?.statics ?? [];
+  if (!st.length) return 0;
+  const mine = (t?: PokeTestLike) => {
+    let n = 0;
+    for (const m of inPlay(p)) if (!t || pokeMatches(m.c, t)) n++;
+    if (!n) for (const i of p.deck) if (cardOf(p, i).kind === 'pokemon' && (!t || pokeMatches(cardOf(p, i), t))) n += 0.25;
+    return n;
+  };
+  const theirs = (t?: PokeTestLike) => {
+    let n = 0;
+    if (o) for (const m of inPlay(o)) if (!t || pokeMatches(m.c, t)) n++;
+    return n;
+  };
+  let favour = 0;
+  for (const x of st) {
+    const t = 't' in x ? x.t : undefined;
+    const good = x.k === 'hp' ? x.delta > 0 : x.k === 'retreat' ? x.delta < 0 : x.k === 'damage' || x.k === 'costLess' || x.k === 'evolveSameTurn' || x.k === 'damageTaken' || x.k === 'drawWhenHit' || x.k === 'prizeLess';
+    const diff = mine(t) - theirs(t);
+    favour += good ? diff : -diff;
+    if (x.k === 'noTools') favour -= 0.5;
+  }
+  return favour;
+}
+type PokeTestLike = Parameters<typeof pokeMatches>[1];
+
 function playStadium(g: Game, p: Player, o: Player | null): boolean {
   if (p.stadiumDone) return false;
   for (let j = 0; j < p.hand.length; j++) {
     const c = cardOf(p, p.hand[j]);
-    if (c.tt !== 'Stadium' || c.unread || !c.fx) continue;
+    if (c.tt !== 'Stadium' || c.unread || !c.fx || !playable(g, p, o, c.fx)) continue;
     if (g.stadium && g.stadium.c.key === c.key) continue;
-    if (!useful(g, p, o, c.fx, null) && !(g.stadium && g.stadium.owner !== p)) continue;
+    const favour = stadiumFavours(p, o, c);
+    const replacing = !!g.stadium && g.stadium.owner !== p;
+    if (c.fx.statics?.length ? favour < (replacing ? 0 : 0.5) : !useful(g, p, o, c.fx, null) && !replacing) continue;
     removeFromHand(p, j);
     if (g.stadium) g.stadium.owner.discard.push(g.stadium.c.i);
     g.stadium = { c, owner: p };
+    p.played.add(c.i);
     p.stadiumDone = true;
     p.acted++;
     return true;
@@ -874,7 +1473,7 @@ function useStadium(g: Game, p: Player, o: Player | null): boolean {
   const s = g.stadium;
   if (!s || !s.c.fx || p.stadiumTurn === p.turn) return false;
   if (s.owner !== p && !s.c.shared) return false;
-  if (!useful(g, p, o, s.c.fx, null)) return false;
+  if (!playable(g, p, o, s.c.fx) || !useful(g, p, o, s.c.fx, null)) return false;
   p.stadiumTurn = p.turn;
   p.acted++;
   runEffects(g, p, o, s.c.fx, null);
@@ -885,13 +1484,15 @@ function attachEnergy(g: Game, p: Player): boolean {
   if (p.energyDone >= g.rules.energyPerTurn) return false;
   const a = p.active;
   // A ready attacker waits on the Bench behind an Active one Energy short of retreating: pay the retreat first.
-  if (a && a.c.retreat - a.energy.length === 1 && p.retreatDone < g.rules.retreatsPerTurn && switchTarget(p, null) && !p.hand.some((i) => isSwitchCard(cardOf(p, i)))) {
+  if (a && retreatCost(p, a) - a.energy.length === 1 && p.retreatDone < g.rules.retreatsPerTurn && switchTarget(p, null) && !p.hand.some((i) => isSwitchCard(cardOf(p, i)))) {
     const j = p.hand.findIndex((i) => cardOf(p, i).kind === 'energy');
     if (j >= 0) {
-      a.energy.push(cardOf(p, removeFromHand(p, j)));
+      const e = cardOf(p, removeFromHand(p, j));
+      a.energy.push(e);
       p.energyDone++;
       p.acted++;
       g.trace?.(`energy → ${a.c.name} (to retreat)`);
+      onAttach(g, p, e, a);
       return true;
     }
   }
@@ -917,10 +1518,12 @@ function attachEnergy(g: Game, p: Player): boolean {
       }
     }
     if (pick >= 0) {
-      m.energy.push(cardOf(p, removeFromHand(p, pick)));
+      const e = cardOf(p, removeFromHand(p, pick));
+      m.energy.push(e);
       p.energyDone++;
       p.acted++;
       g.trace?.(`energy → ${m.c.name}`);
+      onAttach(g, p, e, m);
       return true;
     }
   }
@@ -929,12 +1532,13 @@ function attachEnergy(g: Game, p: Player): boolean {
 
 function playSupporter(g: Game, p: Player, o: Player | null): boolean {
   if (p.supporterDone >= g.rules.supportersPerTurn) return false;
-  if (p.first && p.turn === 1 && !g.rules.firstPlayerSupporterTurn1) return false;
   let at = -1;
   let best = 0.75;
   for (let j = 0; j < p.hand.length; j++) {
     const c = cardOf(p, p.hand[j]);
-    if (c.tt !== 'Supporter' || c.unread || !c.fx) continue;
+    if (c.tt !== 'Supporter' || c.unread || !c.fx || !playable(g, p, o, c.fx)) continue;
+    // p. 12: no Supporter on the first player's first turn, unless the card says it may ("If you go first, …").
+    if (p.first && p.turn === 1 && !g.rules.firstPlayerSupporterTurn1 && !c.fx.firstTurnOk) continue;
     const v = supporterValue(g, p, o, c.fx);
     if (v > best) {
       best = v;
@@ -946,6 +1550,7 @@ function playSupporter(g: Game, p: Player, o: Player | null): boolean {
   p.discard.push(c.i);
   p.supporterDone++;
   p.acted++;
+  p.played.add(c.i);
   g.trace?.(`supporter ${c.name}`);
   runEffects(g, p, o, c.fx!, null);
   return true;
@@ -966,8 +1571,9 @@ function moveUp(g: Game, p: Player, o: Player | null): boolean {
     return true;
   }
   const a = p.active;
-  if (p.retreatDone < g.rules.retreatsPerTurn && a.energy.length >= a.c.retreat) {
-    for (let k = 0; k < a.c.retreat; k++) p.discard.push(a.energy.pop()!.i);
+  const rc = retreatCost(p, a);
+  if (p.retreatDone < g.rules.retreatsPerTurn && a.energy.length >= rc) {
+    for (let k = 0; k < rc; k++) p.discard.push(a.energy.pop()!.i);
     swapActive(p, m);
     g.trace?.(`retreat to ${m.c.name}`);
     p.retreatDone++;
@@ -981,6 +1587,7 @@ function moveUp(g: Game, p: Player, o: Player | null): boolean {
 
 /** Mulligan until a Basic, choose the Active, bench the other Basics, set the Prize cards. False when the deck has no Basic. */
 export function setup(g: Game, p: Player): boolean {
+  p.game = g;
   if (!p.d.basics) return false;
   for (;;) {
     shuffleInPlace(p.deck, p.rng);
@@ -990,7 +1597,10 @@ export function setup(g: Game, p: Player): boolean {
     p.deck.push(...p.hand);
     p.hand.length = 0;
   }
-  for (const i of p.hand) if (cardOf(p, i).unread) p.unreadDraws++;
+  for (const i of p.hand) {
+    if (cardOf(p, i).unread) p.unreadDraws++;
+    p.held.add(i);
+  }
   // Active: the main line's Basic (it evolves in place), else the cheapest to retreat.
   const plan = p.d.plan;
   let at = -1;
@@ -1033,6 +1643,12 @@ export function beginTurn(g: Game, p: Player): boolean {
 
 /** Everything before the attack. */
 export function mainPhase(g: Game, p: Player, o: Player | null): void {
+  p.game = g;
+  p.opp = o;
+  if (o) {
+    o.game = g;
+    o.opp = p;
+  }
   for (let guard = 0; guard < 200; guard++) {
     if (benchBasic(g, p, o)) continue;
     if (evolveAny(g, p, o)) continue;
@@ -1040,6 +1656,7 @@ export function mainPhase(g: Game, p: Player, o: Player | null): void {
     if (moveUp(g, p, o)) continue;
     if (useAbility(g, p, o, false)) continue;
     if (playItem(g, p, o)) continue;
+    if (attachTool(g, p, o)) continue;
     if (playStadium(g, p, o)) continue;
     if (useStadium(g, p, o)) continue;
     if (attachEnergy(g, p)) continue;
@@ -1048,17 +1665,18 @@ export function mainPhase(g: Game, p: Player, o: Player | null): void {
   }
   const attackBarred = p.first && p.turn === 1 && !g.rules.firstPlayerAttacksTurn1;
   // An Ability that ends the turn (Rotom V's Instant Charge) only when there is no attack to lose.
-  if (attackBarred || !p.active || !bestPayable(p.active)) useAbility(g, p, o, true);
+  if (attackBarred || !p.active || !bestPayable(p, p.active)) useAbility(g, p, o, true);
   if (p.acted === 0) p.deadTurns++;
   if (g.trace) g.trace(`  end: active ${p.active?.c.name} [${p.active?.energy.map((e) => e.provides).join('')}] bench ${p.bench.map((m) => `${m.c.name}[${m.energy.map((e) => e.provides).join('')}]`).join(', ')}; hand ${names(p, p.hand)}`);
 }
 
 /** Damage after Weakness and Resistance of the defending Pokémon (none in a solo game), unless the attack's text ignores them. */
-export function damageAgainst(att: Mon, def: Mon | null, base: number, mods?: readonly DamageMod[]): number {
+export function damageAgainst(att: Mon, def: Mon | null, base: number, mods?: readonly DamageMod[], weakTo?: string): number {
   if (!def || base <= 0) return base;
   let d = base;
   const ignore = mods?.find((m) => m.k === 'ignore');
-  if (!(ignore?.k === 'ignore' && ignore.weakness)) for (const w of def.c.weak) if (w.t && att.c.types.includes(w.t)) d = d * w.mul + w.add;
+  const weak = weakTo ? [{ t: weakTo, mul: 2, add: 0 }] : def.c.weak;
+  if (!(ignore?.k === 'ignore' && ignore.weakness)) for (const w of weak) if (w.t && att.c.types.includes(w.t)) d = d * w.mul + w.add;
   if (!(ignore?.k === 'ignore' && ignore.resistance)) for (const r of def.c.resist) if (r.t && att.c.types.includes(r.t)) d -= r.amt;
   return Math.max(0, d);
 }
@@ -1118,7 +1736,9 @@ export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimA
       case 'discard':
         return (c.side === 'self' ? p : opp).discard.filter((i) => cardMatches(cardOf(p, i), c.t)).length;
       case 'retreatCost':
-        return opp.active?.c.retreat ?? 0;
+        return opp.active ? retreatCost(opp, opp.active) : 0;
+      case 'discarded':
+        return roll ? p.attackDiscarded : Math.min(2, [...inPlay(p)].reduce((n, x) => n + x.energy.length, 0));
     }
   };
   const holds = (c: Cond): number => {
@@ -1182,6 +1802,18 @@ export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimA
         return opp.active && opp.active.energy.length === m.energy.length ? 1 : 0;
       case 'benchDamaged':
         return p.bench.some((x) => x.dmg > 0) ? 1 : 0;
+      case 'paid':
+        return roll ? (p.attackPaid ? 1 : 0) : 0.5;
+      case 'allInPlay': {
+        const xs = [...inPlay(p)];
+        return xs.length && xs.every((x) => pokeMatches(x.c, c.t)) ? 1 : 0;
+      }
+      case 'firstTurnSecond':
+        return p.turn === 1 && !p.first ? 1 : 0;
+      case 'lastCardInHand':
+        return p.hand.length === 1 ? 1 : 0;
+      case 'did':
+        return 1;
     }
   };
   return { count, holds };
@@ -1189,6 +1821,12 @@ export function gameView(g: Game, p: Player, o: Player | null, m: Mon, atk: SimA
 
 /** The attack step. Returns the damage done (base damage when there is no opponent). */
 export function attack(g: Game, p: Player, o: Player | null): number {
+  p.game = g;
+  p.opp = o;
+  if (o) {
+    o.game = g;
+    o.opp = p;
+  }
   if (p.turnEnded || !p.active) return 0;
   if (p.first && p.turn === 1 && !g.rules.firstPlayerAttacksTurn1) return 0;
   const a = p.active;
@@ -1197,34 +1835,65 @@ export function attack(g: Game, p: Player, o: Player | null): number {
   let bestD = 0;
   let setupAtk: SimAttack | null = null;
   for (const atk of a.c.attacks) {
-    if (resting(p, a, atk) || missing(atk.cost, a.energy) !== '') continue;
+    if (resting(p, a, atk) || missing(attackCost(p, a, atk), energyOf(p, a)) !== '') continue;
     if (atk.fx?.mods.some((x) => x.k === 'firstTurnBarred') && p.turn === 1 && !p.first) continue;
+    // Never leave the table empty: an attack that returns its user to the hand needs a Benched Pokémon behind it.
+    if (atk.fx?.effects.some((x) => x.k === 'selfToHand') && !p.bench.length) continue;
     if (atk.damage > 0) {
       // Chosen on its expectation (coins at their mean), then rolled.
-      const d = damageAgainst(a, def, expectedDamage(atk.damage, atk.fx?.mods ?? [], gameView(g, p, o, a, atk, false)), atk.fx?.mods);
+      const d = damageAgainst(a, def, expectedDamage(atk.damage, atk.fx?.mods ?? [], gameView(g, p, o, a, atk, false)) + staticDamage(p, o, a, def), atk.fx?.mods, def && o ? weaknessOf(o, p, def) : undefined);
       if (d > bestD) {
         bestD = d;
         best = atk;
       }
     } else if (!setupAtk && atk.fx && atk.fx.effects.length && useful(g, p, o, atk.fx, a)) setupAtk = atk;
   }
-  const kos = !!def && bestD >= def.c.hp - def.dmg;
+  const kos = !!def && o && bestD >= maxHp(o, def) - def.dmg;
   const use = best && (bestD >= 50 || kos || !setupAtk) ? best : setupAtk;
   if (!use) return 0;
   g.trace?.(`attack ${use.name}`);
-  if (use.fx?.effects.length) runEffects(g, p, o, use.fx, a);
+  p.attackDiscarded = 0;
+  p.attackPaid = false;
+  if (use.fx?.effects.length) runEffects(g, p, o, use.fx, a, 'pre');
   if (use.rest) {
     a.restTurn = p.turn + 1;
     a.restAtk = use.rest === 1 ? '' : use.name;
   }
-  if (use.damage <= 0) return 0;
-  const d = damageAgainst(a, def, use.fx?.mods.length ? expectedDamage(use.damage, use.fx.mods, gameView(g, p, o, a, use, true)) : use.damage, use.fx?.mods);
-  if (p.turn <= p.damage.length) p.damage[p.turn - 1] += d;
-  if (!p.firstOnline && p.d.plan && a.c.key === p.d.plan.attacker) p.firstOnline = p.turn;
-  if (o && def) {
-    def.dmg += d;
-    if (def.dmg >= def.c.hp) knockOut(g, p, o);
+  let d = 0;
+  if (use.damage > 0) {
+    d = damageAgainst(a, def, (use.fx?.mods.length ? expectedDamage(use.damage, use.fx.mods, gameView(g, p, o, a, use, true)) : use.damage) + staticDamage(p, o, a, def), use.fx?.mods, def && o ? weaknessOf(o, p, def) : undefined);
+    if (o && def) for (const x of statics(o, def)) {
+      if (x.k === 'damageTaken') d = Math.max(0, d - x.delta);
+      if (x.k === 'preventDamage' && pokeMatches(a.c, x.from)) d = 0;
+    }
+    if (p.turn <= p.damage.length) p.damage[p.turn - 1] += d;
+    if (!p.firstOnline && p.d.plan && a.c.key === p.d.plan.attacker) p.firstOnline = p.turn;
+    if (o && def) {
+      def.dmg += d;
+      if (d > 0) for (const x of statics(o, def)) {
+        if (x.k === 'drawWhenHit') draw(o, x.n);
+        if (x.k === 'hitBack') a.dmg += 10 * x.n;
+      }
+      if (def.dmg >= maxHp(o, def)) knockOut(g, p, o);
+    }
   }
+  if (use.fx?.effects.length && !g.winner) runEffects(g, p, o, use.fx, a, 'post');
+  // Boomerang Energy comes back to the attacker after the attack.
+  if (p.boomerangs.length && (p.active === a || p.bench.includes(a))) {
+    for (const x of p.boomerangs) {
+      const at = p.discard.lastIndexOf(x.i);
+      if (at < 0) continue;
+      p.discard.splice(at, 1);
+      a.energy.push(x);
+    }
+  }
+  p.boomerangs = [];
+  // Spiky Energy's counters on the attacker can Knock it Out.
+  if (!g.winner && a.dmg >= maxHp(p, a) && (p.active === a || p.bench.includes(a))) {
+    ownKnockOut(g, p, o, a);
+    refillActive(g, p, o);
+  }
+  discardAtTurnEnd(p);
   return d;
 }
 
@@ -1235,36 +1904,23 @@ export function knockOut(g: Game, p: Player, o: Player): void {
   o.active = null;
   o.koBefore = o.turn + 1;
   o.koName = m.c.name;
-  const n = Math.min(m.c.prize, p.prizes.length);
-  for (let k = 0; k < n; k++) p.hand.push(p.prizes.pop()!);
-  p.taken += n;
-  if (!p.prizes.length) {
-    g.winner = p;
-    g.ending = 'prizes';
-    return;
-  }
-  if (!o.bench.length) {
-    if (g.rules.noPokemonLoses) {
-      g.winner = p;
-      g.ending = 'no Pokémon';
-    }
-    return;
-  }
+  takePrizes(g, p, o, prizesFor(o, m));
+  if (g.winner) return;
   promote(o, p);
 }
 
 /** After a knockout: the ready main attacker, else the hardest hitter, else the main line, else the most HP left, a multi-Prize Pokémon counting 100 HP less per extra Prize. */
-function promote(o: Player, p: Player): void {
+function promote(o: Player, p: Player | null): void {
   let at = 0;
   let best = -Infinity;
   for (let j = 0; j < o.bench.length; j++) {
     const m = o.bench[j];
-    const atk = bestPayable(m);
+    const atk = bestPayable(o, m);
     const s = mainReady(o, m)
       ? 10000
       : atk
-        ? 5000 + damageAgainst(m, p.active, atk.expected, atk.fx?.mods)
-        : (o.d.plan?.line.includes(m.c.key) ? 3000 : 0) + m.c.hp - m.dmg - 100 * (m.c.prize - 1);
+        ? 5000 + damageAgainst(m, p?.active ?? null, atk.expected, atk.fx?.mods)
+        : (o.d.plan?.line.includes(m.c.key) ? 3000 : 0) + maxHp(o, m) - m.dmg - 100 * (m.c.prize - 1);
     if (s > best) {
       best = s;
       at = j;

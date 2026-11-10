@@ -29,7 +29,8 @@ export function pokemonPlaytest(ev: PokemonEvaluator, cards: readonly DeckCard[]
   ];
   if (r.keyPieceStuckRate >= 0.03) lines.push(`A piece the plan needs is stuck in the Prize cards in ${pct(r.keyPieceStuckRate)} of games`);
   // Two kinds of card do nothing in these games, for different reasons, and the report says which is which.
-  const solo = r.unread.filter((u) => NEEDS_OPPONENT.has(u.reason));
+  // Healing is read now and sits idle in a solo game for want of damage: it joins the cards that need an opponent.
+  const solo = [...r.unread.filter((u) => NEEDS_OPPONENT.has(u.reason)), ...r.idle.filter((u) => u.reason === 'heal')];
   const blind = r.unread.filter((u) => !NEEDS_OPPONENT.has(u.reason));
   const list = (us: typeof r.unread) => {
     const n = us.reduce((k, u) => k + u.copies, 0);

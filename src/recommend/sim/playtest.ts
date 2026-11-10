@@ -56,6 +56,7 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
     unread: d.unread,
     unreadCopies: d.unread.reduce((n, u) => n + u.copies, 0),
     partlyRead: d.partlyRead,
+    idle: [],
     unreadDrawsPerGame: 0,
     ms: 0,
     meanDamagePerTurn: 0,
@@ -72,6 +73,8 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
   let turnsPlayed = 0;
   let stuck = 0;
   let unreadDraws = 0;
+  const held = new Set<number>();
+  const played = new Set<number>();
   for (let gi = 0; gi < games; gi++) {
     const g: Game = { rules, stadium: null, winner: null, ending: '' };
     const p = newPlayer(d, mixSeed(options.seed, gi), firstOf(options, gi), turns, rules.benchSize);
@@ -87,6 +90,8 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
     }
     deadTurns += p.deadTurns;
     unreadDraws += p.unreadDraws;
+    for (const i of p.held) held.add(i);
+    for (const i of p.played) played.add(i);
     const on = p.firstOnline || turns + 1;
     onlineSum += on;
     for (let t = on; t <= turns; t++) report.onlineBy[t - 1]++;
@@ -99,6 +104,17 @@ export function playtest(ev: PokemonEvaluator, cards: readonly DeckCard[], optio
   report.deadTurnRate = turnsPlayed ? deadTurns / turnsPlayed : 0;
   report.keyPieceStuckRate = stuck / games;
   report.unreadDrawsPerGame = unreadDraws / games;
+  // Readable Trainers that were in hand in some game and never played in any: what they do names why.
+  const copies = new Map<number, number>();
+  for (const i of d.list) copies.set(i, (copies.get(i) ?? 0) + 1);
+  for (const i of held) {
+    const c = d.cards[i];
+    if (played.has(i) || c.kind !== 'trainer' || c.unread || !c.fx?.effects.length) continue;
+    const kinds = new Set(c.fx.effects.map((e) => e.k));
+    const reason = kinds.size === 1 ? [...kinds][0] : 'other';
+    report.idle.push({ id: c.card.id, name: c.name, copies: copies.get(i) ?? 1, reason });
+  }
+  report.idle.sort((a, b) => b.copies - a.copies || a.name.localeCompare(b.name));
   report.damageByTurn = report.damageByTurn.map((n) => n / games);
   report.meanDamagePerTurn = report.damageByTurn.slice(0, dmgTurns).reduce((a, b) => a + b, 0) / dmgTurns;
   report.ms = performance.now() - t0;

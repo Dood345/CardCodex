@@ -33,7 +33,61 @@ export interface PokeTest {
   attack?: string;
   /** Owner prefix of the card name ("Hop's", "Team Rocket's"). */
   owner?: string;
+  /** Not of this type letter ("non-Darkness"). */
+  notType?: string;
+  /** Not these normalized names ("except any Iron Crown ex"). */
+  notNames?: string[];
 }
+
+/**
+ * What a Tool does to the Pokémon it is attached to, or a Stadium to every Pokémon matching `t`
+ * (both players'), while it is in play. Read in effects.ts `parseStatics`; applied by the engine's
+ * `maxHp`, `retreatCost`, attack damage, Knock Outs, Abilities, evolving and benching.
+ */
+/**
+ * Whom a static effect reaches: the holder only (a Tool, "This Pokémon"), the owner's Pokémon
+ * matching `t` ("your Basic Pokémon"), every Pokémon in play ("both yours and your opponent's",
+ * Stadiums), or the opponent's ("each of your opponent's Dragon Pokémon").
+ */
+export type StaticScope = 'self' | 'own' | 'both' | 'opponent';
+
+export type StaticEffect = {
+  scope?: StaticScope;
+  /** Only while the Pokémon with the Ability is in the Active Spot. */
+  activeOnly?: boolean;
+} & (
+  /** Retreat Cost changed by `delta` (-99: none); `noCostBelowHp`: none while that little HP remains. */
+  | { k: 'retreat'; delta: number; t?: PokeTest; noCostBelowHp?: number }
+  | { k: 'hp'; delta: number; t?: PokeTest }
+  /** Attacks of a matching Pokémon do `n` more damage to the opponent's Active (`vs`: only one of that kind); `ruleBoxFree`: only a holder without a Rule Box. */
+  | { k: 'damage'; n: number; t?: PokeTest; vs?: PokeTest; ruleBoxFree?: boolean }
+  /** A Knock Out of the holder gives `n` fewer Prize cards; `once`: one Knock Out per game (Legacy Energy). */
+  | { k: 'prizeLess'; n: number; t?: PokeTest; once?: boolean }
+  /** The holder, damaged by an attack in the Active Spot, puts `n` damage counters on the attacker (Spiky Energy, Punk Helmet). */
+  | { k: 'hitBack'; n: number; t?: PokeTest }
+  /** An Energy discarded by its holder's own attack comes back to it after the attack (Boomerang Energy). */
+  | { k: 'boomerang' }
+  /** The card is discarded at the end of its owner's turn (Ignition Energy). */
+  | { k: 'discardAtTurnEnd' }
+  /** The holder's owner draws `n` when it is damaged by an attack in the Active Spot. */
+  | { k: 'drawWhenHit'; n: number }
+  /** The holder's attacks (or the one named) cost `n` Colorless less, times `per` when given (Bloodmoon Ursaluna ex). */
+  | { k: 'costLess'; n: number; t?: PokeTest; attack?: string; per?: Count }
+  /** Each Basic Energy of the type attached to matching Pokémon provides two (Meganium's Wild Growth). */
+  | { k: 'energyDouble'; type: string; t?: PokeTest }
+  /** Matching Pokémon's Weakness becomes the type `to` (Lillie's Clefairy ex's Fairy Zone). */
+  | { k: 'weakness'; to: string; t: PokeTest }
+  /** All damage from attacks of matching attackers is prevented (Crustle's Mysterious Rock Inn). */
+  | { k: 'preventDamage'; from: PokeTest }
+  | { k: 'noAbilities'; t: PokeTest }
+  | { k: 'noTools' }
+  /** A Basic matching `t` put onto a Bench gets `n` damage counters. */
+  | { k: 'benchCounters'; n: number; t: PokeTest }
+  /** Matching Pokémon may evolve into matching Pokémon the turn they are played (not on the first turn). */
+  | { k: 'evolveSameTurn'; t: PokeTest }
+  /** Matching Pokémon take `delta` less damage from the opponent's attacks. */
+  | { k: 'damageTaken'; delta: number; t?: PokeTest }
+);
 
 /** A test on a card in a hand or discard pile. */
 export interface CardTest {
@@ -58,7 +112,9 @@ export type Count =
   | { k: 'prizesTaken'; side: 'self' | 'opponent' }
   | { k: 'hand'; side: 'self' | 'opponent' }
   | { k: 'discard'; side: 'self' | 'opponent'; t: CardTest }
-  | { k: 'retreatCost'; on: 'opponentActive' };
+  | { k: 'retreatCost'; on: 'opponentActive' }
+  /** Cards the attack's own text discarded "in this way" (engine.ts `Player.attackDiscarded`). */
+  | { k: 'discarded' };
 
 export type Cond =
   /** Heads on one coin. */
@@ -83,6 +139,16 @@ export type Cond =
   | { k: 'sameType' }
   | { k: 'sameEnergy' }
   | { k: 'benchDamaged' }
+  /** The optional cost of this attack was paid ("If you do, …"). */
+  | { k: 'paid' }
+  /** Every Pokémon in play on your side matches. */
+  | { k: 'allInPlay'; t: PokeTest }
+  /** Your first turn, going second. */
+  | { k: 'firstTurnSecond' }
+  /** The card being played is the last card in your hand. */
+  | { k: 'lastCardInHand' }
+  /** The effect before this one in the same text did something ("If you attached Energy in this way, …"). */
+  | { k: 'did' }
   | { k: 'not'; c: Cond }
   | { k: 'any'; cs: Cond[] };
 
@@ -132,6 +198,8 @@ export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
   if (t.ability && !c.abilities.some((a) => a.name === t.ability)) return false;
   if (t.attack && !c.attacks.some((a) => a.name === t.attack)) return false;
   if (t.owner && !c.name.startsWith(t.owner)) return false;
+  if (t.notType && c.types.includes(t.notType)) return false;
+  if (t.notNames && t.notNames.includes(c.key)) return false;
   return true;
 }
 
@@ -209,7 +277,8 @@ export function expectedDamage(base: number, mods: readonly DamageMod[], view: D
  * Pokémon (four in play), five cards in hand, no Prize cards taken and no damage counters (a
  * deck opens with its plan before the opponent has taken anything), a discard pile of three
  * Energy and two Supporters, and an Active with a Retreat Cost of two; a count narrowed to a kind
- * of Pokémon or card is one.
+ * of Pokémon or card is one, and so is a count of the opponent's Energy of a type (Sunflora's
+ * Redirected Sunlight, 60 per Fire Energy on the opponent's Pokémon, was credited 180).
  *
  * Conditions are credited by whether the pilot can bring them about: a coin, the opponent's side,
  * damage taken, a Knock Out, a Stadium, the hand and the Prize cards count half (the game decides);
@@ -225,6 +294,8 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
       case 'heads':
         return typeof c.flips === 'object' ? count(c.flips.per) / 2 : expectedHeads(c.flips);
       case 'energy': {
+        // A typed count of the opponent's Energy is credited one card: nothing says the opponent plays that type.
+        if (c.type && (c.on === 'opponentActive' || c.on === 'opponentAll')) return 1;
         const own = c.type || c.basic || c.special ? Math.max(1, Math.ceil(costN / 2)) : costN;
         return c.on === 'self' || c.on === 'opponentActive' ? own : c.on === 'bothActive' ? 2 * own : own + 2;
       }
@@ -241,6 +312,8 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
       case 'discard':
         return c.t.energy || c.t.basicEnergy || c.t.energyType ? 3 : c.t.supporter ? 2 : 1;
       case 'retreatCost':
+        return 2;
+      case 'discarded':
         return 2;
     }
   };
@@ -262,6 +335,8 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
       case 'movedThisTurn':
       case 'discard':
         return 0;
+      case 'paid':
+        return 0.5;
       default:
         return 0.5;
     }
@@ -273,9 +348,12 @@ export function staticView(costN: number, supply?: DeckSupply): DamageView {
  * Damage a turn an attack keeps up: its expected damage, halved for one that rests its user, with
  * half of the card's next attack (at no higher cost) when only the attack itself is barred.
  */
-export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number }>(a: A, attacks: readonly A[]): number {
-  if (!a.rest || a.damage <= 0) return a.expected;
+export function sustainedOf<A extends { expected: number; rest: 0 | 1 | 2; costN: number; damage: number; drain: number }>(a: A, attacks: readonly A[]): number {
+  // Energy the attack takes from its user comes back one card a turn, so the attack lands every max(1, drain)
+  // turns: a one-Energy discard is covered by the turn's attachment, "discard all" of an FF attack waits a turn.
+  const own = a.expected / Math.max(1, a.drain);
+  if (!a.rest || a.damage <= 0) return own;
   let other = 0;
-  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected);
-  return (a.expected + other) / 2;
+  if (a.rest === 2) for (const b of attacks) if (b !== a && !b.rest && b.costN <= a.costN) other = Math.max(other, b.expected / Math.max(1, b.drain));
+  return (own + other) / 2;
 }

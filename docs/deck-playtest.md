@@ -49,6 +49,7 @@ opening its combo, and a Magic one as casting on curve.
 | `keyPieceStuckRate` | Share of games where every copy of something the plan needs is prized (see below) |
 | `unread`, `unreadCopies`, `unreadDrawsPerGame` | Cards the pilot cannot read, with the kind of effect; how often one is in hand |
 | `partlyRead` | Cards it plays without using them in full: Pokémon whose Ability it does not use (passive ones, or activated ones whose text was not read), such as Radiant Charizard's cost reduction |
+| `idle` | Trainers it can read that reached its hand in some game and were never played in any (a Potion with nothing to heal), with what they do as the reason; the deck page lists the healing ones among the cards that need an opponent |
 | `meanDamagePerTurn`, `damageByTurn` | Pokémon only: damage per own turn as the attack text makes it (coins flipped, counts read, the opponent a mirror), mean over the first six turns |
 
 **What counts as a stuck key piece.** Any one of these, in the Prize cards from the start of the game:
@@ -88,6 +89,20 @@ those from `features(card).text`.
 | Rare Candy | Rare Candy | skip the Stage 1 |
 | Discard cost | Ultra Ball ("only if you discard 2 other cards") | pay the discard, then resolve |
 | One coin flip | "Flip a coin. If heads, …" | the effect happens half the time |
+| Searches narrowed by kind | Poké Pad, Team Rocket's Proton, Fighting Gong, Brock's Scouting | "that doesn't have a Rule Box" (no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega), an owner ("Team Rocket's Pokémon"), a name ("that has "Team Rocket" in its name"), "X or Y" (either kind), "of different types" |
+| A draw with an alternative | Lillie's Determination, Lacey, Team Rocket's Ariana | "If …, draw N cards instead": the other number when the condition holds (Prize cards remaining, every Pokémon in play of an owner) |
+| Both players shuffle | Judge, Iono, Unfair Stamp | the opponent shuffles and draws too, in a duel |
+| "You can use this card only if …" | Unfair Stamp, Special Red Card, Rosa's Encouragement, Gladion's Final Battle | played only while the condition holds (a Knock Out last turn, Prize cards, the last card in hand, going second on the first turn); "You can't use this card during your first turn" and "If you go first, you may use this card during your first turn" likewise |
+| Recovery from the discard pile | Night Stretcher, Lana's Aid, Miracle Headset | the most wanted card of any of the kinds named into the hand; Super Rod and Energy Recycler into the deck, when the discard pile holds a card the plan wants |
+| Energy moved | Energy Switch, N's Plan | from a Pokémon that does not need it to one that does |
+| A look that keeps some cards | Explorer's Guidance, Hassel, Drayton | the top N, the most wanted kept, the rest discarded or shuffled back; "a Pokémon and a Trainer card" one of each |
+| Crispin | Crispin | one Basic Energy to the hand and one of another type attached |
+| Gwynn | Gwynn | spare Pokémon without a Rule Box discarded, N cards drawn for each |
+| Healing | Potion, Jumbo Ice Cream, Bianca's Devotion | the most damaged Pokémon it may reach (the Active with enough Energy, one with little HP left), when something is damaged; it sits idle otherwise and the report says so |
+| Tools | Air Balloon, Hero's Cape, Brave Bangle, Maximum Belt, Lillie's Pearl, Lucky Helmet, Rescue Board | static effects on the Pokémon the Tool is attached to (`statics`): Retreat Cost, HP, damage to the opponent's Active (only against a Pokémon ex, only on a holder without a Rule Box), a Prize card withheld on its Knock Out, cards drawn when damaged in the Active Spot, a cheaper attack; attached to the plan's lead, or to the Active for a Retreat Cost it needs |
+| Stadiums with a standing effect | Gravity Mountain, Lively Stadium, N's Castle, Postwick, Team Rocket's Watchtower, Jamming Tower, Risky Ruins, Forest of Vitality, Full Metal Lab | the same effects on every Pokémon the Stadium names, both players'; Abilities or Tools turned off, damage counters on a Basic benched, a kind evolving the turn it is played, less damage taken; played when it favours the pilot's side (its Pokémon in play or in the deck against the opponent's in play) |
+| Stadiums each player may use | Prism Tower, Lumiose City, Spikemuth Gym | "Once during each player's turn, that player may …" read like a Trainer, "their" as "your": Prism Tower pays two cards for one, Lumiose City ends the turn |
+| Attack costs (attacks only) | Draconic Buster, Bellowing Thunder, Icicle Loop, Tuck Tail | Energy discarded from the attacker (a number, all, a type), "any amount" from any of your Pokémon, Energy put back into the hand or shuffled into the deck, the top of the deck or cards from the hand discarded, damage to itself or to its own Bench, the attacker returned to the hand; optional ("You may …") with a bonus "and have this attack do N more damage" or "If you do, …" |
 
 `{R}` symbols are read as type names.
 
@@ -96,10 +111,18 @@ those from `features(card).text`.
 | Trigger | Example | Note |
 | --- | --- | --- |
 | When it evolves from hand | Charizard ex's Infernal Reign | — |
-| When it is benched from hand | Lumineon V's Luminous Sign | — |
+| When it is benched from hand | Lumineon V's Luminous Sign, Chien-Pao's Snow Sink | — |
 | Once during your turn | Pidgeot ex's Quick Search | Honours "can't use more than 1 Quick Search Ability each turn" |
 | As often as you like | — | — |
-| Passive | — | Not used |
+| Passive | Latias ex's Skyliner, Meganium's Wild Growth, Lillie's Clefairy ex's Fairy Zone | A standing effect (`statics`, as for Tools): free retreat, HP, damage added, a cheaper attack (per Prize card taken for Bloodmoon Ursaluna ex), Energy doubled, the opponent's Weakness changed, damage from a kind of attacker prevented; "As long as this Pokémon is in the Active Spot" honoured |
+
+An activated Ability's "if …, you may …" is a condition the engine checks (Fezandipiti ex's Flip the
+Script after a Knock Out, Lunatone's Lunar Cycle with Solrock in play), "You must discard … in order
+to use this Ability" a cost paid with a spare card of the kind (N's Zoroark ex's Trade), and "If you
+attached Energy to a Pokémon in this way, …" a follow-up that runs only when the effect before it did
+something (Teal Mask Ogerpon ex's Teal Dance, Hydrapple ex's Ripening Charge, Dudunsparce's Run Away
+Draw shuffling itself back). Looks at the top of the deck read three more wordings (Drakloak's
+Recon Directive, Metang's Metal Maker attaching what it finds, Tatsugiri's Attract Customers).
 
 - **Turn-ending Abilities.** An Ability that ends the turn (Rotom V's Instant Charge) is used only
   when there is no attack to lose.
@@ -142,7 +165,9 @@ exactly its cost in Energy and two more across its side, each player has three B
 its plan before the opponent has taken anything: credited two Prize cards, Pecharunt ex's 60 per
 Prize card the opponent has taken became a list's plan and the list decked out against random piles
 that never took one), a discard pile of three Energy and two Supporters, and an Active with a Retreat
-Cost of two; a count narrowed to a kind of Pokémon or card is one. A condition is credited by whether the pilot can bring it about: a coin,
+Cost of two; a count narrowed to a kind of Pokémon or card is one, and so is a count of the
+opponent's Energy of a type (nothing says the opponent plays that type: Sunflora's Redirected
+Sunlight, 60 per Fire Energy on the opponent's Pokémon, was credited 180). A condition is credited by whether the pilot can bring it about: a coin,
 the opponent's side, damage taken, a Knock Out, a Stadium, hand sizes and Prize cards count half (the
 game decides); Energy of a type on this Pokémon or in play, and a named or kind of Pokémon in play,
 count in full when the deck holds the means and nothing otherwise; extra Energy beyond the cost
@@ -251,8 +276,14 @@ shares in its baseline and fails on any drop (`docs/deck-bench.md`).
 - **A stuck Active.** When the Active is off the main line and short of its Retreat Cost while the
   line waits on the Bench, Energy (manual or accelerated, such as Infernal Reign's third Energy)
   goes to it right after the line's lead. Searches then rank Energy and Switch at the top.
-- **Deck reserve.** Draw effects are passed up when they would leave fewer than 6 cards in the
-  deck, because decking out loses.
+- **Deck reserve.** Draw effects (and looks that discard the rest, and Gwynn's discard-and-draw)
+  are passed up when they would leave fewer cards in the deck than one draw a turn for the Knock
+  Outs still needed plus two, never under six (`reserve`), because decking out loses; once the deck
+  is under twenty cards the pilot draws only into a hand of fewer than five cards, and a hand-replacing
+  draw loses a card of value for each card over four.
+  Before 2026-11-10 the reserve was a flat six: once the pilot played Gwynn, Explorer's Guidance and
+  Run Away Draw as written, lists that could not Knock Out a random pile's Pokémon quickly decked out
+  against it (five of thirty-nine lost to their pile; none do now).
 - **The attack** is the payable attack with the highest expected damage on the board as it stands.
   A setup attack (Pidgey's Call for Family) is used instead when the damage would be under 50 and
   would not knock out.
@@ -370,19 +401,42 @@ discards the one in play.
 
 **Gaps that matter for this deck:**
 
-- **Cards whose text is not read.** The pilot never plays them. That covers gust, disruption,
-  healing, recovery other than Energy, every Tool except a lent VSTAR Power, Stadiums other than
-  "once during each player's turn", conditional cards ("only if …") and multi-coin effects. The report names them in two groups:
-  cards that need an opponent to matter (gust, disruption, healing) and cards the pilot does not
-  know how to play.
+- **Cards whose text is not read.** The pilot never plays them. That covers gust, hand and Energy
+  disruption of the opponent, "only if" conditions about things the card data does not carry (a Tera
+  Pokémon in play: the catalog has no Tera marker), Tools and Stadiums tied to Special Conditions or
+  to the opponent's attacks (Binding Mochi, Punk Helmet, Battle Cage), Area Zero Underdepths (Tera),
+  multi-coin effects, and a few wordings (Salvatore's evolve-from-deck, Naveen, Kieran's "Choose 1",
+  Academy at Night). The report names them in two groups: cards that need an opponent to matter (gust,
+  disruption, and healing that sat idle) and cards the pilot does not know how to play.
 - **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
   Stadiums that change damage are not. Still unread in attack text: a count the parser does not
   model (Benched Pokémon by HP, damage counters on an owner's Pokémon), a bonus tied to a Special
-  Condition, a Tool attached, a healed Pokémon or a named Special Energy, and "N damage for each card
-  you discarded in this way" (the discard is an attack cost, the next family). Of the attack
-  drawbacks, "can't attack next turn" and "not on your first turn going second" are played;
-  discarding Energy and self-damage are ignored, as are Special Conditions.
-- **Special Energy conditions.** A Special Energy provides what `features.provides` says.
+  Condition, a Tool attached, a healed Pokémon or a named Special Energy. Of the attack drawbacks,
+  "can't attack next turn", "not on your first turn going second", Energy discarded or returned,
+  damage to itself and to its own Bench are played (see Attack costs below); Special Conditions are
+  not.
+- **Attack costs** (`damage-text.ts` `parseCost`, since 2026-11-10). The costs run before the
+  attack's damage, the own-side damage after it. "Any amount" of Energy (Raging Bolt ex) is as many
+  as a Knock Out needs (the mirror's HP in a solo game), taken from the Bench first and the attacker
+  last, or every one when no Knock Out is in reach: the attack hits for them. An optional cost is
+  paid when its bonus turns the attack into a Knock Out, or is worth more than the attacks the lost
+  Energy would have powered (each Energy a turn of the attack's own base damage). An attack that
+  returns its user to the hand (Tuck Tail) is used only with a Benched Pokémon behind it. A Pokémon
+  Knocked Out by its own attack, or a Benched one by its own side, is discarded and the opponent takes
+  its Prize cards; a solo game plays on with an empty Active Spot when nothing is left to promote.
+  Energy a mandatory cost takes every time (`AttackFeature.drain`: a discard, or Energy put back,
+  the whole cost for "all") comes back one card a turn, so the sustained figure divides by
+  max(1, drain): Slaking ex's Great Swing (CC, 280, discard one) lands every turn, Cynthia's
+  Garchomp ex's Draconic Buster (FF, 260, discard all) every other turn. Before this the engine built
+  decks around such attacks and their damage per turn fell from 61 to 53 once the cost was paid.
+- **Special Energy.** What a Special Energy provides, to whom and when more comes from the
+  evaluator's rule resolved against the deck's Pokémon (`SimCard.energy`): Neo Upper Energy is one
+  Colorless except on a Stage 2, where it is two of any type; Team Rocket's Energy two of Psychic or
+  Darkness, attached only to Team Rocket's Pokémon; Legacy Energy any one type. Enriching Energy draws
+  when attached from the hand; Spiky Energy's counters land on the attacker (and can Knock it Out);
+  Legacy Energy withholds a Prize card once per game; Boomerang Energy comes back after its holder's
+  own attack discards it. Mist Energy's "prevent all effects of attacks" stays unread while the
+  engine has no attack effects to prevent.
 - **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
   and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This
   favours slow Stage 2 decks.

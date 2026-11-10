@@ -10,8 +10,9 @@ import type { CatalogCard } from '@/data/types';
 import { COST_LETTERS } from '../card-text';
 import type { PokemonEvaluator } from '../pokemon';
 import { energyMatches, expectedDamage, pokeMatches, staticView, sustainedOf, type DeckSupply } from './damage';
+import { meetsCond } from '../pokemon';
 import type { UnreadCard } from './types';
-import { parseAbility, parseAttackText, parseEnergyText, parseText, type ParsedAbility, type ParsedText } from './effects';
+import { parseAbility, parseAttackText, parseEnergyText, parseStaticsText, parseText, type ParsedAbility, type ParsedText } from './effects';
 import { prizeValue } from './rules';
 
 export interface SimAttack {
@@ -25,6 +26,8 @@ export interface SimAttack {
   fx: ParsedText | null;
   /** Expected damage on the typical board (`AttackFeature.expected`): what the pilot compares attacks by before a game. */
   expected: number;
+  /** Energy its own text takes from its user each time (`AttackFeature.drain`). */
+  drain: number;
   /** 1: the Pokémon cannot attack on its next turn; 2: it cannot use this attack; 0: neither. */
   rest: 0 | 1 | 2;
   /** Damage a turn the attack keeps up (`AttackFeature.sustained`). */
@@ -59,8 +62,13 @@ export interface SimCard {
   tt: string;
   /** A Trainer's text, or a Special Energy's (whose effects the pilot does not act on: `provides` is what it reads). */
   fx: ParsedText | null;
-  /** Energy: type letters provided, "*" for any; "" for non-Energy. */
+  /** Energy: type letters provided to any holder, "*" for any; "" for non-Energy. */
   provides: string;
+  /**
+   * A Special Energy's rule, resolved against this deck's Pokémon: `onlyKeys` the Pokémon it may be attached to
+   * (null: any), `upgrades` what it provides instead to those holders (keys), `amount` Energy at a time.
+   */
+  energy?: { amount: number; onlyKeys: Set<string> | null; upgrades: { types: string; amount: number; keys: Set<string> }[] };
   /** Why the pilot cannot use this card ("" when it can or it needs no reading). */
   unread: string;
   /** Stage 2: key of the Basic Rare Candy puts it on, "" when unknown. */
@@ -130,7 +138,7 @@ export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number):
   const t = f.text;
   const kind = f.isPokemon ? 'pokemon' : f.isEnergy ? 'energy' : 'trainer';
   // A braced unknown symbol in a cost counts as one Colorless.
-  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, printed: a.printed, fx: a.effect ? parseAttackText(a.effect) : null, expected: a.expected, rest: a.rest, sustained: a.sustained }));
+  const attacks: SimAttack[] = f.attacks.map((a) => ({ name: a.name, cost: a.cost.replace(/\{[^}]*\}/g, 'C'), costN: a.costN, damage: a.damage, printed: a.printed, fx: a.effect ? parseAttackText(a.effect) : null, expected: a.expected, drain: a.drain, rest: a.rest, sustained: a.sustained }));
   const abilities = (t?.b ?? []).map((b) => parseAbility(b.k, b.n, b.e));
   let fx: ParsedText | null = null;
   let unread = '';
@@ -142,16 +150,18 @@ export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number):
       fx = parseText(lend[1].replace(/^During your turn, you may /, '').replace(/\(You can't use more than 1 VSTAR Power in a game\.\)/, ''));
       if (fx.effects.length) fx.unread = '';
     } else if (f.trainerType === 'Tool' || f.trainerType === 'Stadium') {
-      // Other Tools change a Pokémon while attached; only Stadiums that let a player act each turn are read.
-      if (f.trainerType === 'Tool' || !/Once during each player's turn|Once during your turn/i.test(t?.fx ?? '')) fx = { ...fx, effects: [], unread: f.trainerType.toLowerCase() };
+      // A Tool changes the Pokémon it is attached to, a Stadium every Pokémon it names, while in play (statics);
+      // a Stadium that lets each player act is read like a Trainer.
+      fx = parseStaticsText(t?.fx ?? '', f.trainerType);
     }
-    if (!fx.effects.length) {
+    if (!fx.effects.length && !fx.statics?.length) {
       const roles = [...f.roles];
       unread = roles.find((r) => r === 'gust' || r === 'heal' || r === 'recover' || r === 'disrupt') ?? (fx.unread || 'other');
     }
   } else if (kind === 'energy' && !f.isBasicEnergy) {
-    // What a Special Energy provides comes from the features; its text is kept for the coverage measure.
-    fx = parseEnergyText(t?.fx ?? '');
+    // What a Special Energy provides, to whom and when more comes from the evaluator's rule (resolved per deck in
+    // compileDeck); its other sentences are read here.
+    fx = parseEnergyText(t?.fx ?? '', f.energy);
   }
   const w = parsePairs(t?.w);
   const r = parsePairs(t?.r);
@@ -176,7 +186,8 @@ export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number):
     suffix: f.suffix,
     tt: f.trainerType,
     fx,
-    provides: f.provides,
+    // A Special Energy's unconditional letters; what an upgrade adds is resolved per holder (`energy`).
+    provides: kind === 'energy' && f.energy && !f.isBasicEnergy ? f.energy.base : f.provides,
     unread,
     candyBase: '',
     engine: abilities.some((a) => a.trigger !== 'passive' && a.fx.effects.length > 0),
@@ -224,6 +235,29 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[], onl
 
   const copies = new Map<string, number>();
   for (const i of list) copies.set(cards[i].key, (copies.get(cards[i].key) ?? 0) + 1);
+
+  // Special Energy rules against this deck's Pokémon: whom each may be attached to, and whom it gives more.
+  const pokemonCards = cards.filter((c) => c.kind === 'pokemon');
+  for (const c of cards) {
+    const rule = c.kind === 'energy' && !c.basicEnergy ? ev.features(c.card).energy : undefined;
+    if (!rule) continue;
+    const keysMeeting = (cond: Parameters<typeof meetsCond>[0]) => new Set(pokemonCards.filter((pc) => meetsCond(cond, ev.features(pc.card)) === true).map((pc) => pc.key));
+    const upgrades: NonNullable<SimCard['energy']>['upgrades'] = [];
+    // Symbols spelled as "{C}{C}" or "ColorlessColorless": how many Energy a sentence provides at once.
+    const fxText = (ev.features(c.card).text?.fx ?? '').replace(/\{([A-Z])\}/g, (_, l: string) => Object.keys(COST_LETTERS).find((n) => COST_LETTERS[n] === l) ?? l);
+    const NAMES = Object.keys(COST_LETTERS).join('|');
+    const howMany = (run: string) => (run.match(new RegExp(NAMES, 'g')) ?? []).length;
+    for (const u of rule.upgrades) {
+      if (u.cond === 'unread') continue;
+      // "only 2 Energy at a time", or "{C}{C}{C} Energy instead": how many the upgrade counts as.
+      const am = new RegExp(`${u.types === '*' ? 'every type of Energy' : ''}.*?only (\\d) Energy at a time`).exec(fxText);
+      const rep = new RegExp(`provides ((?:${NAMES}){2,}) Energy instead`).exec(fxText);
+      upgrades.push({ types: u.types, amount: am ? Number(am[1]) : rep ? howMany(rep[1]) : 1, keys: keysMeeting(u.cond) });
+    }
+    // "provides {C}{C} Energy" with no "at a time": two Energy (Double Turbo Energy).
+    const twice = new RegExp(`provides ((?:${NAMES}){2,}) Energy\\.`).exec(fxText);
+    c.energy = { amount: twice && rule.amount === 1 ? howMany(twice[1]) : rule.amount, onlyKeys: rule.only ? keysMeeting(rule.only) : null, upgrades };
+  }
   const fromInDeck = new Map<string, string>();
   for (const c of cards) if (c.kind === 'pokemon' && c.from) fromInDeck.set(c.key, c.from);
   const inDeck = new Set(cards.map((c) => c.key));
@@ -278,7 +312,8 @@ export function compileDeck(ev: PokemonEvaluator, deck: readonly DeckCard[], onl
       if (s > bestScore) {
         bestScore = s;
         const about = Math.round(a.expected) !== a.damage ? `, about ${Math.round(a.expected)}` : '';
-        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.printed || a.damage}${about}${a.rest ? ', every other turn' : ''})` };
+        const drain = a.drain ? `, ${a.drain === a.costN ? 'all its' : a.drain} Energy discarded` : '';
+        plan = { attacker: c.key, attackerName: c.name, attack: a, line, root, detail: `${c.name}'s ${a.name} (${a.cost || 'free'}, ${a.printed || a.damage}${about}${drain}${a.rest ? ', every other turn' : ''})` };
       }
     }
   }

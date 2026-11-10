@@ -95,7 +95,7 @@ const KINDS: readonly [string, RegExp][] = [
 /** The group name of a text that is not followed: the kind of its first unread sentence. */
 export function kindOf(fx: ParsedText): string {
   const s = fx.sentences.find((x) => x.status === 'unread');
-  if (!s) return 'followed';
+  if (!s) return fx.unread || 'followed';
   if (s.why === 'passive') return 'passive Ability';
   if (s.why.startsWith('search wider')) return s.why;
   for (const [kind, re] of KINDS) if (re.test(s.text)) return kind;
@@ -131,7 +131,7 @@ function countCard(ts: Record<CoverageId, Tally>, c: SimCard, w: number): void {
   else if (c.kind === 'energy') {
     if (!c.basicEnergy) count(ts.energy, c.fx, c.name, w);
   } else {
-    for (const ab of c.abilities) count(ts.abilities, ab.fx.effects.length ? ab.fx : { ...ab.fx, followed: false }, `${c.name}: ${ab.name}`, w);
+    for (const ab of c.abilities) count(ts.abilities, ab.fx.effects.length || ab.fx.statics?.length ? ab.fx : { ...ab.fx, followed: false }, `${c.name}: ${ab.name}`, w);
     for (const a of c.attacks) if (a.damage > 0) count(ts.attacks, a.fx, `${c.name}: ${a.name}`, w);
   }
 }
