@@ -26,7 +26,9 @@ import {
   type ScanMatcher,
 } from '@/scanner';
 import { focusTracks } from '@/scanner/focus';
-import { samplePocketLuma } from '@/scanner/hash';
+import { POCKET_SAMPLE_WIDTH, samplePocketLuma } from '@/scanner/hash';
+import { loadEnergyReferences, withBareEnergy, type EnergyReferences } from '@/scanner/energy';
+import { sampleRgba } from '@/scanner/grid';
 import { addLiveArtwork, matchStillCard } from '@/scanner/live-artwork';
 import type { PocketEntry } from '@/scanner/page';
 import { Toast, useToast } from '@/ui/components';
@@ -117,6 +119,19 @@ export default function ScanPage() {
   const recognizer = recognizerFor(settings);
   // The artwork table for stills (the live hook loads the same cached promise for itself).
   const [table, setTable] = useState<HashTable | null>(null);
+  // Colour references for basic Energy cards that print no name (src/scanner/energy.ts); Pokémon only.
+  const [energyRefs, setEnergyRefs] = useState<EnergyReferences | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setEnergyRefs(null);
+    if (!matcher.lookup) return;
+    void loadEnergyReferences(matcher.game).then((r) => {
+      if (!cancelled) setEnergyRefs(r);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [matcher]);
   useEffect(() => {
     let cancelled = false;
     setTable(null);
@@ -294,6 +309,17 @@ export default function ScanPage() {
           const sample = (region: Box) => samplePocketLuma(canvas, region);
           results = guide ? matchStillCard(results, guide, frame, table, lookup, sample) : addLiveArtwork(results, frame, table, lookup, sample);
         }
+        // A basic Energy that prints only "ENERGY": matched by picture and colour when nothing else was sure.
+        if (energyRefs && lookup) {
+          results = withBareEnergy(results, {
+            lines,
+            frame: { w: canvas.width, h: canvas.height },
+            guide,
+            refs: energyRefs,
+            lookup,
+            sample: (region) => sampleRgba(canvas, region, POCKET_SAMPLE_WIDTH),
+          });
+        }
         if (getScanSession().still?.url !== url) return;
         patchScanSession({
           still: { url, w: canvas.width, h: canvas.height, results, busy: false, ms: performance.now() - started, lineCount: lines.length, source },
@@ -303,7 +329,7 @@ export default function ScanPage() {
         if (s && s.url === url) patchScanSession({ still: { ...s, busy: false, error: e instanceof Error ? e.message : String(e) } });
       }
     },
-    [recognizer, matcher, table],
+    [recognizer, matcher, table, energyRefs],
   );
 
   /** A picture from the camera app or the gallery. */
