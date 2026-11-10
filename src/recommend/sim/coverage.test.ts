@@ -86,13 +86,15 @@ describe('sentence accounting', () => {
     const meowth = one('me03-062').abilities.find((a) => a.name === 'Last-Ditch Catch')!;
     expect(meowth.trigger).toBe('bench');
     expect(meowth.fx.followed).toBe(true);
-    // Teal Dance: "If you attached Energy to a Pokémon in this way, draw a card." is a condition the engine does not check.
+    // Teal Dance: "If you attached Energy to a Pokémon in this way, draw a card." hangs on the attachment having happened.
     const ogerpon = one('sv06-025').abilities[0];
-    expect(ogerpon.fx.effects.map((e) => e.k)).toEqual(['attach', 'draw']);
-    expect(ogerpon.fx.followed).toBe(false);
-    expect(ogerpon.fx.sentences[1]).toMatchObject({ status: 'unread', why: 'condition' });
-    // A passive Ability is never used, so nothing of it is followed.
-    expect(parseAbility('Ability', 'Skyliner', 'Your Basic Pokémon in play have no Retreat Cost.').fx.followed).toBe(false);
+    expect(ogerpon.fx.effects).toMatchObject([{ k: 'attach' }, { k: 'draw', n: 1, if: { k: 'did' } }]);
+    expect(ogerpon.fx.followed).toBe(true);
+    // A passive Ability is a standing effect: Skyliner takes the Retreat Cost off the player's Basic Pokémon.
+    const sky = parseAbility('Ability', 'Skyliner', 'Your Basic Pokémon in play have no Retreat Cost.').fx;
+    expect(sky.statics).toEqual([{ k: 'retreat', delta: -99, t: { basic: true }, scope: 'own' }]);
+    expect(sky.followed).toBe(true);
+    expect(parseAbility('Ability', 'Rough Skin', 'If this Pokémon is damaged by an attack, put 2 damage counters on the Attacking Pokémon.').fx.followed).toBe(false);
   });
 
   it('counts an attack with no text, or with only the rest the engine honours, as acted on', () => {

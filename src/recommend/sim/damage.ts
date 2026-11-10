@@ -35,6 +35,8 @@ export interface PokeTest {
   owner?: string;
   /** Not of this type letter ("non-Darkness"). */
   notType?: string;
+  /** Not these normalized names ("except any Iron Crown ex"). */
+  notNames?: string[];
 }
 
 /**
@@ -42,7 +44,18 @@ export interface PokeTest {
  * (both players'), while it is in play. Read in effects.ts `parseStatics`; applied by the engine's
  * `maxHp`, `retreatCost`, attack damage, Knock Outs, Abilities, evolving and benching.
  */
-export type StaticEffect =
+/**
+ * Whom a static effect reaches: the holder only (a Tool, "This Pokémon"), the owner's Pokémon
+ * matching `t` ("your Basic Pokémon"), every Pokémon in play ("both yours and your opponent's",
+ * Stadiums), or the opponent's ("each of your opponent's Dragon Pokémon").
+ */
+export type StaticScope = 'self' | 'own' | 'both' | 'opponent';
+
+export type StaticEffect = {
+  scope?: StaticScope;
+  /** Only while the Pokémon with the Ability is in the Active Spot. */
+  activeOnly?: boolean;
+} & (
   /** Retreat Cost changed by `delta` (-99: none); `noCostBelowHp`: none while that little HP remains. */
   | { k: 'retreat'; delta: number; t?: PokeTest; noCostBelowHp?: number }
   | { k: 'hp'; delta: number; t?: PokeTest }
@@ -52,8 +65,14 @@ export type StaticEffect =
   | { k: 'prizeLess'; n: number; t?: PokeTest }
   /** The holder's owner draws `n` when it is damaged by an attack in the Active Spot. */
   | { k: 'drawWhenHit'; n: number }
-  /** The holder's attacks cost `n` Colorless less. */
-  | { k: 'costLess'; n: number; t?: PokeTest }
+  /** The holder's attacks (or the one named) cost `n` Colorless less, times `per` when given (Bloodmoon Ursaluna ex). */
+  | { k: 'costLess'; n: number; t?: PokeTest; attack?: string; per?: Count }
+  /** Each Basic Energy of the type attached to matching Pokémon provides two (Meganium's Wild Growth). */
+  | { k: 'energyDouble'; type: string; t?: PokeTest }
+  /** Matching Pokémon's Weakness becomes the type `to` (Lillie's Clefairy ex's Fairy Zone). */
+  | { k: 'weakness'; to: string; t: PokeTest }
+  /** All damage from attacks of matching attackers is prevented (Crustle's Mysterious Rock Inn). */
+  | { k: 'preventDamage'; from: PokeTest }
   | { k: 'noAbilities'; t: PokeTest }
   | { k: 'noTools' }
   /** A Basic matching `t` put onto a Bench gets `n` damage counters. */
@@ -61,7 +80,8 @@ export type StaticEffect =
   /** Matching Pokémon may evolve into matching Pokémon the turn they are played (not on the first turn). */
   | { k: 'evolveSameTurn'; t: PokeTest }
   /** Matching Pokémon take `delta` less damage from the opponent's attacks. */
-  | { k: 'damageTaken'; delta: number; t: PokeTest };
+  | { k: 'damageTaken'; delta: number; t?: PokeTest }
+);
 
 /** A test on a card in a hand or discard pile. */
 export interface CardTest {
@@ -121,6 +141,8 @@ export type Cond =
   | { k: 'firstTurnSecond' }
   /** The card being played is the last card in your hand. */
   | { k: 'lastCardInHand' }
+  /** The effect before this one in the same text did something ("If you attached Energy in this way, …"). */
+  | { k: 'did' }
   | { k: 'not'; c: Cond }
   | { k: 'any'; cs: Cond[] };
 
@@ -171,6 +193,7 @@ export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
   if (t.attack && !c.attacks.some((a) => a.name === t.attack)) return false;
   if (t.owner && !c.name.startsWith(t.owner)) return false;
   if (t.notType && c.types.includes(t.notType)) return false;
+  if (t.notNames && t.notNames.includes(c.key)) return false;
   return true;
 }
 

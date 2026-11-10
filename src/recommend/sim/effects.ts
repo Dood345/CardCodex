@@ -57,7 +57,10 @@ export interface DrawAlt {
   n: number;
 }
 
-export type Effect =
+export type Effect = {
+  /** Only when this holds (a `did`: the effect before it in the same text did something). */
+  if?: Cond;
+} & (
   | { k: 'draw'; n: number; alt?: DrawAlt }
   | { k: 'drawUntil'; n: number; alt?: DrawAlt }
   | { k: 'discardHandDraw'; n: number }
@@ -85,7 +88,7 @@ export type Effect =
   /** Discard up to `max` cards of the filter from the hand and draw `per` for each (Gwynn). */
   | { k: 'discardDraw'; max: number; f: CardFilter; per: number }
   /** Heal n damage (or all) from one Pokémon, the Active, or each; the target may need Energy attached or little HP left. */
-  | { k: 'heal'; n: number; all?: boolean; target: 'any' | 'active' | 'each'; minEnergy?: number; maxHpLeft?: number }
+  | { k: 'heal'; n: number; all?: boolean; target: 'any' | 'active' | 'each' | 'that'; minEnergy?: number; maxHpLeft?: number }
   | { k: 'switch' }
   | { k: 'rareCandy' }
   /* Attack costs and own-side effects (damage-text.ts), run by the engine around the attack's damage. */
@@ -101,7 +104,12 @@ export type Effect =
   /** The attacker and everything attached go back to the hand. */
   | { k: 'selfToHand' }
   | { k: 'millSelf'; n: number }
-  | { k: 'discardHand'; n: number; may?: boolean };
+  | { k: 'discardHand'; n: number; may?: boolean }
+  /** Shuffle this Pokémon and everything attached into the deck (Dudunsparce's Run Away Draw). */
+  | { k: 'selfToDeck' }
+  /** Discard the Stadium in play (Chien-Pao's Snow Sink). */
+  | { k: 'discardStadium' }
+);
 
 export type SentenceStatus = 'read' | 'noop' | 'unread';
 
@@ -276,6 +284,7 @@ export const NOOP: readonly [RegExp, string][] = [
   [/^You (?:can|may) play only one Supporter card each turn\.?$/i, 'the rules already say so (older printings carry the reminder)'],
   [/^Shuffle (?:the other cards|the rest|them)(?: back)? into your deck\.?$/i, 'a look at the top cards already shuffles the rest back'],
   [/^Shuffle the other cards and put them on the bottom of your deck\.?$/i, 'a look at the top cards already shuffles the rest back (bottom or shuffled makes no difference to a pilot that does not count cards)'],
+  [/^Put the other cards? on the bottom of your deck\.?$/i, 'a look at the top cards already shuffles the rest back (bottom or shuffled makes no difference to a pilot that does not count cards)'],
   [/^Reveal (?:it|them)\.?$/i, 'revealing a card changes nothing'],
   [/^\(?Pokémon ex, Pokémon V, etc\. have Rule Boxes\.\)?$/i, 'a reminder of the rule-box rule'],
   [/^\(?(?:Existing effects are not removed\.\s*)?Damage is not an effect\.\)?$/i, 'a reminder'],
@@ -330,7 +339,10 @@ function account(t: string, marks: readonly Mark[], chance: number): Sentence[] 
       if (vague) out.push({ text: s.text, status: 'unread', why: `search wider than "${vague}"` });
       else if (own.every((m) => m.exact)) out.push({ text: s.text, status: 'read', why: '' });
       else {
-        const why = skipped(s.text, lead);
+        // What an exact reading honoured (a condition, a cost) is not what the rest of the sentence skips.
+        let rest = '';
+        for (let i = s.start; i < s.end; i++) rest += own.some((m) => m.exact && i >= m.start && i < m.end) ? ' ' : t[i];
+        const why = skipped(rest.trim(), lead);
         out.push(why ? { text: s.text, status: 'unread', why } : { text: s.text, status: 'read', why: '' });
       }
       continue;
@@ -355,7 +367,11 @@ const RE_DISCARD_DRAW = /discard your hand and draw (\d+) cards/i;
 const RE_DRAW_UNTIL = /draw cards until you have (\d+) cards in your hand/i;
 const RE_DRAW = /(^|[^a-z])(opponent )?draws? (up to )?(\d+|a|an|one|two|three|four|five|six|seven) cards?\b/gi;
 const RE_SEARCH = /search your deck for ([^.]*?)(?:,? (?:reveal|show) (?:it|them)(?: to your opponent)?,?)? and (put (?:it|them) (?:into your hand|onto your Bench)|attach (?:it|them) to ([^.]*))/gi;
-const RE_LOOK = /Look at the top (\d+) cards of your deck\. You may reveal (a|an|up to \d+|any number of) ([^.]*?) you find there,? and put (?:it|them) into your hand/gi;
+const RE_LOOK = /Look at the top (\d+) cards of your deck(?:\. You may reveal|, reveal|\. Reveal) (a|an|up to \d+|any number of) ([^.]*?) you find there,? and put (?:it|them) into your hand/gi;
+const RE_LOOK_ATTACH = /Look at the top (\d+) cards of your deck and attach (a|an|up to \d+|any number of) ([^.]*?) you find there to ([^.]*?)(?: in any way you like)?\./gi;
+const RE_DID = /^If you (?:attached (?:any )?Energy to a Pokémon|drew any cards|searched your deck|healed any damage|moved any Energy|put any cards(?: [^,]*)?|did) in this way, (.+)$/i;
+const RE_SELF_TO_DECK = /shuffle (?:this Pokémon|it) and all attached cards into your deck/i;
+const RE_DISCARD_STADIUM = /^discard a Stadium in play\.?$/i;
 const RE_STACK = /Search your deck for (\d+|a|an|up to \d+) cards?, shuffle your deck, then put (?:those cards|that card|it) on top of it/i;
 const RE_ATTACH = /attach (a|an|\d+|up to \d+) ((?:Basic )?(?:[A-Z][a-z]+ )?)Energy cards? from (?:your|their) (discard pile|hand) to ([^.]*)/gi;
 const RE_RECOVER = /put (a|an|\d+|up to \d+)( in any combination of)? ([^.]*?) from your discard pile into your hand/i;
@@ -364,7 +380,7 @@ const RE_SWITCH = /switch (?:your|1 of your) Active Pokémon with 1 of your Benc
 const RE_MOVE = /move (a|an|\d+|up to \d+) (Basic )?Energy from (1 of your Pokémon|your Benched Pokémon) to (another of your Pokémon|your Active Pokémon|1 of your other Pokémon)/i;
 const RE_LOOK_TAKE = /Look at the top (\d+) cards of your deck and put (\d+|up to \d+) of them into your hand\.( Discard the other cards\.)?/i;
 const RE_DISCARD_DRAW_PER = /Discard up to (\d+) ([^.]*?) from your hand, and draw (\d+) cards for each card you discarded in this way\./i;
-const RE_HEAL = /Heal (\d+|all) damage from (1 of your Pokémon|your Active Pokémon|each of your Pokémon|your Active Pokémon that has (\d+) or more Energy attached|1 of your Pokémon that has (\d+) HP or less remaining)\./i;
+const RE_HEAL = /Heal (\d+|all) damage from (1 of your Pokémon|your Active Pokémon|each of your Pokémon|that Pokémon|your Active Pokémon that has (\d+) or more Energy attached|1 of your Pokémon that has (\d+) HP or less remaining)\./i;
 const RE_HEAL_COUNTERS = /Remove (?:up to )?(\d+) damage counters? from 1 of your Pokémon/i;
 const RE_CRISPIN = /Search your deck for up to 2 Basic Energy cards of different types, reveal them, and put 1 of them into your hand\. Attach the other to 1 of your Pokémon\./i;
 const RE_ALT_DRAW = /If ([^.]+?), draw (\d+) cards instead\./i;
@@ -402,6 +418,27 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   }
   const fail = (why: string): ParsedText => ({ ...out, unread: why, sentences: unreadAll(t0, why), followed: false });
   if (!t0.trim()) return { ...out, unread: 'no text', sentences: [], followed: true };
+  // "If you attached Energy to a Pokémon in this way, draw a card.": the rest of the sentence, on a did-condition.
+  for (const s of splitSentences(t)) {
+    const dm = RE_DID.exec(s.text);
+    if (!dm) continue;
+    const inner = parseText(dm[1].charAt(0).toUpperCase() + dm[1].slice(1));
+    if (!inner.effects.length || !inner.followed) continue;
+    for (const e of inner.effects) ef.push({ at: s.start, e: { ...e, if: { k: 'did' } } });
+    marks.push({ start: s.start, end: s.end, exact: true });
+    t = t.slice(0, s.start) + ' '.repeat(s.end - s.start) + t.slice(s.end);
+  }
+  const std = RE_SELF_TO_DECK.exec(t);
+  if (std) {
+    ef.push({ at: std.index, e: { k: 'selfToDeck' } });
+    marks.push({ start: std.index, end: std.index + std[0].length, exact: true });
+    t = t.slice(0, std.index) + ' '.repeat(std[0].length) + t.slice(std.index + std[0].length);
+  }
+  if (RE_DISCARD_STADIUM.test(t.trim())) {
+    ef.push({ at: 0, e: { k: 'discardStadium' } });
+    marks.push({ start: 0, end: t0.length, exact: true });
+    t = ' '.repeat(t.length);
+  }
   if (!t.trim() && (out.mods.length || ef.length)) {
     out.effects = ef.sort((a, b) => a.at - b.at).map((x) => x.e);
     out.unread = out.effects.length ? '' : 'damage only';
@@ -548,6 +585,12 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
     fs.forEach((f, i) => ef.push({ at: (l.index ?? 0) + i, e: { k: 'search', n: /any number/i.test(l[2]) ? 99 : countOf(parts[i]), f: f!, to: 'hand', top: Number(l[1]) } }));
     mark(l.index ?? 0, l[0].length, false, fs.map((x) => x!.vague).find((v) => v));
   }
+  for (const l of t.matchAll(RE_LOOK_ATTACH)) {
+    const f = parseFilter(l[3]);
+    if (!f) continue;
+    ef.push({ at: l.index ?? 0, e: { k: 'search', n: /any number/i.test(l[2]) ? 99 : countOf(l[2]), f, to: 'attach', target: parseTarget(l[4]), top: Number(l[1]) } });
+    mark(l.index ?? 0, l[0].length, false, f.vague);
+  }
   if ((m = RE_LOOK_TAKE.exec(t))) {
     ef.push({ at: m.index, e: { k: 'search', n: countOf(m[2]), f: { k: 'any' }, to: 'hand', top: Number(m[1]), discardRest: !!m[3] || undefined } });
     mark(m.index, m[0].length, true);
@@ -560,7 +603,7 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
     }
   }
   if ((m = RE_HEAL.exec(t))) {
-    const target = /^each/.test(m[2]) ? 'each' : /^your Active/.test(m[2]) ? 'active' : 'any';
+    const target = /^each/.test(m[2]) ? 'each' : /^that/.test(m[2]) ? 'that' : /^your Active/.test(m[2]) ? 'active' : 'any';
     ef.push({ at: m.index, e: { k: 'heal', n: m[1] === 'all' ? 999 : Number(m[1]), all: m[1] === 'all' || undefined, target, minEnergy: m[3] ? Number(m[3]) : undefined, maxHpLeft: m[4] ? Number(m[4]) : undefined } });
     mark(m.index, m[0].length, true);
   } else if ((m = RE_HEAL_COUNTERS.exec(t))) {
@@ -614,7 +657,7 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
  * player may …") is read like a Trainer instead, its "their" turned into "your"; Lumiose City's
  * "their turn ends" and Prism Tower's "discard 2 cards … in order to draw a card" are read with it.
  */
-export function parseStaticsText(raw: string, kind: 'Tool' | 'Stadium'): ParsedText {
+export function parseStaticsText(raw: string, kind: 'Tool' | 'Stadium' | 'Ability'): ParsedText {
   const t0 = normalizeEnergySymbols(raw);
   const shared = /^Once during each player's turn, that player may /i.exec(t0);
   if (kind === 'Stadium' && shared) {
@@ -647,7 +690,8 @@ export function parseStaticsText(raw: string, kind: 'Tool' | 'Stadium'): ParsedT
     out.sentences.push(noop ? { text: s.text, status: 'noop', why: noop[1] } : { text: s.text, status: 'unread', why: '' });
   }
   out.followed = out.sentences.every((x) => x.status !== 'unread');
-  if (!out.statics!.length) out.unread = kind.toLowerCase();
+  if (!out.statics!.length) out.unread = kind === 'Ability' ? 'passive' : kind.toLowerCase();
+  else if (kind === 'Ability') for (const x of out.statics!) if (!x.scope) x.scope = 'self';
   return out;
 }
 
@@ -740,8 +784,10 @@ export function parseAbility(kind: string, name: string, text: string): ParsedAb
   const activeOnly = /If this Pokémon is in the Active Spot/i.test(text);
   // The trigger, the Active-only clause, the per-turn limit and the VSTAR note are honoured by the engine itself and
   // leave the body; what is left is read like a Trainer.
-  const body = text
-    .replace(/^.*?(?:When you play this Pokémon from your hand (?:to evolve 1 of your Pokémon|onto your Bench) during your turn, |Once during your turn(?: \(before your attack\))?, |As often as you like during your turn(?: \(before your attack\))?, )/i, '')
+  // A cost stated before the trigger ("You must discard a card from your hand in order to use this Ability. Once
+  // during your turn, …") stays with the body.
+  const prefix = /(?:When you play this Pokémon from your hand (?:to evolve 1 of your Pokémon|onto your Bench) during your turn, |Once during your turn(?: \(before your attack\))?, |As often as you like during your turn(?: \(before your attack\))?, )/i.exec(text);
+  const body = (prefix ? text.slice(0, prefix.index) + text.slice(prefix.index + prefix[0].length) : text)
     .replace(/^when you play this Pokémon from your hand (?:onto your Bench|to evolve 1 of your Pokémon), /i, '')
     .replace(/^if this Pokémon is in the Active Spot, /i, '')
     .replace(/^you may use this Ability\.\s*/i, '')
@@ -753,6 +799,6 @@ export function parseAbility(kind: string, name: string, text: string): ParsedAb
     activeOnly,
     limitName: limit ? (limit[1] ?? limit[2]) : '',
     vstar: /VSTAR/i.test(kind) || /VSTAR Power in a game/i.test(text),
-    fx: trigger === 'passive' ? { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: 'passive', sentences: unreadAll(normalizeEnergySymbols(text), 'passive'), followed: false } : parseText(body.replace(/^you may (?!use this Ability)/i, '')),
+    fx: trigger === 'passive' ? parseStaticsText(text, 'Ability') : parseText(body.replace(/^you may (?!use this Ability)/i, '')),
   };
 }

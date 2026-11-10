@@ -131,7 +131,7 @@ function countCard(ts: Record<CoverageId, Tally>, c: SimCard, w: number): void {
   else if (c.kind === 'energy') {
     if (!c.basicEnergy) count(ts.energy, c.fx, c.name, w);
   } else {
-    for (const ab of c.abilities) count(ts.abilities, ab.fx.effects.length ? ab.fx : { ...ab.fx, followed: false }, `${c.name}: ${ab.name}`, w);
+    for (const ab of c.abilities) count(ts.abilities, ab.fx.effects.length || ab.fx.statics?.length ? ab.fx : { ...ab.fx, followed: false }, `${c.name}: ${ab.name}`, w);
     for (const a of c.attacks) if (a.damage > 0) count(ts.attacks, a.fx, `${c.name}: ${a.name}`, w);
   }
 }

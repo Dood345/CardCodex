@@ -253,6 +253,24 @@ among Trainers: gust and the opponent's hand or Energy (the duel family), Tools 
 Special Conditions or to the opponent's attacks, Tera cards (no marker in the card data), and a few
 wordings (Academy at Night, Kieran, Naveen, Salvatore).
 
+## Abilities read (2026-11-10)
+
+Activated Abilities' conditions, costs and "in this way" follow-ups are honoured, three more looks
+at the top of the deck are read, and passive Abilities are standing effects like Tools
+(`deck-playtest.md`, Abilities). Ability copies followed in full: tournament lists 25.1% → 62.6%,
+the Standard pool 21.8% → 27.9%.
+
+Tournament lists: attacking by turn 3 53% (unchanged), by turn 4 65% (68%), damage per turn 92 (94),
+turns with a play 88% (87%); the attacking-by-turn-4 ladder gave three to five points. That is the
+honest cost of two of the most played engines no longer cheating: Fezandipiti ex's Flip the Script
+(205 copies) drew three cards every turn whatever its Knock-Out clause said, and Dudunsparce (133)
+stayed on the Bench drawing three a turn instead of shuffling itself back into the deck as its text
+says. The duel judge's order and swapped-Energy and Pokémon columns rose on the archetypes. Still
+unread among Abilities: effects on the opponent's Pokémon (Cursed Blast, Adrena-Brain, gusts),
+"prevent all effects" and Bench protection (Hide 'n' Sneak, Flower Curtain: nothing in the engine
+does those yet), Festival Lead and Memory Helix, and kinds the card data does not mark (Future,
+Tera).
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

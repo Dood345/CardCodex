@@ -43,6 +43,10 @@ export function parsePokeTest(raw: string): PokeTest | null {
     if (m[3] === 'Ability') t.ability = m[2];
     else t.attack = m[2];
   }
+  if ((m = /^(.+?), except any (.+)$/.exec(s))) {
+    s = m[1];
+    t.notNames = m[2].split(/,? (?:and|or) /).map((x) => normalizeText(x));
+  }
   if ((m = /^(.+?) Pokémon$/.exec(s)) && (m[1] === 'Basic' || m[1] === 'Evolution' || m[1] === 'Evolved')) {
     if (m[1] === 'Basic') t.basic = true;
     else t.evolution = true;
@@ -61,6 +65,8 @@ export function parsePokeTest(raw: string): PokeTest | null {
     return t;
   }
   if (s === 'Pokémon') return t;
+  // Kinds the card data does not mark: a card cannot be told to be one.
+  if (/^(?:Future|Ancient|Tera|Mega Evolution|Fossil|Rule Box|Pokémon with a Rule Box) Pokémon$|^(?:Future|Ancient|Tera)$/.test(s)) return null;
   if ((m = /^(?:(Basic) )?((?:Team Rocket's|[A-Z][a-z]*'s)) Pokémon$/.exec(s))) {
     t.owner = m[2];
     if (m[1]) t.basic = true;
@@ -205,7 +211,10 @@ export function parseCond(raw: string): Cond | null {
 function subjectTest(raw: string | undefined): PokeTest | null | undefined {
   const s = (raw ?? '').trim();
   if (!s || s === 'Pokémon') return undefined;
-  return parsePokeTest(s.endsWith('Pokémon') ? s : `${s} Pokémon`);
+  if (s.endsWith('Pokémon')) return parsePokeTest(s);
+  // "Future, except any Iron Crown ex" → "Future Pokémon, except any Iron Crown ex".
+  const at = s.indexOf(', except any ');
+  return parsePokeTest(at >= 0 ? `${s.slice(0, at)} Pokémon${s.slice(at)}` : `${s} Pokémon`);
 }
 
 const BOTH = String.raw`(?: \(both yours and your opponent's\))?`;
@@ -245,6 +254,33 @@ export function parseStatic(sentence: string): StaticEffect[] {
     return t === null ? [] : [{ k: 'prizeLess', n: n(m[2]), t }];
   }
   if ((m = /^If the Pokémon this card is attached to is in the Active Spot and is damaged by an attack from your opponent's Pokémon \(even if this Pokémon is Knocked Out\), draw (\d+) cards\.$/.exec(s))) return [{ k: 'drawWhenHit', n: n(m[1]) }];
+  // Abilities (passive): the holder, the owner's Pokémon, or the opponent's.
+  if ((m = /^As long as this Pokémon is in the Active Spot, (.+)$/.exec(s))) {
+    return parseStatic(m[1].charAt(0).toUpperCase() + m[1].slice(1)).map((x) => ({ ...x, activeOnly: true }));
+  }
+  if ((m = /^Your (?:(.+?) )?Pokémon in play have no Retreat Cost\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'retreat', delta: -99, t, scope: 'own' }];
+  }
+  if ((m = new RegExp(String.raw`^This Pokémon takes (\d+) less damage from attacks(?: from your opponent's Pokémon)?${WR}\.$`).exec(s))) return [{ k: 'damageTaken', delta: n(m[1]), scope: 'self' }];
+  if ((m = /^This Pokémon gets \+(\d+) HP\.$/.exec(s))) return [{ k: 'hp', delta: n(m[1]), scope: 'self' }];
+  if ((m = new RegExp(String.raw`^Attacks used by your (.+?) Pokémon(, except any .+?)?,? do (\d+) more damage to your opponent's Active Pokémon${WR}\.$`).exec(s))) {
+    const t = subjectTest(`${m[1]}${m[2] ?? ''}`);
+    return t ? [{ k: 'damage', n: n(m[3]), t, scope: 'own' }] : [];
+  }
+  if ((m = new RegExp(String.raw`^Each Basic (${TYPE_ALT}) Energy attached to all of your Pokémon provides \1\1 Energy\.$`).exec(s))) return [{ k: 'energyDouble', type: COST_LETTERS[m[1]], scope: 'own' }];
+  if ((m = new RegExp(String.raw`^The Weakness of each of your opponent's (.+?) Pokémon in play is now (${TYPE_ALT})\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'weakness', to: COST_LETTERS[m[2]], t, scope: 'opponent' }] : [];
+  }
+  if ((m = /^Prevent all damage done to this Pokémon by attacks from your opponent's (.+?)\.$/.exec(s))) {
+    const from = parsePokeTest(m[1]);
+    return from ? [{ k: 'preventDamage', from, scope: 'self' }] : [];
+  }
+  if ((m = /^(.+?) used by this Pokémon costs Colorless less for each (.+?)\.$/.exec(s))) {
+    const per = parseCount(m[2], null);
+    return per ? [{ k: 'costLess', n: 1, attack: m[1], per, scope: 'self' }] : [];
+  }
   // Stadiums.
   if ((m = new RegExp(String.raw`^Each (?:(.+?) )?Pokémon in play${BOTH} gets ([+-]\d+) HP\.$`).exec(s))) {
     const t = subjectTest(m[1]);

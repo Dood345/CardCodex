@@ -111,10 +111,18 @@ those from `features(card).text`.
 | Trigger | Example | Note |
 | --- | --- | --- |
 | When it evolves from hand | Charizard ex's Infernal Reign | — |
-| When it is benched from hand | Lumineon V's Luminous Sign | — |
+| When it is benched from hand | Lumineon V's Luminous Sign, Chien-Pao's Snow Sink | — |
 | Once during your turn | Pidgeot ex's Quick Search | Honours "can't use more than 1 Quick Search Ability each turn" |
 | As often as you like | — | — |
-| Passive | — | Not used |
+| Passive | Latias ex's Skyliner, Meganium's Wild Growth, Lillie's Clefairy ex's Fairy Zone | A standing effect (`statics`, as for Tools): free retreat, HP, damage added, a cheaper attack (per Prize card taken for Bloodmoon Ursaluna ex), Energy doubled, the opponent's Weakness changed, damage from a kind of attacker prevented; "As long as this Pokémon is in the Active Spot" honoured |
+
+An activated Ability's "if …, you may …" is a condition the engine checks (Fezandipiti ex's Flip the
+Script after a Knock Out, Lunatone's Lunar Cycle with Solrock in play), "You must discard … in order
+to use this Ability" a cost paid with a spare card of the kind (N's Zoroark ex's Trade), and "If you
+attached Energy to a Pokémon in this way, …" a follow-up that runs only when the effect before it did
+something (Teal Mask Ogerpon ex's Teal Dance, Hydrapple ex's Ripening Charge, Dudunsparce's Run Away
+Draw shuffling itself back). Looks at the top of the deck read three more wordings (Drakloak's
+Recon Directive, Metang's Metal Maker attaching what it finds, Tatsugiri's Attract Customers).
 
 - **Turn-ending Abilities.** An Ability that ends the turn (Rotom V's Instant Charge) is used only
   when there is no attack to lose.
