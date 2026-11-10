@@ -14,15 +14,12 @@ import type { Deck, DeckCard } from '@/data/db';
 import { adjustDeckCard } from '@/data/decks';
 import { cardImageUrl, type CatalogCard } from '@/data/types';
 import { hasRecommender, loadEvaluator } from '@/recommend';
-import { advise, defaultFormat, describeMove, evaluatorFor, formatDelta, formatsOf, SOURCES, type Advice } from '@/recommend/advice';
+import { advise, defaultFormat, describeMove, evaluatorFor, formatDelta, formatsOf, PLAY_GAMES, SOURCES, type Advice } from '@/recommend/advice';
 import { drawOne } from '@/recommend/practice';
 import { canTune, tuneRound, tuneStart, type TuneStep } from '@/recommend/tune';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, PlaySummary, PracticeHand, Suggestion } from '@/recommend/types';
 import { Chip, Img } from '@/ui/components';
 import { href } from '@/ui/router';
-
-/** Games behind the playtest numbers the screens show. */
-export const PLAY_GAMES = 400;
 
 /** The evaluator for the active catalog once `wanted` is true: undefined while loading, null when there is none or it failed. */
 export function useEvaluator(wanted: boolean): { ev: DeckEvaluator | null | undefined; error: boolean } {
