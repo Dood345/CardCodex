@@ -10,7 +10,7 @@ import { useSettings } from '@/app/settings';
 import { useCollection } from '@/data/collection';
 import { decodeDeck, type DeckShare } from '@/data/deck-code';
 import { decodeDeckText, heldDeckFile } from '@/data/deck-file';
-import { createDeck, summarizeDeck } from '@/data/decks';
+import { createDeck, summarizeDeck, useClaims } from '@/data/decks';
 import { gameById } from '@/games';
 import { EmptyState, TopBar } from '@/ui/components';
 import { href, navigate } from '@/ui/router';
@@ -22,6 +22,8 @@ export default function DeckImportPage({ code }: { code: string }) {
   const index = useCatalog();
   const game = useGame();
   const collection = useCollection();
+  // Not a saved deck yet: every saved deck has first call on the copies it uses.
+  const claims = useClaims(game.id, undefined, collection);
   const [, update] = useSettings();
   const [state, setState] = useState<State>({ status: 'loading' });
   const [saving, setSaving] = useState(false);
@@ -85,7 +87,7 @@ export default function DeckImportPage({ code }: { code: string }) {
   }
   const known = share.cards.filter((c) => index.cardsById.has(c.cardId));
   const unknown = share.cards.length - known.length;
-  const s = summarizeDeck(known, collection);
+  const s = summarizeDeck(known, collection, claims);
   const save = async () => {
     setSaving(true);
     const deck = await createDeck(share.game, share.name, known, share.rules);
@@ -113,6 +115,7 @@ export default function DeckImportPage({ code }: { code: string }) {
         cards={known}
         index={index}
         collection={collection}
+        claims={claims}
         empty={<EmptyState title="Nothing to import" hint="None of the cards in this deck are in the catalog." />}
       />
     </>

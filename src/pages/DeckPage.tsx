@@ -15,7 +15,7 @@ import { useCollection } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
 import { deckShareText, encodeDeck } from '@/data/deck-code';
 import { deckFileName, encodeDeckFile } from '@/data/deck-file';
-import { adjustDeckCard, deleteDeck, moveDeckCard, qtyOf, renameDeck, setDeckRules, summarizeDeck, useDeck, wantMissing } from '@/data/decks';
+import { adjustDeckCard, deleteDeck, moveDeckCard, qtyOf, renameDeck, setDeckRules, summarizeDeck, useClaims, useDeck, wantMissing } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import type { CatalogCard, CatalogSet } from '@/data/types';
 import { gameById } from '@/games';
@@ -60,7 +60,9 @@ export default function DeckPage({ id }: { id: string }) {
   const [picking, setPicking] = useState(false);
   const [toast, showToast] = useToast();
 
-  const summary = useMemo(() => (deck ? summarizeDeck(deck.cards, collection) : null), [deck, collection]);
+  // What older decks already use of the same cards (off in Settings: every deck counts every copy).
+  const claims = useClaims(game.id, id, collection);
+  const summary = useMemo(() => (deck ? summarizeDeck(deck.cards, collection, claims) : null), [deck, collection, claims]);
   const results = useMemo(() => (query.trim() ? searchCards(index, query, {}, collection, 24).cards : []), [index, query, collection]);
 
   if (!loaded) return <TopBar title="Deck" backTo="/collection" />;
@@ -121,7 +123,7 @@ export default function DeckPage({ id }: { id: string }) {
     showToast((await copyText(await encodeDeck(payload))) ? 'Deck code copied.' : 'Could not copy here.');
   };
   const wishlist = async () => {
-    const n = await wantMissing(deck.cards, collection);
+    const n = await wantMissing(deck.cards, collection, claims);
     showToast(n ? `${n} ${n === 1 ? 'card' : 'cards'} added to your wishlist.` : 'Everything missing is already on your wishlist.');
   };
   const remove = async () => {
@@ -209,6 +211,7 @@ export default function DeckPage({ id }: { id: string }) {
       <DeckSections
         game={game}
         rules={rulesFor(game, deck.rules)}
+        claims={claims}
         cards={deck.cards}
         index={index}
         collection={collection}

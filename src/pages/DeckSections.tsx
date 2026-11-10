@@ -11,7 +11,7 @@ import type { ReactNode } from 'react';
 import { formatCardNumber, type CatalogIndex } from '@/data/catalog';
 import type { CollectionMap } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
-import { deckSections, limitHint, overLimit, type DeckZone, type PlacedLine } from '@/data/decks';
+import { claimText, deckSections, limitHint, overLimit, type Claim, type Claims, type DeckZone, type PlacedLine } from '@/data/decks';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import type { GameProfile } from '@/games';
 import type { DeckRules } from '@/games/deck-rules';
@@ -34,10 +34,13 @@ export function DeckSections({
   edits,
   empty,
   rules = game.deckRules,
+  claims,
 }: {
   game: GameProfile;
   /** The rules this deck follows when not the game's default (a Commander deck). */
   rules?: DeckRules;
+  /** Owned copies other decks have first call on (src/data/decks.ts, `claimsBefore`); none when every deck counts every copy. */
+  claims?: Claims;
   cards: readonly DeckCard[];
   index: CatalogIndex;
   collection: CollectionMap;
@@ -45,7 +48,7 @@ export function DeckSections({
   /** Shown instead of the lines when the deck has none. */
   empty?: ReactNode;
 }) {
-  const placed = deckSections(rules, cards, index, collection);
+  const placed = deckSections(rules, cards, index, collection, claims);
   const limits = limitHint(rules, overLimit(rules, cards, index));
   const multi = rules.sections.length > 1;
   const unknown = cards.filter((c) => !index.cardsById.has(c.cardId)).length;
@@ -85,7 +88,7 @@ export function DeckSections({
                     )}
                     <div className="scan-candidates">
                       {g.lines.map((l) => (
-                        <PlacedRow key={`${l.cardId}|${l.zone ?? ''}`} line={l} index={index} rules={rules} collection={collection} edits={edits} />
+                        <PlacedRow key={`${l.cardId}|${l.zone ?? ''}`} line={l} index={index} rules={rules} collection={collection} edits={edits} claimed={claims?.get(l.cardId)} />
                       ))}
                     </div>
                   </section>
@@ -120,10 +123,12 @@ function PlacedRow({
   rules,
   collection,
   edits,
+  claimed,
 }: {
   line: PlacedLine;
   index: CatalogIndex;
   rules: DeckRules;
+  claimed?: Claim;
   collection: CollectionMap;
   edits?: DeckEdits;
 }) {
@@ -149,6 +154,7 @@ function PlacedRow({
       set={index.setsById.get(card.set)}
       qty={line.qty}
       available={line.available}
+      claimed={claimed}
       collection={collection}
       onAdjust={edits ? (d) => edits.adjust(card.id, line.zone, d) : undefined}
       place={side ? 'side' : 'deck'}
@@ -169,6 +175,7 @@ export function DeckRow({
   collection,
   onAdjust,
   available,
+  claimed,
   place = 'deck',
   extra,
 }: {
@@ -178,6 +185,8 @@ export function DeckRow({
   collection: CollectionMap;
   onAdjust?: (delta: number) => void;
   available?: number;
+  /** Owned copies other decks have first call on, shown as "2 in Fire deck". */
+  claimed?: Claim;
   place?: string;
   extra?: ReactNode;
 }) {
@@ -206,6 +215,7 @@ export function DeckRow({
         </div>
         <div className="cand-sub">
           {qty ? `${qty} in ${place} · ` : ''}own {owned}
+          {claimed ? ` · ${claimText(claimed)}` : ''}
           {short ? ` · ${short} missing` : ''}
         </div>
       </div>

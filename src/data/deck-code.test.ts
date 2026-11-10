@@ -65,8 +65,8 @@ describe('deck lists', () => {
     );
     expect([s.total, s.distinct, s.covered, s.short]).toEqual([7, 3, 3, 4]);
     expect(s.needs).toEqual([
-      { cardId: 'a', qty: 4, owned: 1, short: 3 },
-      { cardId: 'c', qty: 1, owned: 0, short: 1 },
+      { cardId: 'a', qty: 4, owned: 1, claimed: 0, short: 3 },
+      { cardId: 'c', qty: 1, owned: 0, claimed: 0, short: 1 },
     ]);
   });
 

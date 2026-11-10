@@ -2914,3 +2914,11 @@ textarea:focus {
 .practice-aside {
   margin-top: 8px;
 }
+
+/* A second line under a setting's label. */
+.setting-note {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}

@@ -135,6 +135,13 @@ export default function SettingsPage() {
             <span>Dim cards you don't own in set binders</span>
             <input type="checkbox" checked={settings.dimMissing} onChange={(e) => update({ dimMissing: e.target.checked })} />
           </label>
+          <label className="setting-row">
+            <span>
+              Each copy you own counts for one deck
+              <small className="setting-note">A deck counts what your older decks left over. Turn off if you move cards between decks.</small>
+            </span>
+            <input type="checkbox" checked={settings.reserveDeckCopies} onChange={(e) => update({ reserveDeckCopies: e.target.checked })} />
+          </label>
         </section>
 
         <section className="settings-section">

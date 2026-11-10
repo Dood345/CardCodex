@@ -16,6 +16,11 @@ export interface Settings {
   tileSize: TileSize;
   /** Dim cards you don't own in set binders. */
   dimMissing: boolean;
+  /**
+   * An owned copy counts for one deck only: a deck sees what older decks left over (src/data/decks.ts,
+   * `claimsBefore`). Off, every deck counts every owned copy, as if cards moved between decks.
+   */
+  reserveDeckCopies: boolean;
   /** Prefer the on-device ML Kit engine on Android when available. */
   scanEngine: 'auto' | 'tesseract';
   /** Scanner mode the Scan tab opens in. */
@@ -44,6 +49,7 @@ const DEFAULTS: Settings = {
   theme: 'system',
   tileSize: 'medium',
   dimMissing: true,
+  reserveDeckCopies: true,
   scanEngine: 'auto',
   scanMode: 'cards',
   cardMode: 'snap',
