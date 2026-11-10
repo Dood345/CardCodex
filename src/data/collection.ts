@@ -84,6 +84,21 @@ export function adjustQty(cardId: string, delta: number, variant?: VariantKey): 
   });
 }
 
+/**
+ * Owned copies recorded under one printing moved to another: for copies that
+ * were entered as the wrong printing of the right card (a basic Energy
+ * recorded as the older Special Energy of the same name). Returns how many
+ * moved. The wishlist flag and the note stay with the printing they were on.
+ */
+export async function movePrinting(from: string, to: string): Promise<number> {
+  if (from === to) return 0;
+  const n = (await db.collection.get(from))?.qty ?? 0;
+  if (n <= 0) return 0;
+  await setQty(from, 0);
+  await adjustQty(to, n);
+  return n;
+}
+
 /** Sets the total directly (drops any variant breakdown). */
 export function setQty(cardId: string, qty: number): Promise<CollectionEntry | undefined> {
   return upsert(cardId, (e) => {

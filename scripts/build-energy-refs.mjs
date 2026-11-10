@@ -39,6 +39,9 @@ const vite = await createServer({
 try {
   const { BASIC_ENERGY, ENERGY_THUMB, energyColor, symbolCells } = await vite.ssrLoadModule(path.join(root, 'src/scanner/energy-features.ts'));
   const { lumaImage } = await vite.ssrLoadModule(path.join(root, 'src/scanner/hash.ts'));
+  // "Darkness Energy" and "Metal Energy" are also the names of older Special Energy cards, which print their
+  // name and an effect: never the card behind a bare "ENERGY" header, so they stay out of the references.
+  const { isBasicEnergy } = await vite.ssrLoadModule(path.join(root, 'src/games/deck-rules.ts'));
   const catalog = JSON.parse(fs.readFileSync(path.join(root, 'public', 'data', 'catalog.json'), 'utf8'));
   const WHOLE = { x: 0, y: 0, w: 1, h: 1 };
   const ids = [];
@@ -48,7 +51,7 @@ try {
   let missing = 0;
   for (const card of catalog.cards) {
     const m = card.cat === 'Energy' ? BASIC_ENERGY.exec(card.name) : null;
-    if (!m || !card.img) continue;
+    if (!m || !card.img || !isBasicEnergy(card)) continue;
     const file = path.join(IMAGES, `${card.id}.webp`);
     if (!fs.existsSync(file)) {
       missing++;

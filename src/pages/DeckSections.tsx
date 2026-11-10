@@ -11,11 +11,12 @@ import { useState, type ReactNode } from 'react';
 import { formatCardNumber, type CatalogIndex } from '@/data/catalog';
 import type { CollectionMap } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
-import { claimText, deckSections, limitHint, overLimit, type Claim, type Claims, type DeckZone, type PlacedLine } from '@/data/decks';
+import { claimText, deckSections, limitHint, overLimit, unlimitedTwin, type Claim, type Claims, type DeckZone, type OverLimit, type PlacedLine } from '@/data/decks';
 import { cardImageUrl, type CatalogCard, type CatalogSet } from '@/data/types';
 import type { GameProfile } from '@/games';
 import type { DeckRules } from '@/games/deck-rules';
 import { CardZoom } from '@/ui/CardZoom';
+import { Sheet } from '@/ui/components';
 import { MinusIcon, PlusIcon } from '@/ui/icons';
 
 export interface DeckEdits {
@@ -23,6 +24,11 @@ export interface DeckEdits {
   adjust(cardId: string, zone: DeckZone, delta: number): void;
   /** Move one copy between the deck proper and the side deck. */
   move(cardId: string, from: DeckZone, to: DeckZone): void;
+  /**
+   * Swap the printings `from` for `to` on every line; with `moveOwned`, the owned copies recorded under `from`
+   * move to `to` as well (they were entered as the wrong printing). Left out where a deck cannot be edited.
+   */
+  replace?(from: readonly string[], to: string, moveOwned: boolean): void;
 }
 
 /** Copies per section, the size reminders and the over-the-limit reminder. */
@@ -49,7 +55,8 @@ export function DeckSections({
   empty?: ReactNode;
 }) {
   const placed = deckSections(rules, cards, index, collection, claims);
-  const limits = limitHint(rules, overLimit(rules, cards, index));
+  const over = overLimit(rules, cards, index);
+  const limits = limitHint(rules, over);
   const multi = rules.sections.length > 1;
   const unknown = cards.filter((c) => !index.cardsById.has(c.cardId)).length;
 
@@ -67,6 +74,10 @@ export function DeckSections({
       )}
       {placed.map((p) => p.hint && <p key={p.section.id} className="deck-hint">{p.hint}</p>)}
       {limits && <p className="deck-hint deck-limit">{limits}</p>}
+      {over.map((o) => {
+        const twin = unlimitedTwin(rules, o.name, index, collection);
+        return twin ? <TwinFix key={o.name} over={o} twin={twin} index={index} rules={rules} collection={collection} replace={edits?.replace} /> : null;
+      })}
 
       {cards.length === 0
         ? empty
@@ -117,6 +128,81 @@ function byCategory(lines: PlacedLine[], index: CatalogIndex, game: GameProfile)
   return order.filter((k) => byCat.has(k)).map((k) => ({ label: k, lines: byCat.get(k)! }));
 }
 
+const printingOf = (card: CatalogCard, index: CatalogIndex) => {
+  const set = index.setsById.get(card.set);
+  return `${set?.name ?? card.set} · ${formatCardNumber(card, set)}`;
+};
+
+/**
+ * A card over its limit that also exists, under the same name, as a card
+ * without one: "Darkness Energy" is basic Energy in every set since 2007 and
+ * a Special Energy with an effect in fifteen older ones, and someone entering
+ * the basic Energy they hold can pick the old printing without knowing. Says
+ * so, and offers to switch the deck (and the owned copies) to the other.
+ */
+function TwinFix({
+  over,
+  twin,
+  index,
+  rules,
+  collection,
+  replace,
+}: {
+  over: OverLimit;
+  twin: CatalogCard;
+  index: CatalogIndex;
+  rules: DeckRules;
+  collection: CollectionMap;
+  replace?: DeckEdits['replace'];
+}) {
+  const [open, setOpen] = useState(false);
+  const [moveOwned, setMoveOwned] = useState(true);
+  const from = over.ids.map((id) => index.cardsById.get(id)).filter((c): c is CatalogCard => !!c);
+  if (!from.length) return null;
+  const kind = rules.cardNote?.(from[0]) ?? 'a limited printing';
+  const twinKind = rules.cardNote?.(twin) ?? 'The other printing';
+  const owned = over.ids.reduce((n, id) => n + (collection.get(id)?.qty ?? 0), 0);
+  const where = from.map((c) => printingOf(c, index)).join(', ');
+  return (
+    <div className="deck-twin">
+      <p className="deck-hint">
+        These {over.name} are {kind} ({where}), limited to {over.limit}. {twinKind} of the same name has no limit.
+      </p>
+      {replace && (
+        <button type="button" className="btn" onClick={() => setOpen(true)}>
+          Switch to {twinKind}
+        </button>
+      )}
+      <Sheet open={open} onClose={() => setOpen(false)} title={`Switch to ${twinKind}?`}>
+        <p>
+          The deck's {over.qty} {over.name} become the printing from {printingOf(twin, index)}, which is {twinKind} and has no copy limit.
+        </p>
+        {owned > 0 && (
+          <label className="build-check">
+            <input type="checkbox" checked={moveOwned} onChange={(e) => setMoveOwned(e.target.checked)} />
+            Also move my {owned} owned {owned === 1 ? 'copy' : 'copies'} to that printing
+          </label>
+        )}
+        <div className="sheet-actions">
+          <button type="button" className="btn ghost" onClick={() => setOpen(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn primary"
+            onClick={() => {
+              setOpen(false);
+              replace?.(over.ids, twin.id, moveOwned && owned > 0);
+            }}
+          >
+            Switch
+          </button>
+        </div>
+      </Sheet>
+    </div>
+  );
+}
+
 function PlacedRow({
   line,
   index,
@@ -155,6 +241,7 @@ function PlacedRow({
       qty={line.qty}
       available={line.available}
       claimed={claimed}
+      tag={rules.cardNote?.(card)}
       collection={collection}
       onAdjust={edits ? (d) => edits.adjust(card.id, line.zone, d) : undefined}
       place={side ? 'side' : 'deck'}
@@ -176,6 +263,7 @@ export function DeckRow({
   onAdjust,
   available,
   claimed,
+  tag,
   place = 'deck',
   extra,
 }: {
@@ -187,6 +275,8 @@ export function DeckRow({
   available?: number;
   /** Owned copies other decks have first call on, shown as "2 in Fire deck". */
   claimed?: Claim;
+  /** The kind of card where it decides the copy limit: "Special Energy" (`DeckRules.cardNote`). */
+  tag?: string;
   place?: string;
   extra?: ReactNode;
 }) {
@@ -215,6 +305,7 @@ export function DeckRow({
         <div className="cand-name">{card.name}</div>
         <div className="cand-sub">
           {set?.name ?? card.set} · {formatCardNumber(card, set)}
+          {tag ? ` · ${tag}` : ''}
         </div>
         <div className="cand-sub">{counts}</div>
       </div>

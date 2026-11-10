@@ -3031,3 +3031,18 @@ textarea:focus {
   background: rgba(0, 0, 0, 0.35);
   pointer-events: none;
 }
+
+/* A card over its limit that has an unlimited twin of the same name (src/pages/DeckSections.tsx, TwinFix). */
+.deck-twin {
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--warn) 55%, var(--border));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+.deck-twin .deck-hint {
+  margin: 0;
+}

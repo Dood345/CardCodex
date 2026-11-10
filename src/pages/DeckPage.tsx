@@ -11,11 +11,11 @@ import { useCatalog, useGame } from '@/app/context';
 import { useSettings } from '@/app/settings';
 import { copyText, shareFile, shareMessage, shareText } from '@/app/share';
 import { formatCardNumber } from '@/data/catalog';
-import { useCollection } from '@/data/collection';
+import { movePrinting, useCollection } from '@/data/collection';
 import type { DeckCard } from '@/data/db';
 import { deckShareText, encodeDeck } from '@/data/deck-code';
 import { deckFileName, encodeDeckFile } from '@/data/deck-file';
-import { adjustDeckCard, deleteDeck, moveDeckCard, qtyOf, renameDeck, setDeckRules, summarizeDeck, useClaims, useDeck, wantMissing } from '@/data/decks';
+import { adjustDeckCard, deleteDeck, moveDeckCard, qtyOf, renameDeck, replaceDeckPrinting, setDeckRules, summarizeDeck, useClaims, useDeck, wantMissing } from '@/data/decks';
 import { searchCards } from '@/data/search';
 import type { CatalogCard, CatalogSet } from '@/data/types';
 import { gameById } from '@/games';
@@ -126,6 +126,13 @@ export default function DeckPage({ id }: { id: string }) {
     const n = await wantMissing(deck.cards, collection, claims);
     showToast(n ? `${n} ${n === 1 ? 'card' : 'cards'} added to your wishlist.` : 'Everything missing is already on your wishlist.');
   };
+  // A line entered as the wrong printing of the right card (the old Special Energy for a basic one).
+  const switchPrinting = async (from: readonly string[], to: string, moveOwned: boolean) => {
+    await replaceDeckPrinting(deck.id, from, to);
+    let moved = 0;
+    if (moveOwned) for (const id of from) moved += await movePrinting(id, to);
+    showToast(moved ? `Switched, and moved ${moved} owned ${moved === 1 ? 'copy' : 'copies'}.` : 'Switched.');
+  };
   const remove = async () => {
     setConfirmDelete(false);
     await deleteDeck(deck.id);
@@ -178,6 +185,7 @@ export default function DeckPage({ id }: { id: string }) {
                   set={index.setsById.get(card.set)}
                   qty={qtyOf(deck.cards, card.id)}
                   collection={collection}
+                  tag={rulesFor(game, deck.rules).cardNote?.(card)}
                   onAdjust={(d) => void adjustDeckCard(deck.id, card.id, d)}
                 />
               ))}
@@ -218,6 +226,7 @@ export default function DeckPage({ id }: { id: string }) {
         edits={{
           adjust: (cardId, zone, d) => void adjustDeckCard(deck.id, cardId, d, zone),
           move: (cardId, from, to) => void moveDeckCard(deck.id, cardId, from, to),
+          replace: (from, to, moveOwned) => void switchPrinting(from, to, moveOwned),
         }}
         empty={<EmptyState title="An empty deck" hint="Search above to add cards, or open any card and tap “Add to deck”." />}
       />
