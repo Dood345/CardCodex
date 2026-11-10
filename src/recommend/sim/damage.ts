@@ -33,7 +33,35 @@ export interface PokeTest {
   attack?: string;
   /** Owner prefix of the card name ("Hop's", "Team Rocket's"). */
   owner?: string;
+  /** Not of this type letter ("non-Darkness"). */
+  notType?: string;
 }
+
+/**
+ * What a Tool does to the Pokémon it is attached to, or a Stadium to every Pokémon matching `t`
+ * (both players'), while it is in play. Read in effects.ts `parseStatics`; applied by the engine's
+ * `maxHp`, `retreatCost`, attack damage, Knock Outs, Abilities, evolving and benching.
+ */
+export type StaticEffect =
+  /** Retreat Cost changed by `delta` (-99: none); `noCostBelowHp`: none while that little HP remains. */
+  | { k: 'retreat'; delta: number; t?: PokeTest; noCostBelowHp?: number }
+  | { k: 'hp'; delta: number; t?: PokeTest }
+  /** Attacks of a matching Pokémon do `n` more damage to the opponent's Active (`vs`: only one of that kind); `ruleBoxFree`: only a holder without a Rule Box. */
+  | { k: 'damage'; n: number; t?: PokeTest; vs?: PokeTest; ruleBoxFree?: boolean }
+  /** A Knock Out of the holder gives `n` fewer Prize cards. */
+  | { k: 'prizeLess'; n: number; t?: PokeTest }
+  /** The holder's owner draws `n` when it is damaged by an attack in the Active Spot. */
+  | { k: 'drawWhenHit'; n: number }
+  /** The holder's attacks cost `n` Colorless less. */
+  | { k: 'costLess'; n: number; t?: PokeTest }
+  | { k: 'noAbilities'; t: PokeTest }
+  | { k: 'noTools' }
+  /** A Basic matching `t` put onto a Bench gets `n` damage counters. */
+  | { k: 'benchCounters'; n: number; t: PokeTest }
+  /** Matching Pokémon may evolve into matching Pokémon the turn they are played (not on the first turn). */
+  | { k: 'evolveSameTurn'; t: PokeTest }
+  /** Matching Pokémon take `delta` less damage from the opponent's attacks. */
+  | { k: 'damageTaken'; delta: number; t: PokeTest };
 
 /** A test on a card in a hand or discard pile. */
 export interface CardTest {
@@ -142,6 +170,7 @@ export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
   if (t.ability && !c.abilities.some((a) => a.name === t.ability)) return false;
   if (t.attack && !c.attacks.some((a) => a.name === t.attack)) return false;
   if (t.owner && !c.name.startsWith(t.owner)) return false;
+  if (t.notType && c.types.includes(t.notType)) return false;
   return true;
 }
 

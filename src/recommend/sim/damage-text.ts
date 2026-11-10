@@ -14,7 +14,7 @@
  */
 import { normalizeText } from '@/data/normalize';
 import { COST_LETTERS } from '../card-text';
-import type { CardTest, Cond, Count, DamageMod, PokeTest } from './damage';
+import type { CardTest, Cond, Count, DamageMod, PokeTest, StaticEffect } from './damage';
 import type { Effect } from './effects';
 
 const TYPE_NAMES = Object.keys(COST_LETTERS).filter((t) => t !== 'Colorless');
@@ -52,7 +52,7 @@ export function parsePokeTest(raw: string): PokeTest | null {
     t.stage = N(m[1]);
     return t;
   }
-  if ((m = new RegExp(`^(${TYPE_ALT}) Pokémon$`).exec(s))) {
+  if ((m = new RegExp(`^(${TYPE_ALT}|Colorless) Pokémon$`).exec(s))) {
     t.type = COST_LETTERS[m[1]];
     return t;
   }
@@ -61,9 +61,14 @@ export function parsePokeTest(raw: string): PokeTest | null {
     return t;
   }
   if (s === 'Pokémon') return t;
-  if ((m = /^(?:(Basic) )?((?:Team Rocket's|[A-Z][a-z]+'s)) Pokémon$/.exec(s))) {
+  if ((m = /^(?:(Basic) )?((?:Team Rocket's|[A-Z][a-z]*'s)) Pokémon$/.exec(s))) {
     t.owner = m[2];
     if (m[1]) t.basic = true;
+    return t;
+  }
+  if ((m = new RegExp(`^Basic non-(${TYPE_ALT}) Pokémon$`).exec(s))) {
+    t.basic = true;
+    t.notType = COST_LETTERS[m[1]];
     return t;
   }
   // One or more card names ("Lunatone", "Beedrill and Beedrill ex", "Charjabug"): capitalised words, no "Pokémon".
@@ -154,7 +159,7 @@ export function parseCond(raw: string): Cond | null {
     return { k: 'selfEnergy', type: m[2] ? COST_LETTERS[m[2]] : undefined, special: m[1] === 'Special' || undefined };
   }
   if (/^this Pokémon moved from your Bench to the Active Spot this turn$|^this Pokémon was on the Bench and became your Active Pokémon this turn$/.test(s)) return { k: 'movedThisTurn' };
-  if ((m = /^any of your (?:((?:Team Rocket's|[A-Z][a-z]+'s)) )?Pokémon were Knocked Out (?:by damage from an attack )?during your opponent's last turn$/.exec(s))) return { k: 'koLastTurn', owner: m[1] };
+  if ((m = /^any of your (?:((?:Team Rocket's|[A-Z][a-z]*'s)) )?Pokémon were Knocked Out (?:by damage from an attack )?during your opponent's last turn$/.exec(s))) return { k: 'koLastTurn', owner: m[1] };
   if ((m = /^all of your Pokémon in play are (.+)$/.exec(s))) {
     const t = parsePokeTest(m[1]);
     return t ? { k: 'allInPlay', t } : null;
@@ -194,6 +199,84 @@ export function parseCond(raw: string): Cond | null {
   if (/^your Benched Pokémon have any damage counters on them$/.test(s)) return { k: 'benchDamaged' };
   if (/^any of your Pokémon in play are the same type as any of your opponent's Pokémon in play$/.test(s)) return { k: 'sameType' };
   return null;
+}
+
+/** A Tool's "the (Lillie's) Pokémon this card is attached to", or a Stadium's "each Stage 2 Pokémon in play": the Pokémon it reaches. */
+function subjectTest(raw: string | undefined): PokeTest | null | undefined {
+  const s = (raw ?? '').trim();
+  if (!s || s === 'Pokémon') return undefined;
+  return parsePokeTest(s.endsWith('Pokémon') ? s : `${s} Pokémon`);
+}
+
+const BOTH = String.raw`(?: \(both yours and your opponent's\))?`;
+const WR = String.raw`(?: \((?:before|after) applying Weakness and Resistance\))?`;
+
+/**
+ * One sentence of a Tool or Stadium into a static effect, or null. Tools speak of "the Pokémon this
+ * card is attached to"; Stadiums of "each … Pokémon in play (both yours and your opponent's)".
+ */
+export function parseStatic(sentence: string): StaticEffect[] {
+  const s = sentence.trim().replace(/’/g, "'");
+  let m: RegExpExecArray | null;
+  const n = (x: string) => Number(x);
+  // Tools.
+  if ((m = /^The (?:(.+?) )?Pokémon this card is attached to gets \+(\d+) HP\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'hp', delta: n(m[2]), t }];
+  }
+  if ((m = /^The Retreat Cost of the (?:(.+?) )?Pokémon this card is attached to is ((?:Colorless)+) (less|more)\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    const k = m[2].length / 'Colorless'.length;
+    return t === null ? [] : [{ k: 'retreat', delta: m[3] === 'less' ? -k : k, t }];
+  }
+  if ((m = new RegExp(String.raw`^Attacks used by the (?:(.+?) )?Pokémon this card is attached to do (\d+) more damage to your opponent's Active Pokémon( ex)?${WR}\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'damage', n: n(m[2]), t, vs: m[3] ? { suffix: 'ex' } : undefined }];
+  }
+  if ((m = new RegExp(String.raw`^If the Pokémon this card is attached to doesn't have a Rule Box, the attacks it uses do (\d+) more damage to your opponent's Active Pokémon( ex)?${WR}\.$`).exec(s))) {
+    return [{ k: 'damage', n: n(m[1]), vs: m[2] ? { suffix: 'ex' } : undefined, ruleBoxFree: true }];
+  }
+  if ((m = new RegExp(String.raw`^Attacks used by the (.+?) Pokémon this card is attached to cost Colorless less and do (\d+) more damage to your opponent's Active Pokémon${WR}\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'costLess', n: 1, t }, { k: 'damage', n: n(m[2]), t }] : [];
+  }
+  if ((m = /^If the (?:(.+?) )?Pokémon this card is attached to is Knocked Out by damage from an attack from your opponent's Pokémon, that player takes (\d+) fewer Prize cards?\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'prizeLess', n: n(m[2]), t }];
+  }
+  if ((m = /^If the Pokémon this card is attached to is in the Active Spot and is damaged by an attack from your opponent's Pokémon \(even if this Pokémon is Knocked Out\), draw (\d+) cards\.$/.exec(s))) return [{ k: 'drawWhenHit', n: n(m[1]) }];
+  // Stadiums.
+  if ((m = new RegExp(String.raw`^Each (?:(.+?) )?Pokémon in play${BOTH} gets ([+-]\d+) HP\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'hp', delta: n(m[2]), t }];
+  }
+  if ((m = new RegExp(String.raw`^(.+?) Pokémon in play${BOTH} have no Abilities\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'noAbilities', t }] : [];
+  }
+  if ((m = new RegExp(String.raw`^(.+?) Pokémon in play${BOTH} have no Retreat Cost\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'retreat', delta: -99, t }] : [];
+  }
+  if ((m = new RegExp(String.raw`^The Retreat Cost of each (.+?) in play${BOTH} is ((?:Colorless)+) less\.$`).exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? [{ k: 'retreat', delta: -(m[2].length / 'Colorless'.length), t }] : [];
+  }
+  if ((m = new RegExp(String.raw`^Attacks used by (.+?) Pokémon${BOTH} do (\d+) more damage to the opponent's Active Pokémon${WR}\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'damage', n: n(m[2]), t }] : [];
+  }
+  if (/^Pokémon Tools attached to each Pokémon \(both yours and your opponent's\) have no effect\.$/.test(s)) return [{ k: 'noTools' }];
+  if ((m = /^Whenever any player puts a (.+?) onto their Bench during their turn, place (\d+) damage counters on that Pokémon\.$/.exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? [{ k: 'benchCounters', n: n(m[2]), t }] : [];
+  }
+  if ((m = new RegExp(String.raw`^Each player's (${TYPE_ALT}) Pokémon can evolve into \1 Pokémon during the turn they play those Pokémon, except during their first turn\.$`).exec(s))) return [{ k: 'evolveSameTurn', t: { type: COST_LETTERS[m[1]] } }];
+  if ((m = new RegExp(String.raw`^(.+?) Pokémon${BOTH} take (\d+) less damage from attacks from the opponent's Pokémon${WR}\.$`).exec(s))) {
+    const t = subjectTest(m[1]);
+    return t ? [{ k: 'damageTaken', delta: n(m[2]), t }] : [];
+  }
+  return [];
 }
 
 export interface DamageParse {

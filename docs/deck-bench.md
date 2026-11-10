@@ -236,6 +236,23 @@ one draw a turn for the Knock Outs still needed plus two, and under twenty cards
 hand of fewer than five; before that rule five of the thirty-nine lists lost head-to-head to their
 own random pile.
 
+## Tools and Stadiums read (2026-11-10)
+
+A Tool's or a Stadium's standing effect is applied while the card is in play (`deck-playtest.md`,
+Card reading): HP, Retreat Cost, damage, Prize cards, cards drawn when hit, Abilities or Tools
+turned off, counters on benched Basics, evolving the turn played, damage taken; Stadiums each player
+may use read like Trainers. Trainer copies followed in full: tournament lists 68.8% → 76.7%, the
+Standard pool 30.1% → 40.6%.
+
+Tournament lists: attacking by turn 3 53%, damage per turn 94, duels' beats-pile 95% and order 0.82
+(back where they were before the Trainer family). Two ladders gave within the noise of a 240-pair
+sample: damage per turn against half the Energy swapped 82% → 77%, and wins against a third of the
+Trainers swapped 69% → 54% (a random Trainer of the era is now often a Tool or Stadium the pilot can
+use). The archetypes' duel judge moved the same way on a 40-deck, one-repeat sample. Still unread
+among Trainers: gust and the opponent's hand or Energy (the duel family), Tools and Stadiums tied to
+Special Conditions or to the opponent's attacks, Tera cards (no marker in the card data), and a few
+wordings (Academy at Night, Kieran, Naveen, Salvatore).
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

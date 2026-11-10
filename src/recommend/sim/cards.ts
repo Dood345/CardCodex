@@ -11,7 +11,7 @@ import { COST_LETTERS } from '../card-text';
 import type { PokemonEvaluator } from '../pokemon';
 import { energyMatches, expectedDamage, pokeMatches, staticView, sustainedOf, type DeckSupply } from './damage';
 import type { UnreadCard } from './types';
-import { parseAbility, parseAttackText, parseEnergyText, parseText, type ParsedAbility, type ParsedText } from './effects';
+import { parseAbility, parseAttackText, parseEnergyText, parseStaticsText, parseText, type ParsedAbility, type ParsedText } from './effects';
 import { prizeValue } from './rules';
 
 export interface SimAttack {
@@ -144,10 +144,11 @@ export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number):
       fx = parseText(lend[1].replace(/^During your turn, you may /, '').replace(/\(You can't use more than 1 VSTAR Power in a game\.\)/, ''));
       if (fx.effects.length) fx.unread = '';
     } else if (f.trainerType === 'Tool' || f.trainerType === 'Stadium') {
-      // Other Tools change a Pokémon while attached; only Stadiums that let a player act each turn are read.
-      if (f.trainerType === 'Tool' || !/Once during each player's turn|Once during your turn/i.test(t?.fx ?? '')) fx = { ...fx, effects: [], unread: f.trainerType.toLowerCase() };
+      // A Tool changes the Pokémon it is attached to, a Stadium every Pokémon it names, while in play (statics);
+      // a Stadium that lets each player act is read like a Trainer.
+      fx = parseStaticsText(t?.fx ?? '', f.trainerType);
     }
-    if (!fx.effects.length) {
+    if (!fx.effects.length && !fx.statics?.length) {
       const roles = [...f.roles];
       unread = roles.find((r) => r === 'gust' || r === 'heal' || r === 'recover' || r === 'disrupt') ?? (fx.unread || 'other');
     }

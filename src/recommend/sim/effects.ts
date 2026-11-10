@@ -26,8 +26,8 @@
  * (coverage.ts): a pattern that matched is not the same as a text obeyed.
  */
 import { COST_LETTERS } from '../card-text';
-import type { Cond, DamageMod } from './damage';
-import { parseCond, parseDamageMods } from './damage-text';
+import type { Cond, DamageMod, StaticEffect } from './damage';
+import { parseCond, parseDamageMods, parseStatic } from './damage-text';
 
 export type CardFilter = (
   | { k: 'any' }
@@ -129,6 +129,8 @@ export interface ParsedText {
   endsTurn: boolean;
   /** Attacks: what the text does to the damage (damage.ts), applied by the engine at attack time. */
   mods: DamageMod[];
+  /** Tools and Stadiums: what the card does while in play (damage.ts `StaticEffect`). */
+  statics?: StaticEffect[];
   /** Why nothing could be read, when `effects` is empty. */
   unread: string;
   /** Every sentence of the text and what became of it. */
@@ -170,7 +172,7 @@ function vagueWords(clause: string): string {
     .replace(/\bwith \d+ HP or less\b/gi, ' ')
     .replace(/\bthat (?:doesn't|don't) have a Rule Box\b/gi, ' ')
     .replace(/\bthat (?:has|have) "[^"]+" in (?:its|their) names?\b/gi, ' ')
-    .replace(/\b(?:Team Rocket's|[A-Z][a-z]+'s) (?=Pokémon|Energy|Adventure)/g, ' ')
+    .replace(/\b(?:Team Rocket's|[A-Z][a-z]*'s) (?=Pokémon|Energy|Adventure)/g, ' ')
     .replace(/\bof different types\b/gi, ' ')
     .replace(/\bPokémon[- ](?:ex|V|VMAX|VSTAR|GX|EX)\b/g, 'Pokémon')
     .replace(/\bStage [12]\b/g, ' ')
@@ -194,7 +196,7 @@ export function parseFilter(clause: string): CardFilter | null {
   const f = parseFilterBase(c, type, vague);
   if (!f) return null;
   if (/\bthat (?:doesn't|don't) have a Rule Box\b/i.test(c)) f.ruleBox = false;
-  const owner = /\b(Team Rocket's|[A-Z][a-z]+'s) (?=Pokémon|Energy|Adventure)/.exec(c);
+  const owner = /\b(Team Rocket's|[A-Z][a-z]*'s) (?=Pokémon|Energy|Adventure)/.exec(c);
   if (owner) f.owner = owner[1];
   const named = /\bthat (?:has|have) "([^"]+)" in (?:its|their) names?\b/i.exec(c);
   if (named) f.nameHas = named[1];
@@ -373,7 +375,7 @@ const RE_ONLY_IF = /You can use this card only (?:if|when) ([^.]+?)\./i;
 const RE_NOT_FIRST = /You can't use this card during your first turn\./i;
 const RE_FIRST_OK = /If you go first, you may use this card during your first turn\./i;
 const RE_COST = /only if you discard (another|\d+ other|a|an) cards? from your hand/i;
-const RE_ABILITY_COST = /(?:You must discard|you may discard) (a|an|\d+) ([^.]*?)(?: cards?)? from your hand in order to use this Ability\.?/i;
+const RE_ABILITY_COST = /(?:You must |you may )?discard (a|an|\d+) ([^.]*?)(?: cards?)? from your hand in order to use this Ability\.?/i;
 const RE_ABILITY_IF = /^if ([^.]+?), (?=you may |you can )/i;
 const RE_CONDITION = /\bonly if\b|\bcan't use this card unless\b/i;
 const RE_ENDS_TURN = /your turn ends/i;
@@ -603,6 +605,49 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   if (!out.effects.length) out.unread = 'other';
   out.sentences = account(t0, marks, out.chance);
   out.followed = out.sentences.every((s) => s.status !== 'unread');
+  return out;
+}
+
+/**
+ * A Tool's or a Stadium's text: each sentence a static effect the engine applies while the card is
+ * in play, or a no-op. A Stadium that lets each player act ("Once during each player's turn, that
+ * player may …") is read like a Trainer instead, its "their" turned into "your"; Lumiose City's
+ * "their turn ends" and Prism Tower's "discard 2 cards … in order to draw a card" are read with it.
+ */
+export function parseStaticsText(raw: string, kind: 'Tool' | 'Stadium'): ParsedText {
+  const t0 = normalizeEnergySymbols(raw);
+  const shared = /^Once during each player's turn, that player may /i.exec(t0);
+  if (kind === 'Stadium' && shared) {
+    const body = t0
+      .slice(shared[0].length)
+      .replace(/\btheir\b/g, 'your')
+      .replace(/\bthat player shuffles\b/g, 'shuffle')
+      .replace(/\bthat player\b/g, 'you')
+      .replace(/\bIf a player (searches|discarded|healed) your (deck|hand|Pokémon)/g, 'If you $1 your $2')
+      .replace(/^(?:search|discard|put|draw|switch|heal|flip)/, (w) => w);
+    const fx = parseText(body.replace(/(\d+) cards from your hand in order to draw (a|\d+) cards?\./, (_, k: string, d: string) => `${k} cards from your hand in order to use this Ability. Draw ${d === 'a' ? 1 : d} cards.`));
+    // "If you searched your deck in this way, your turn ends." is the turn-ending clause the engine honours.
+    for (const x of fx.sentences) if (x.status === 'unread' && /your turn ends/i.test(x.text)) {
+      x.status = 'read';
+      x.why = '';
+    }
+    fx.endsTurn = /turn ends/i.test(t0);
+    fx.followed = fx.sentences.every((x) => x.status !== 'unread');
+    return fx;
+  }
+  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], statics: [], unread: '', sentences: [], followed: false };
+  for (const s of splitSentences(t0)) {
+    const fx = parseStatic(s.text);
+    if (fx.length) {
+      out.statics!.push(...fx);
+      out.sentences.push({ text: s.text, status: 'read', why: '' });
+      continue;
+    }
+    const noop = NOOP.find(([re]) => re.test(s.text));
+    out.sentences.push(noop ? { text: s.text, status: 'noop', why: noop[1] } : { text: s.text, status: 'unread', why: '' });
+  }
+  out.followed = out.sentences.every((x) => x.status !== 'unread');
+  if (!out.statics!.length) out.unread = kind.toLowerCase();
   return out;
 }
 

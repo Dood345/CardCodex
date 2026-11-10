@@ -99,6 +99,9 @@ those from `features(card).text`.
 | Crispin | Crispin | one Basic Energy to the hand and one of another type attached |
 | Gwynn | Gwynn | spare Pokémon without a Rule Box discarded, N cards drawn for each |
 | Healing | Potion, Jumbo Ice Cream, Bianca's Devotion | the most damaged Pokémon it may reach (the Active with enough Energy, one with little HP left), when something is damaged; it sits idle otherwise and the report says so |
+| Tools | Air Balloon, Hero's Cape, Brave Bangle, Maximum Belt, Lillie's Pearl, Lucky Helmet, Rescue Board | static effects on the Pokémon the Tool is attached to (`statics`): Retreat Cost, HP, damage to the opponent's Active (only against a Pokémon ex, only on a holder without a Rule Box), a Prize card withheld on its Knock Out, cards drawn when damaged in the Active Spot, a cheaper attack; attached to the plan's lead, or to the Active for a Retreat Cost it needs |
+| Stadiums with a standing effect | Gravity Mountain, Lively Stadium, N's Castle, Postwick, Team Rocket's Watchtower, Jamming Tower, Risky Ruins, Forest of Vitality, Full Metal Lab | the same effects on every Pokémon the Stadium names, both players'; Abilities or Tools turned off, damage counters on a Basic benched, a kind evolving the turn it is played, less damage taken; played when it favours the pilot's side (its Pokémon in play or in the deck against the opponent's in play) |
+| Stadiums each player may use | Prism Tower, Lumiose City, Spikemuth Gym | "Once during each player's turn, that player may …" read like a Trainer, "their" as "your": Prism Tower pays two cards for one, Lumiose City ends the turn |
 | Attack costs (attacks only) | Draconic Buster, Bellowing Thunder, Icicle Loop, Tuck Tail | Energy discarded from the attacker (a number, all, a type), "any amount" from any of your Pokémon, Energy put back into the hand or shuffled into the deck, the top of the deck or cards from the hand discarded, damage to itself or to its own Bench, the attacker returned to the hand; optional ("You may …") with a bonus "and have this attack do N more damage" or "If you do, …" |
 
 `{R}` symbols are read as type names.
@@ -391,10 +394,11 @@ discards the one in play.
 **Gaps that matter for this deck:**
 
 - **Cards whose text is not read.** The pilot never plays them. That covers gust, hand and Energy
-  disruption of the opponent, every Tool except a lent VSTAR Power, Stadiums other than "once during
-  each player's turn", "only if" conditions about things the engine does not track (a Tera Pokémon in
-  play), multi-coin effects, and a few wordings (Salvatore's evolve-from-deck, Naveen, Kieran's
-  "Choose 1"). The report names them in two groups: cards that need an opponent to matter (gust,
+  disruption of the opponent, "only if" conditions about things the card data does not carry (a Tera
+  Pokémon in play: the catalog has no Tera marker), Tools and Stadiums tied to Special Conditions or
+  to the opponent's attacks (Binding Mochi, Punk Helmet, Battle Cage), Area Zero Underdepths (Tera),
+  multi-coin effects, and a few wordings (Salvatore's evolve-from-deck, Naveen, Kieran's "Choose 1",
+  Academy at Night). The report names them in two groups: cards that need an opponent to matter (gust,
   disruption, and healing that sat idle) and cards the pilot does not know how to play.
 - **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
   Stadiums that change damage are not. Still unread in attack text: a count the parser does not

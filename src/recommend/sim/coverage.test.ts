@@ -74,7 +74,8 @@ describe('sentence accounting', () => {
     expect(kindOf(one('me03-071').fx!)).toBe('coin flips');
     // Special Red Card: its "only if" is read; what the opponent does with their hand is not.
     expect(kindOf(one('me04-082').fx!)).toBe("opponent's hand or deck");
-    expect(kindOf(one('sv10.5b-079').fx!)).toBe('Retreat Cost');
+    // Gravity Gemstone: "the Retreat Cost of both Active Pokémon is 1 more" while the holder is Active.
+    expect(kindOf(one(index.cardsByName.get('gravity gemstone')![0].id).fx!)).toBe('Retreat Cost');
   });
 
   it('honours Ability triggers and limits outside the body, and reads the body like a Trainer', () => {
