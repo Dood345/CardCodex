@@ -2192,6 +2192,13 @@ textarea:focus {
 
 /* ===== Quick scroll zone (src/ui/QuickScroll.tsx) ===== */
 /* A strip down the right edge of a long list: section labels, a thumb for where the list is, a bubble while dragging. */
+/* The zone replaces the pane's own scrollbar, which would otherwise show as a thin second bar at the edge. */
+.main.has-quick-scroll {
+  scrollbar-width: none;
+}
+.main.has-quick-scroll::-webkit-scrollbar {
+  display: none;
+}
 .quick-scroll {
   position: fixed;
   right: 4px;
