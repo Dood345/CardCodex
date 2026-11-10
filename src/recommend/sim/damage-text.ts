@@ -233,6 +233,12 @@ export function parseStatic(sentence: string): StaticEffect[] {
     const t = subjectTest(m[1]);
     return t === null ? [] : [{ k: 'hp', delta: n(m[2]), t }];
   }
+  if ((m = /^The (?:(.+?) )?Pokémon this card is attached to has no Retreat Cost\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'retreat', delta: -99, t }];
+  }
+  if (/^If this card is attached to 1 of your Pokémon, discard it at the end of your turn\.$/.test(s)) return [{ k: 'discardAtTurnEnd' }];
+  if ((m = new RegExp(String.raw`^The attacks of the Pokémon this card is attached to do (\d+) less damage to your opponent's Pokémon${WR}\.$`).exec(s))) return [{ k: 'damage', n: -n(m[1]) }];
   if ((m = /^The Retreat Cost of the (?:(.+?) )?Pokémon this card is attached to is ((?:Colorless)+) (less|more)\.$/.exec(s))) {
     const t = subjectTest(m[1]);
     const k = m[2].length / 'Colorless'.length;
@@ -254,6 +260,11 @@ export function parseStatic(sentence: string): StaticEffect[] {
     return t === null ? [] : [{ k: 'prizeLess', n: n(m[2]), t }];
   }
   if ((m = /^If the Pokémon this card is attached to is in the Active Spot and is damaged by an attack from your opponent's Pokémon \(even if this Pokémon is Knocked Out\), draw (\d+) cards\.$/.exec(s))) return [{ k: 'drawWhenHit', n: n(m[1]) }];
+  if ((m = /^If the (?:(.+?) )?Pokémon this card is attached to is in the Active Spot and is damaged by an attack from your opponent's Pokémon \(even if this (?:.+? )?Pokémon is Knocked Out\), (?:put|place) (\d+) damage counters on the Attacking Pokémon\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'hitBack', n: n(m[2]), t }];
+  }
+  if (/^If this card is discarded by an effect of an attack used by the Pokémon this card is attached to, attach this card from your discard pile to that Pokémon after attacking\.$/.test(s)) return [{ k: 'boomerang' }];
   // Abilities (passive): the holder, the owner's Pokémon, or the opponent's.
   if ((m = /^As long as this Pokémon is in the Active Spot, (.+)$/.exec(s))) {
     return parseStatic(m[1].charAt(0).toUpperCase() + m[1].slice(1)).map((x) => ({ ...x, activeOnly: true }));

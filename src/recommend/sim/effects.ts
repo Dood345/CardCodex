@@ -26,8 +26,8 @@
  * (coverage.ts): a pattern that matched is not the same as a text obeyed.
  */
 import { COST_LETTERS } from '../card-text';
-import type { Cond, DamageMod, StaticEffect } from './damage';
-import { parseCond, parseDamageMods, parseStatic } from './damage-text';
+import type { Cond, DamageMod, PokeTest, StaticEffect } from './damage';
+import { parseCond, parseDamageMods, parsePokeTest, parseStatic } from './damage-text';
 
 export type CardFilter = (
   | { k: 'any' }
@@ -109,6 +109,8 @@ export type Effect = {
   | { k: 'selfToDeck' }
   /** Discard the Stadium in play (Chien-Pao's Snow Sink). */
   | { k: 'discardStadium' }
+  /** A Special Energy attached from the hand does something (Enriching Energy draws, Telepathic Psychic Energy searches); `t`: only onto such a Pokémon. */
+  | { k: 'onAttach'; t?: PokeTest; effects: Effect[] }
 );
 
 export type SentenceStatus = 'read' | 'noop' | 'unread';
@@ -696,17 +698,40 @@ export function parseStaticsText(raw: string, kind: 'Tool' | 'Stadium' | 'Abilit
 }
 
 /**
- * A Special Energy's text. The engine reads what an Energy provides from the evaluator's features
- * (`provides`), so the plain "provides" sentence counts as read; every other sentence is unread
- * until an effect is modelled.
+ * A Special Energy's text. What it provides, to whom, and when more (`rule`, read by the evaluator:
+ * base, amount, an attach restriction, upgrades under a condition) is read through the engine's
+ * `energyOf`, so those sentences count; a draw on attaching (Enriching Energy) is an effect; the
+ * rest are standing effects like a Tool's (Spiky, Legacy, Boomerang). Mist Energy's "prevent all
+ * effects" stays unread while the engine has no effects to prevent.
  */
-export function parseEnergyText(raw: string): ParsedText {
+export function parseEnergyText(raw: string, rule?: { only: unknown; upgrades: { cond: unknown }[] } | null): ParsedText {
   const t = normalizeEnergySymbols(raw);
-  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: '', sentences: [], followed: true };
+  const out: ParsedText = { effects: [], discardCost: 0, chance: 1, endsTurn: false, mods: [], statics: [], unread: '', sentences: [], followed: true };
   if (!t) return out;
   const marks: Mark[] = [];
-  for (const m of t.matchAll(/(?:As long as|While) this card is attached to a Pokémon, (?:it|this card) provides (?:[A-Z][a-z]+ Energy|every type of Energy but provides only 1 Energy at a time)\./gi)) {
-    marks.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, exact: true });
+  const exact = (m: RegExpExecArray | RegExpMatchArray) => marks.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, exact: true });
+  for (const m of t.matchAll(/(?:(?:As long as|While) this card is attached to a Pokémon, (?:it|this card)|This card) provides (?:(?:[A-Z][a-z]+)+ Energy|every type of Energy but provides only \d Energy at a time|\d in any combination of [A-Z][a-z]+ Energy and [A-Z][a-z]+ Energy)\./gi)) exact(m);
+  let m: RegExpExecArray | null;
+  if (rule?.only && (m = /^This card can only be attached to (?:a |an )?.+?\. If this card is attached to anything other than (?:a |an )?.+?, discard this card\./.exec(t))) exact(m);
+  if (rule?.upgrades.some((u) => u.cond !== 'unread') && (m = /If (?:this card is attached to|the Pokémon this card is attached to is) (?:a |an )?.+?, (?:this card|it) provides (?:every type of Energy but provides only \d Energy at a time|(?:[A-Z][a-z]+)+ Energy instead)\./.exec(t))) exact(m);
+  if ((m = /When you attach this card from your hand to (?:a |an )?(.+?), (.+)$/.exec(t))) {
+    const tt = m[1] === 'Pokémon' ? undefined : parsePokeTest(m[1]);
+    const inner = parseText(m[2].charAt(0).toUpperCase() + m[2].slice(1));
+    if (tt !== null && inner.effects.length && inner.followed) {
+      out.effects.push({ k: 'onAttach', t: tt as PokeTest | undefined, effects: inner.effects });
+      exact(m);
+    }
+  }
+  for (const s of splitSentences(t)) {
+    const fx = parseStatic(s.text);
+    if (fx.length) {
+      out.statics!.push(...fx.map((x) => ({ ...x, scope: 'self' as const })));
+      marks.push({ start: s.start, end: s.end, exact: true });
+    }
+  }
+  if ((m = /This effect of your .+? can't be applied more than once per game\./.exec(t))) {
+    for (const x of out.statics!) if (x.k === 'prizeLess') x.once = true;
+    exact(m);
   }
   out.sentences = account(t, marks, 1);
   out.followed = out.sentences.every((s) => s.status !== 'unread');

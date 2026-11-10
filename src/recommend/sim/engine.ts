@@ -80,6 +80,10 @@ export interface Player {
   /** During an attack: cards its own text discarded "in this way", and whether its optional cost was paid. */
   attackDiscarded: number;
   attackPaid: boolean;
+  /** Boomerang Energy the attack's own text discarded, to come back after it. */
+  boomerangs: SimCard[];
+  /** Once-per-game effects already spent, by card name (Legacy Energy's Prize card). */
+  onceUsed: Set<string>;
   /** The game this player sits at (set by setup and each turn), for the Stadium in play, and the opponent when there is one. */
   game?: Game;
   opp?: Player | null;
@@ -131,6 +135,8 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
     koName: '',
     attackDiscarded: 0,
     attackPaid: false,
+    boomerangs: [],
+    onceUsed: new Set(),
   };
 }
 
@@ -177,6 +183,7 @@ function statics(p: Player, m: Mon, from: Player | null = null): StaticEffect[] 
   const st = stadiumOf(p)?.fx?.statics ?? [];
   const out: StaticEffect[] = [];
   if (!st.some((x) => x.k === 'noTools')) for (const x of m.tool?.fx?.statics ?? []) if (reaches(x, m)) out.push(x);
+  for (const e of m.energy) for (const x of e.fx?.statics ?? []) if (reaches(x, m)) out.push(x);
   for (const x of st) if (reaches(x, m)) out.push(x);
   for (const holder of inPlay(p)) {
     for (const ab of holder.c.abilities) {
@@ -197,16 +204,27 @@ function statics(p: Player, m: Mon, from: Player | null = null): StaticEffect[] 
 }
 
 /** The Energy on `m` as its attacks may spend it: a type an Ability doubles counts twice (Wild Growth). */
-function energyOf(p: Player, m: Mon): SimCard[] {
+function energyOf(p: Player, m: Mon): EnergyLike[] {
   const doubled = statics(p, m).filter((x) => x.k === 'energyDouble');
-  if (!doubled.length) return m.energy;
-  const out: SimCard[] = [];
+  const out: EnergyLike[] = [];
   for (const e of m.energy) {
-    out.push(e);
+    const pr = providesFor(e, m.c);
+    for (let k = 0; k < pr.amount; k++) out.push({ provides: pr.letters, basicEnergy: e.basicEnergy });
     if (e.basicEnergy && doubled.some((x) => x.k === 'energyDouble' && e.provides === x.type)) out.push(e);
   }
   return out;
 }
+
+/** What an Energy card provides on a given holder: a Special Energy's rule may give more to some Pokémon (Neo Upper on a Stage 2) and more than one at a time. */
+function providesFor(e: SimCard, holder: SimCard): { letters: string; amount: number } {
+  if (!e.energy) return { letters: e.provides, amount: 1 };
+  if (e.energy.onlyKeys && !e.energy.onlyKeys.has(holder.key)) return { letters: '', amount: 0 };
+  for (const u of e.energy.upgrades) if (u.keys.has(holder.key)) return { letters: u.types, amount: u.amount };
+  return { letters: e.provides, amount: e.energy.amount };
+}
+
+/** May this Energy card go onto this Pokémon at all? ("This card can only be attached to a Team Rocket's Pokémon.") */
+const attachable = (e: SimCard, holder: SimCard) => !e.energy?.onlyKeys || e.energy.onlyKeys.has(holder.key);
 
 /** The Pokémon's HP with its Tool and the Stadium (Hero's Cape, Gravity Mountain). */
 export function maxHp(p: Player, m: Mon): number {
@@ -260,8 +278,32 @@ function weaknessOf(o: Player, p: Player, def: Mon): string | undefined {
 /** Prize cards a Knock Out of `m` gives, less what its Tool withholds (Lillie's Pearl). */
 function prizesFor(p: Player, m: Mon): number {
   let n = m.c.prize;
-  for (const x of statics(p, m)) if (x.k === 'prizeLess') n -= x.n;
+  for (const x of statics(p, m)) {
+    if (x.k !== 'prizeLess') continue;
+    if (x.once) {
+      // Legacy Energy: once per game; the card that carries it names the effect.
+      const name = m.energy.find((e) => e.fx?.statics?.includes(x))?.name ?? m.tool?.name ?? m.c.name;
+      if (p.onceUsed.has(name)) continue;
+      p.onceUsed.add(name);
+    }
+    n -= x.n;
+  }
   return Math.max(0, n);
+}
+
+/** An Energy attached from the hand: Enriching Energy draws cards, Telepathic Psychic Energy searches. */
+function onAttach(g: Game, p: Player, e: SimCard, m: Mon): void {
+  for (const x of e.fx?.effects ?? []) if (x.k === 'onAttach' && (!x.t || pokeMatches(m.c, x.t))) runEffects(g, p, p.opp ?? null, { effects: x.effects, discardCost: 0, chance: 1, endsTurn: false, mods: [], unread: '', sentences: [], followed: true }, m);
+}
+
+/** Energy that leaves at the end of its owner's turn (Ignition Energy). */
+function discardAtTurnEnd(p: Player): void {
+  for (const m of inPlay(p)) {
+    for (const e of m.energy.slice()) if (e.fx?.statics?.some((x) => x.k === 'discardAtTurnEnd')) {
+      removeEnergy(m, e);
+      p.discard.push(e.i);
+    }
+  }
 }
 
 /** A Basic put onto the Bench under a Stadium that marks it (Risky Ruins). */
@@ -297,7 +339,12 @@ function removeFromHand(p: Player, at: number): number {
 /* ---------- Energy ---------- */
 
 /** The cost letters `energy` leaves unpaid ("" = payable). Typed symbols take a matching Energy first, then any-type Energy. */
-export function missing(cost: string, energy: readonly SimCard[]): string {
+export interface EnergyLike {
+  provides: string;
+  basicEnergy: boolean;
+}
+
+export function missing(cost: string, energy: readonly EnergyLike[]): string {
   if (!cost) return '';
   let used = 0; // bit mask over energy (at most 31 attached)
   let out = '';
@@ -328,7 +375,10 @@ export function missing(cost: string, energy: readonly SimCard[]): string {
   return out;
 }
 
-const covers = (e: SimCard, ch: string) => ch === 'C' || e.provides === '*' || e.provides.includes(ch);
+const covers = (e: SimCard, ch: string, holder?: SimCard) => {
+  const letters = holder ? providesFor(e, holder).letters : e.provides;
+  return ch === 'C' ? !holder || attachable(e, holder) : letters === '*' || letters.includes(ch);
+};
 
 /** The attack a Pokémon is being built for: the plan's attack on the main line, else its strongest. */
 function targetAttack(p: Player, m: Mon): SimAttack | null {
@@ -350,8 +400,9 @@ function needs(p: Player, m: Mon, e: SimCard): boolean {
   if (payingRetreat(p, m)) return true;
   const a = targetAttack(p, m);
   if (!a) return false;
+  if (!attachable(e, m.c)) return false;
   const miss = missing(attackCost(p, m, a), energyOf(p, m));
-  for (const ch of miss) if (covers(e, ch)) return true;
+  for (const ch of miss) if (covers(e, ch, m.c)) return true;
   return false;
 }
 
@@ -949,6 +1000,7 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         for (const x of pool.slice(pool.length - n)) {
           removeEnergy(self, x);
           p.discard.push(x.i);
+          if (x.fx?.statics?.some((s) => s.k === 'boomerang')) p.boomerangs.push(x);
         }
         p.attackDiscarded += n;
         p.attackPaid = true;
@@ -971,6 +1023,7 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         for (const [m, x] of pool.slice(0, n)) {
           removeEnergy(m, x);
           p.discard.push(x.i);
+          if (m === self && x.fx?.statics?.some((s) => s.k === 'boomerang')) p.boomerangs.push(x);
         }
         p.attackDiscarded += n;
         if (n) p.attackPaid = true;
@@ -1434,10 +1487,12 @@ function attachEnergy(g: Game, p: Player): boolean {
   if (a && retreatCost(p, a) - a.energy.length === 1 && p.retreatDone < g.rules.retreatsPerTurn && switchTarget(p, null) && !p.hand.some((i) => isSwitchCard(cardOf(p, i)))) {
     const j = p.hand.findIndex((i) => cardOf(p, i).kind === 'energy');
     if (j >= 0) {
-      a.energy.push(cardOf(p, removeFromHand(p, j)));
+      const e = cardOf(p, removeFromHand(p, j));
+      a.energy.push(e);
       p.energyDone++;
       p.acted++;
       g.trace?.(`energy → ${a.c.name} (to retreat)`);
+      onAttach(g, p, e, a);
       return true;
     }
   }
@@ -1463,10 +1518,12 @@ function attachEnergy(g: Game, p: Player): boolean {
       }
     }
     if (pick >= 0) {
-      m.energy.push(cardOf(p, removeFromHand(p, pick)));
+      const e = cardOf(p, removeFromHand(p, pick));
+      m.energy.push(e);
       p.energyDone++;
       p.acted++;
       g.trace?.(`energy → ${m.c.name}`);
+      onAttach(g, p, e, m);
       return true;
     }
   }
@@ -1813,11 +1870,30 @@ export function attack(g: Game, p: Player, o: Player | null): number {
     if (!p.firstOnline && p.d.plan && a.c.key === p.d.plan.attacker) p.firstOnline = p.turn;
     if (o && def) {
       def.dmg += d;
-      if (d > 0) for (const x of statics(o, def)) if (x.k === 'drawWhenHit') draw(o, x.n);
+      if (d > 0) for (const x of statics(o, def)) {
+        if (x.k === 'drawWhenHit') draw(o, x.n);
+        if (x.k === 'hitBack') a.dmg += 10 * x.n;
+      }
       if (def.dmg >= maxHp(o, def)) knockOut(g, p, o);
     }
   }
   if (use.fx?.effects.length && !g.winner) runEffects(g, p, o, use.fx, a, 'post');
+  // Boomerang Energy comes back to the attacker after the attack.
+  if (p.boomerangs.length && (p.active === a || p.bench.includes(a))) {
+    for (const x of p.boomerangs) {
+      const at = p.discard.lastIndexOf(x.i);
+      if (at < 0) continue;
+      p.discard.splice(at, 1);
+      a.energy.push(x);
+    }
+  }
+  p.boomerangs = [];
+  // Spiky Energy's counters on the attacker can Knock it Out.
+  if (!g.winner && a.dmg >= maxHp(p, a) && (p.active === a || p.bench.includes(a))) {
+    ownKnockOut(g, p, o, a);
+    refillActive(g, p, o);
+  }
+  discardAtTurnEnd(p);
   return d;
 }
 

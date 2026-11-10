@@ -61,8 +61,14 @@ export type StaticEffect = {
   | { k: 'hp'; delta: number; t?: PokeTest }
   /** Attacks of a matching Pokémon do `n` more damage to the opponent's Active (`vs`: only one of that kind); `ruleBoxFree`: only a holder without a Rule Box. */
   | { k: 'damage'; n: number; t?: PokeTest; vs?: PokeTest; ruleBoxFree?: boolean }
-  /** A Knock Out of the holder gives `n` fewer Prize cards. */
-  | { k: 'prizeLess'; n: number; t?: PokeTest }
+  /** A Knock Out of the holder gives `n` fewer Prize cards; `once`: one Knock Out per game (Legacy Energy). */
+  | { k: 'prizeLess'; n: number; t?: PokeTest; once?: boolean }
+  /** The holder, damaged by an attack in the Active Spot, puts `n` damage counters on the attacker (Spiky Energy, Punk Helmet). */
+  | { k: 'hitBack'; n: number; t?: PokeTest }
+  /** An Energy discarded by its holder's own attack comes back to it after the attack (Boomerang Energy). */
+  | { k: 'boomerang' }
+  /** The card is discarded at the end of its owner's turn (Ignition Energy). */
+  | { k: 'discardAtTurnEnd' }
   /** The holder's owner draws `n` when it is damaged by an attack in the Active Spot. */
   | { k: 'drawWhenHit'; n: number }
   /** The holder's attacks (or the one named) cost `n` Colorless less, times `per` when given (Bloodmoon Ursaluna ex). */

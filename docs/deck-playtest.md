@@ -429,7 +429,14 @@ discards the one in play.
   max(1, drain): Slaking ex's Great Swing (CC, 280, discard one) lands every turn, Cynthia's
   Garchomp ex's Draconic Buster (FF, 260, discard all) every other turn. Before this the engine built
   decks around such attacks and their damage per turn fell from 61 to 53 once the cost was paid.
-- **Special Energy conditions.** A Special Energy provides what `features.provides` says.
+- **Special Energy.** What a Special Energy provides, to whom and when more comes from the
+  evaluator's rule resolved against the deck's Pokémon (`SimCard.energy`): Neo Upper Energy is one
+  Colorless except on a Stage 2, where it is two of any type; Team Rocket's Energy two of Psychic or
+  Darkness, attached only to Team Rocket's Pokémon; Legacy Energy any one type. Enriching Energy draws
+  when attached from the hand; Spiky Energy's counters land on the attacker (and can Knock it Out);
+  Legacy Energy withholds a Prize card once per game; Boomerang Energy comes back after its holder's
+  own attack discards it. Mist Energy's "prevent all effects of attacks" stays unread while the
+  engine has no attack effects to prevent.
 - **Duels.** There is no disruption and no gust: Iono resolves only for the player who plays it,
   and Boss's Orders is unread. Without gust, the opponent's Benched attackers grow in peace. This
   favours slow Stage 2 decks.

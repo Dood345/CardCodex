@@ -271,6 +271,21 @@ unread among Abilities: effects on the opponent's Pokémon (Cursed Blast, Adrena
 does those yet), Festival Lead and Memory Helix, and kinds the card data does not mark (Future,
 Tera).
 
+## Special Energy read (2026-11-10)
+
+A Special Energy's rule (what it provides, to whom, when more, how many at a time) is resolved
+against the deck's Pokémon and applied by the engine; its other sentences are read like a Tool's or
+as an effect on attaching (`deck-playtest.md`, Special Energy). Before, a Special Energy provided its
+widest reading to every holder (Neo Upper Energy was any type on anything). Special Energy copies
+followed in full: tournament lists 0% → 74.4%, the Standard pool 0% → 72.2%.
+
+Tournament lists: the swapped-Energy ladder is what moved, because random Special Energy of the era
+now shows for what it is: damage per turn beats half the Energy swapped 74% → 86%, attacking by turn
+4 73% → 80%, wins against the field 80% → 87%; the other columns held or rose a point or two. Still
+unread: Mist and Rocky Fighting Energy (prevent effects of attacks), Bubbly Water and Therapeutic
+Energy (Special Conditions), Reversal Energy (a condition on Prize cards). Coverage on the
+tournament lists stands at Trainers 76.8%, Abilities 62.6%, Special Energy 74.4%, attacks 81.1%.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus
