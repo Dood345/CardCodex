@@ -17,7 +17,8 @@ export interface AboutRecommender {
 
 const PARTS: Partial<Record<GameId, string>> = {
   pokemon:
-    'the deck rules (60 cards, four copies of a card, one ACE SPEC, one Radiant Pokémon), enough Basic Pokémon for the opening hand, ' +
+    'the deck rules (60 cards; four copies of a card by name, Special Energy included, and any number of basic Energy; one ACE SPEC; one Radiant Pokémon), ' +
+    'enough Basic Pokémon for the opening hand, ' +
     'evolution lines that are whole, Energy the attackers can use and in the amount their attacks cost, draw and search, ' +
     'power against Pokémon of the same years, synergy (cards that name a type or a Pokémon have it in the deck), focus and era',
   ygo:

@@ -68,6 +68,8 @@ describe('how decks are recommended (Settings → About)', () => {
       expect(text).toMatch(/score out of 100/);
       expect(text).toMatch(/knows nothing about tournament results/);
     }
+    // The copy rule is stated whole: basic Energy has no limit, Special Energy counts toward the four.
+    expect(pokemon).toMatch(/four copies of a card by name, Special Energy included, and any number of basic Energy/);
     // Only Pokémon decks are played, with the number of games the screens really use.
     expect(pokemon).toContain(`${PLAY_GAMES} practice games`);
     expect(pokemon).toMatch(/Tune by playing/);
