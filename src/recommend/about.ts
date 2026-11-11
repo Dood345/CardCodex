@@ -20,7 +20,8 @@ const PARTS: Partial<Record<GameId, string>> = {
     'the deck rules (60 cards; four copies of a card by name, Special Energy included, and any number of basic Energy; one ACE SPEC; one Radiant Pokémon), ' +
     'enough Basic Pokémon for the opening hand, ' +
     'evolution lines that are whole, Energy the attackers can use and in the amount their attacks cost, draw and search, ' +
-    'power against Pokémon of the same years, synergy (cards that name a type or a Pokémon have it in the deck), focus and era',
+    'power (the damage the best attack keeps up turn after turn, as its text says) against Pokémon of the same years, ' +
+    'synergy (cards that name a type or a Pokémon have it in the deck), focus and era',
   ygo:
     'the deck rules and the TCG Forbidden & Limited list, consistency (the chance of opening no starter in five cards), ' +
     'bricks (cards that cannot be used on their own), cohesion around an archetype, interaction (hand traps, negation, removal), ' +
@@ -46,9 +47,15 @@ export function aboutRecommender(game: GameId): AboutRecommender | null {
   ];
   if (game === 'pokemon') {
     paragraphs.push(
-      `Pokémon decks are also played. A simple test pilot plays a full deck ${PLAY_GAMES} practice games against nobody and reports how soon it attacks, ` +
+      `Pokémon decks are also played. A test pilot plays a full deck ${PLAY_GAMES} practice games against nobody and reports how soon it attacks, ` +
         'how much damage it does and how often it has nothing to play. “Tune by playing” and “Find a swap by playing” try swaps the same way ' +
-        'and keep one only if the deck plays better with it on fresh games. The pilot cannot use every card, and says which ones sat unused: those that need an opponent to matter, and those it does not know how to play.',
+        'and keep one only if the deck plays better with it on fresh games.',
+      'The pilot plays the cards as they are written: damage that grows with Energy, Benched Pokémon or coin flips, attacks that cannot be used ' +
+        'two turns running, the Energy or damage an attack costs its user, and what Trainers, Tools, Stadiums, Abilities and Special Energy do. ' +
+        'It is a plain player, though: it works toward the deck’s main attacker and does not plan several turns ahead.',
+      'With nobody across the table, cards that act on an opponent (Boss’s Orders, healing, Burn or Poison) sit unused, and the report names them. ' +
+        'It also names the few cards the pilot still cannot read. Text about Tera, Future and Ancient Pokémon is among those, ' +
+        'because the card data does not say which cards they are.',
     );
   } else {
     paragraphs.push('Decks of this game are scored, not played: there is no practice pilot for it yet, so “Tune by playing” is not offered.');
