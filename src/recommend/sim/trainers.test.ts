@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { compileDeck, type SimCard } from './cards';
-import { mainPhase, newPlayer, type Game, type Mon, type Player } from './engine';
+import { attack, mainPhase, maxHp, newPlayer, type Game, type Mon, type Player } from './engine';
 import { loadEvaluator } from './fixtures';
 import { playtest } from './playtest';
 import { POKEMON_RULES_PAR_2023 } from './rules';
@@ -32,6 +32,16 @@ const IDS = {
   ariana: 'sv10-171', // draw until 5, or 8 with only Team Rocket's Pokémon in play
   lacey: 'sv07-139', // shuffle, draw 4, or 8 when the opponent has 3 or fewer Prize cards
   judge: 'me03-076', // each player shuffles and draws 4
+  bugSet: 'sv06-143', // Bug Catching Set: top 7, up to 2 in any combination of Grass Pokémon and Basic Grass Energy
+  ethan: 'sv10-165', // Ethan's Adventure: up to 3 in any combination of Ethan's Pokémon and Basic Fire Energy
+  cyndaquil: 'sv10-032', // Ethan's Cyndaquil
+  bulbasaur: 'me01-001', // a Basic Grass Pokémon
+  grass: 'sve-001',
+  riolu: 'sv07-081', // Punch FC 30, a Fighting Basic
+  premium: 'me01-124', // Premium Power Pro: this turn your Fighting Pokémon's attacks do 30 more
+  blackBelt: 'svp-219', // Black Belt's Training: 40 more to the opponent's Active Pokémon ex
+  gladion: 'me05-077', // Gladion's Final Battle: last card in hand; 80 more from Pokémon without a Rule Box
+  kieran: 'sv06-154', // Kieran: Choose 1: a switch, or 30 more to an Active ex or V
   stamp: 'sv06-165', // Unfair Stamp: only after a Knock Out; each shuffles, you draw 5, they draw 2
   recycler: 'sv10-164', // Energy Recycler: up to 5 Basic Energy into the deck
   drayton: 'sv08-174', // top 7: a Pokémon and a Trainer card
@@ -213,5 +223,70 @@ describe('playing them', () => {
     expect(p.discard).toContain(card(IDS.carmine).i);
     const r = playtest(ev, [{ cardId: IDS.charmander, qty: 4 }, { cardId: IDS.potion, qty: 2 }, { cardId: IDS.fire, qty: 54 }], { games: 30, seed: 1 });
     expect(r.idle).toEqual([{ id: IDS.potion, name: 'Potion', copies: 2, reason: 'heal' }]);
+  });
+
+  it('shares one count across the kinds of an "in any combination of" search, from the deck or from the top cards', () => {
+    const { d, card } = compiled([IDS.bugSet, IDS.ethan, IDS.cyndaquil, IDS.bulbasaur, IDS.grass, IDS.fire], 2);
+    const set = card(IDS.bugSet).fx!;
+    expect(set.followed).toBe(true);
+    expect(set.effects).toHaveLength(1);
+    expect(set.effects[0]).toMatchObject({ k: 'search', n: 2, to: 'hand', top: 7 });
+    expect((set.effects[0] as { alts?: unknown[] }).alts).toHaveLength(1);
+    const adventure = card(IDS.ethan).fx!;
+    expect(adventure.followed).toBe(true);
+    expect(adventure.effects[0]).toMatchObject({ k: 'search', n: 3, to: 'hand' });
+    expect((adventure.effects[0] as { alts?: unknown[] }).alts).toHaveLength(1);
+    // Bug Catching Set on a table, in a Grass deck: the Active wants Energy, the top seven hold a Bulbasaur and Grass Energy; two cards leave the deck.
+    const g = game();
+    const { d: dg, card: cardG } = compiled([IDS.bugSet, IDS.bulbasaur, IDS.grass], 2);
+    const grass = cardG(IDS.grass);
+    const bulba = cardG(IDS.bulbasaur);
+    const p = table(dg, mon(bulba), [cardG(IDS.bugSet)], [grass, grass, grass, grass, bulba, grass, grass, grass]);
+    mainPhase(g, p, null);
+    expect(p.discard).toContain(cardG(IDS.bugSet).i);
+    expect(p.deck).toHaveLength(6);
+    // Ethan's Adventure takes three in any combination: with one Ethan's Cyndaquil in the deck, the rest is Fire Energy.
+    const fire = card(IDS.fire);
+    const cynda = card(IDS.cyndaquil);
+    const q = table(d, mon(cynda, [fire]), [card(IDS.ethan)], [fire, fire, fire, cynda, fire]);
+    mainPhase(g, q, null);
+    expect(q.discard).toContain(card(IDS.ethan).i);
+    expect(q.deck).toHaveLength(2);
+    expect([...q.hand, ...(q.bench[0] ? [q.bench[0].c.i] : [])].filter((i) => i === cynda.i)).toHaveLength(1);
+  });
+
+  it('reads a damage bonus for the turn and plays it when it makes a Knock Out, or in a solo game when the plan attacks', () => {
+    const { d, card } = compiled([IDS.premium, IDS.blackBelt, IDS.gladion, IDS.kieran, IDS.riolu, IDS.charmander, IDS.fighting, IDS.fire], 2);
+    expect(card(IDS.premium).fx).toMatchObject({ effects: [{ k: 'damageBoost', statics: [{ k: 'damage', n: 30, t: { type: 'F' } }] }], followed: true });
+    expect(card(IDS.blackBelt).fx).toMatchObject({ effects: [{ k: 'damageBoost', statics: [{ k: 'damage', n: 40, vs: { suffix: 'ex' } }] }], followed: true });
+    expect(card(IDS.gladion).fx).toMatchObject({ cond: { k: 'lastCardInHand' }, effects: [{ k: 'damageBoost', statics: [{ k: 'damage', n: 80, ruleBoxFree: true }] }], followed: true });
+    expect(card(IDS.kieran).fx).toMatchObject({ effects: [{ k: 'choose', options: [[{ k: 'switch' }], [{ k: 'damageBoost', statics: [{ k: 'damage', n: 30, vs: { suffixAny: ['ex', 'V'] } }] }]] }], followed: true });
+    const fighting = card(IDS.fighting);
+    // A duel: Punch does 30; with Premium Power Pro 60, which Knocks Out a Charmander with 50 HP left.
+    const g = game();
+    const me = table(d, mon(card(IDS.riolu), [fighting, fighting]), [card(IDS.premium)], [fighting]);
+    const them = table(d, mon(card(IDS.charmander)), [], [card(IDS.fire)]);
+    them.active!.dmg = maxHp(them, them.active!) - 50;
+    mainPhase(g, me, them);
+    expect(me.discard).toContain(card(IDS.premium).i);
+    expect(me.turnStatics).toHaveLength(1);
+    expect(attack(g, me, them)).toBe(60);
+    expect(them.active).toBeNull();
+    // Without a Knock Out in it, the Item stays in hand; Black Belt's Training reaches only a Pokémon ex, so it stays too.
+    const g2 = game();
+    const me2 = table(d, mon(card(IDS.riolu), [fighting, fighting]), [card(IDS.premium), card(IDS.blackBelt)], [fighting]);
+    const them2 = table(d, mon(card(IDS.charmander)), [], [card(IDS.fire)]);
+    mainPhase(g2, me2, them2);
+    expect(me2.hand).toContain(card(IDS.premium).i);
+    expect(me2.hand).toContain(card(IDS.blackBelt).i);
+    expect(attack(g2, me2, them2)).toBe(30);
+    // Solo: in a deck whose plan is Riolu's Punch, the attacker is ready, so the bonus is played and the mirror takes 60.
+    const g3 = game();
+    const { d: d3, card: card3 } = compiled([IDS.premium, IDS.riolu, IDS.fighting], 2);
+    const f3 = card3(IDS.fighting);
+    const solo = table(d3, mon(card3(IDS.riolu), [f3, f3]), [card3(IDS.premium)], [f3]);
+    mainPhase(g3, solo, null);
+    expect(solo.discard).toContain(card3(IDS.premium).i);
+    expect(attack(g3, solo, null)).toBe(60);
   });
 });

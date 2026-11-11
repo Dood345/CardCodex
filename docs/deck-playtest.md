@@ -90,7 +90,8 @@ those from `features(card).text`.
 | Rare Candy | Rare Candy | skip the Stage 1 |
 | Discard cost | Ultra Ball ("only if you discard 2 other cards") | pay the discard, then resolve |
 | One coin flip | "Flip a coin. If heads, …" | the effect happens half the time |
-| Searches narrowed by kind | Poké Pad, Team Rocket's Proton, Fighting Gong, Brock's Scouting | "that doesn't have a Rule Box" (no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega), an owner ("Team Rocket's Pokémon"), a name ("that has "Team Rocket" in its name"), "X or Y" (either kind), "of different types" |
+| Searches narrowed by kind | Poké Pad, Team Rocket's Proton, Fighting Gong, Brock's Scouting, Ethan's Adventure, Bug Catching Set | "that doesn't have a Rule Box" (no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega), an owner ("Team Rocket's Pokémon"), a name ("that has "Team Rocket" in its name"), "X or Y" (either kind), "of different types", "up to N in any combination of X and Y" (one count shared across the kinds, from the deck or from a look at the top cards) |
+| A damage bonus for the turn | Premium Power Pro, Black Belt's Training, Gladion's Final Battle, Kieran | "During this turn, attacks used by your (Fighting) Pokémon do N more damage to your opponent's Active Pokémon (ex)": the same standing effect a Tool carries, held by the player until the turn ends (`Player.turnStatics`); the attacker it reaches, a Pokémon ex across the table, a holder without a Rule Box and "for each Prize card your opponent has taken" are honoured. Played in a duel when it turns the Active's best attack into a Knock Out, in a solo game when the plan's attack is about to be used. "Choose 1: • … • …" takes the first option that is useful |
 | A draw with an alternative | Lillie's Determination, Lacey, Team Rocket's Ariana | "If …, draw N cards instead": the other number when the condition holds (Prize cards remaining, every Pokémon in play of an owner) |
 | Both players shuffle | Judge, Iono, Unfair Stamp | the opponent shuffles and draws too, in a duel |
 | "You can use this card only if …" | Unfair Stamp, Special Red Card, Rosa's Encouragement, Gladion's Final Battle | played only while the condition holds (a Knock Out last turn, Prize cards, the last card in hand, going second on the first turn); "You can't use this card during your first turn" and "If you go first, you may use this card during your first turn" likewise |
@@ -574,21 +575,22 @@ over the 346 tournament lists and by name over the Standard pool, with the large
 
 | Measure | Tournament lists | Standard pool |
 | --- | --- | --- |
-| Trainer copies played with every sentence followed | 90.2% | 46.7% |
+| Trainer copies played with every sentence followed | 92.8% | 49.8% |
 | Ability copies used with every sentence followed | 84.4% | 34.9% |
 | Special Energy copies followed beyond what they provide | 97.2% | 83.3% |
-| Damaging attack copies fully acted on | 97.5% | 83.2% |
+| Damaging attack copies fully acted on | 97.5% | 83.4% |
 
-- **Markers the catalog does not carry** (Area Zero Underdepths, 175 copies on the lists with the
+- **Markers the source does not carry** (Area Zero Underdepths, 175 copies on the lists with the
   other "opponent's hand or deck" Trainers; Iron Crown ex's Cobalt Command, "attacks used by your
-  Future Pokémon"): Tera, Future and Ancient are not in the card data, so nothing about them can be
-  checked. Needs a marker from the catalog builder.
-- **A Trainer's damage bonus for the turn** (152 copies: Premium Power Pro, Black Belt's Training:
-  "During this turn, attacks used by your Pokémon do N more damage to your opponent's Active
-  Pokémon"): the damage model takes modifiers from attack text, Tools, Abilities and Stadiums, not
-  from a Trainer played this turn.
-- **Searches worded wider than the filter** (133 copies: Bug Catching Set, Ethan's Adventure: "up
-  to N in any combination of" two kinds).
+  Future Pokémon"): Tera, Future and Ancient are not in the card data and not in the source. The
+  TCGdex card object (checked on Charizard ex sv03-125, a Tera ex, and Gouging Fire ex sv05-038, a
+  Future Pokémon, fetched one at a time, and on the cached GraphQL downloads) has no field for them:
+  its fields are category, dexId, hp, id, illustrator, image, legal, localId, name, pricing,
+  rarity, regulationMark, retreat, set, stage, suffix, types, updated, variants, weaknesses,
+  abilities, attacks, description, and `suffix` is only "ex" and the like. The Tera rule-box
+  sentence is not in any card's text either (no text in the catalog carries it), so there is
+  nothing exact to derive a marker from. Left unread; a marker would have to come from another
+  source.
 - **Healing in other wordings** (72 copies: Wally's Compassion heals all damage from a Mega
   Evolution Pokémon ex and returns its Energy; Jacinthe heals 150 from a Psychic Pokémon): the
   engine heals a number of damage counters from a Pokémon of any type.

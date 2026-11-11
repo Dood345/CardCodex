@@ -323,6 +323,37 @@ tournament lists hold still, and only the built corpus moved (the score builds o
 Ground Burn and Blaze Blitz weigh what they do: Abilities followed there 68.2% → 66.0%, attacks
 90.5% → 91.3%, the solo Energy ladder 0.850 → 0.808, the duel Trainer ladder 0.675 → 0.750).
 
+## Damage bonuses for the turn (2026-11-10)
+
+"During this turn, attacks used by your Pokémon do N more damage" Trainers (Premium Power Pro,
+Black Belt's Training, Gladion's Final Battle, Kieran's second option) are standing effects the
+player holds until the turn ends, played in a duel when they turn the Active's best attack into a
+Knock Out and in a solo game when the plan's attack is about to be used (`deck-playtest.md`).
+Trainer copies followed: tournament lists 90.2% → 91.6%, the Standard pool 47.2% → 48.9%. The
+judges held: solo damage per turn and the online shares within a point, the duel judge's random
+piles a little further behind the lists (archetypes 0.870 → 0.913), the Trainer-swap ladder of the
+lists 0.744 → 0.692 and a 24-swap 1.000 → 0.962, both inside the band the old engine moves between
+seeds (a third of the Trainers swapped for random ones now brings in damage bonuses the pilot
+plays).
+
+## Searches in any combination (2026-11-10)
+
+"Up to N in any combination of X and Y" (Ethan's Adventure from the deck, Bug Catching Set from
+the top seven) is one search with one count shared across the kinds, the same `alts` a "X or Y"
+search carries; recoveries from the discard pile already read the wording. Trainer copies followed: tournament lists 91.6% → 92.8%, the Standard pool 48.9% → 49.8%. Solo
+damage per turn on the lists 90.1 → 91.5 and attacking by turn 3 and 4 up a point (the two cards
+now fetch); the duel judge's swap ladders rose (lists swap-6 0.872 → 0.923, swap-12 0.885 → 0.936)
+and its correlation with real win rates slipped 0.305 → 0.278, inside the seed band.
+
+## Tera, Future and Ancient (2026-11-10)
+
+Not read, and not readable from the data: the TCGdex card objects carry no marker for Tera, Future
+or Ancient Pokémon (checked on fetched Tera and Future cards and on the cached downloads), and no
+card text in the catalog carries the Tera rule-box sentence, so nothing exact can be derived
+(`deck-playtest.md`, What is still not followed). Coverage after the three groups: tournament
+lists Trainers 92.8%, Abilities 84.4%, Special Energy 97.2%, attacks 97.5%; the Standard pool 49.8% / 34.9% /
+83.3% / 83.4%.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

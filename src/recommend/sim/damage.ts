@@ -42,6 +42,8 @@ export interface PokeTest {
   notNames?: string[];
   /** "that don't have a Rule Box": no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega Pokémon. */
   ruleBox?: false;
+  /** Any of these suffixes ("Active Pokémon ex and Active Pokémon V"). */
+  suffixAny?: string[];
 }
 
 /** ex, V, VMAX, VSTAR, GX, EX, Radiant and Mega Pokémon carry a Rule Box. */
@@ -67,8 +69,8 @@ export type StaticEffect = {
   /** Retreat Cost changed by `delta` (-99: none); `noCostBelowHp`: none while that little HP remains. */
   | { k: 'retreat'; delta: number; t?: PokeTest; noCostBelowHp?: number }
   | { k: 'hp'; delta: number; t?: PokeTest }
-  /** Attacks of a matching Pokémon do `n` more damage to the opponent's Active (`vs`: only one of that kind); `ruleBoxFree`: only a holder without a Rule Box. */
-  | { k: 'damage'; n: number; t?: PokeTest; vs?: PokeTest; ruleBoxFree?: boolean }
+  /** Attacks of a matching Pokémon do `n` more damage to the opponent's Active (`vs`: only one of that kind); `ruleBoxFree`: only a holder without a Rule Box; `perPrizeTaken`: `n` for each Prize card the opponent has taken. */
+  | { k: 'damage'; n: number; t?: PokeTest; vs?: PokeTest; ruleBoxFree?: boolean; perPrizeTaken?: boolean }
   /** A Knock Out of the holder gives `n` fewer Prize cards; `once`: one Knock Out per game (Legacy Energy). */
   | { k: 'prizeLess'; n: number; t?: PokeTest; once?: boolean }
   /** The holder, damaged by an attack in the Active Spot, puts `n` damage counters on the attacker (Spiky Energy, Punk Helmet). */
@@ -210,6 +212,7 @@ export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
   if (t.stage !== undefined && c.stage !== t.stage) return false;
   if (t.type && !c.types.includes(t.type)) return false;
   if (t.suffix && c.suffix !== t.suffix) return false;
+  if (t.suffixAny && !t.suffixAny.includes(c.suffix)) return false;
   if (t.names && !t.names.includes(c.key)) return false;
   if (t.ability && !c.abilities.some((a) => a.name === t.ability)) return false;
   if (t.attack && !c.attacks.some((a) => a.name === t.attack)) return false;

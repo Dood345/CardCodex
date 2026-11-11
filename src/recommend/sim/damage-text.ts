@@ -223,6 +223,25 @@ function subjectTest(raw: string | undefined): PokeTest | null | undefined {
   return parsePokeTest(at >= 0 ? `${s.slice(0, at)} Pokémon${s.slice(at)}` : `${s} Pokémon`);
 }
 
+/**
+ * A Trainer's damage bonus for the turn: "During this turn, attacks used by your {F} Pokémon do 30
+ * more damage to your opponent's Active Pokémon (ex) (before applying Weakness and Resistance)";
+ * older printings say "your Pokémon's attacks"; "for each Prize card your opponent has taken"
+ * scales it. The same standing effect a Tool carries, held by the player until the turn ends.
+ */
+export function parseTurnBoost(s: string): StaticEffect[] | null {
+  const m = new RegExp(String.raw`^During this turn, (?:attacks used by your (.+?)|your (.+?)'s attacks|each of your Active Pokémon's attacks) do(?:es)? (\d+) more damage to (?:your opponent's|the) Active Pokémon( ex and Active Pokémon V| ex)?( for each Prize card your opponent has taken)?${WR}\.$`).exec(s);
+  if (!m) return null;
+  let subj = m[1] ?? m[2];
+  // "your Pokémon that don't have a Rule Box": the holder's own Rule Box decides (Gladion's Final Battle).
+  const noRuleBox = subj !== undefined && /^(.+?) that don't have a Rule Box$/.exec(subj);
+  if (noRuleBox) subj = noRuleBox[1];
+  const t = subj === undefined ? undefined : subjectTest(subj);
+  if (t === null) return null;
+  const vs: PokeTest | undefined = m[4] ? (m[4].includes('V') ? { suffixAny: ['ex', 'V'] } : { suffix: 'ex' }) : undefined;
+  return [{ k: 'damage', n: Number(m[3]), t, vs, perPrizeTaken: m[5] ? true : undefined, ruleBoxFree: noRuleBox ? true : undefined }];
+}
+
 const BOTH = String.raw`(?: \(both yours and your opponent's\))?`;
 const WR = String.raw`(?: \((?:before|after) applying Weakness and Resistance\))?`;
 

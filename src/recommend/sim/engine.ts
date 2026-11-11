@@ -92,6 +92,8 @@ export interface Player {
   attackPaid: boolean;
   /** Energy cards among those the attack's own text discarded from the top of either deck. */
   attackMilledEnergy: number;
+  /** Standing effects a Trainer gave the player for this turn (Premium Power Pro); cleared when the turn begins. */
+  turnStatics: StaticEffect[];
   /** The last coin of a text's "Flip a coin. If heads, …", rolled before damage and honoured by the effects after it. */
   heads: boolean;
   /** Boomerang Energy the attack's own text discarded, to come back after it. */
@@ -154,6 +156,7 @@ export function newPlayer(d: CompiledDeck, seed: number, first: boolean, turns: 
     attackDiscarded: 0,
     attackPaid: false,
     attackMilledEnergy: 0,
+    turnStatics: [],
     heads: true,
     boomerangs: [],
     noItemsTurn: 0,
@@ -206,6 +209,7 @@ function statics(p: Player, m: Mon, from: Player | null = null): StaticEffect[] 
   if (!st.some((x) => x.k === 'noTools')) for (const x of m.tool?.fx?.statics ?? []) if (reaches(x, m)) out.push(x);
   for (const e of m.energy) for (const x of e.fx?.statics ?? []) if (reaches(x, m)) out.push(x);
   for (const x of st) if (reaches(x, m)) out.push(x);
+  for (const x of p.turnStatics) if (reaches(x, m)) out.push(x);
   for (const holder of inPlay(p)) {
     for (const ab of holder.c.abilities) {
       if (ab.trigger !== 'passive' || !ab.fx.statics?.length || abilitiesOff(p, holder, true)) continue;
@@ -285,9 +289,9 @@ function staticDamage(p: Player, o: Player | null, m: Mon, def: Mon | null): num
     if (x.k !== 'damage') continue;
     if (x.ruleBoxFree && hasRuleBox(m.c)) continue;
     if (x.vs && !pokeMatches(target.c, x.vs)) continue;
-    n += x.n;
+    n += x.perPrizeTaken ? x.n * (o ?? p).taken : x.n;
   }
-  return o || !def ? n : n;
+  return n;
 }
 
 /** The type `def` is weak to when an Ability across the table says so (Fairy Zone), else undefined. */
@@ -1279,6 +1283,15 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
         hurt(g, p, o, t, n, true);
         break;
       }
+      case 'damageBoost':
+        p.turnStatics.push(...e.statics);
+        g.trace?.(`damage bonus this turn: ${e.statics.map((x) => (x.k === 'damage' ? `+${x.n}` : x.k)).join(' ')}`);
+        break;
+      case 'choose': {
+        const opt = e.options.find((x) => useful(g, p, o, { ...fx, effects: x }, self)) ?? e.options[0];
+        runEffects(g, p, o, { ...fx, effects: opt, chance: 1 }, self);
+        break;
+      }
       case 'selfKO':
         if (self) {
           ownKnockOut(g, p, o, self);
@@ -1481,6 +1494,29 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
       case 'moveCounters':
         if (o && [...inPlay(p)].some((m) => m.dmg > 0)) return true;
         break;
+      case 'damageBoost': {
+        // In a duel: the bonus turns the Active's best attack into a Knock Out. Solo: the plan's attack is about to be used.
+        const a = p.active;
+        const atk = a ? bestPayable(p, a) : null;
+        if (!a || !atk || atk.damage <= 0) break;
+        if (!e.statics.some((x) => reaches(x, a) && !(x.k === 'damage' && x.ruleBoxFree && hasRuleBox(a.c)))) break;
+        if (o) {
+          const def = o.active;
+          if (!def) break;
+          const base = atk.fx?.mods.length ? expectedDamage(atk.damage, atk.fx.mods, gameView(g, p, o, a, atk, false)) : atk.damage;
+          const hit = () => damageAgainst(a, def, base + staticDamage(p, o, a, def), atk.fx?.mods, weaknessOf(o, p, def));
+          const before = hit();
+          p.turnStatics.push(...e.statics);
+          const after = hit();
+          p.turnStatics.length -= e.statics.length;
+          const left = maxHp(o, def) - def.dmg;
+          if (after >= left && before < left) return true;
+        } else if (mainReady(p, a) && p.d.plan && atk.name === p.d.plan.attack.name && e.statics.every((x) => x.k !== 'damage' || !x.vs || pokeMatches(a.c, x.vs))) return true;
+        break;
+      }
+      case 'choose':
+        if (e.options.some((x) => useful(g, p, o, { ...fx, effects: x }, self))) return true;
+        break;
       case 'stack':
         if (p.deck.length > reserve(p) && bestInDeck(p, { k: 'any' }, 'hand', null, 40) >= 0) return true;
         break;
@@ -1528,7 +1564,7 @@ function supporterValue(g: Game, p: Player, o: Player | null, fx: ParsedText): n
     } else if (e.k === 'switch') v += switchTarget(p, o) ? 2 : 0;
     else if (e.k === 'moveEnergy' || e.k === 'heal' || e.k === 'recoverToDeck') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 : 0;
     else if (e.k === 'discardDraw') v += Math.max(0, drawValue(p, e));
-    else if (e.k === 'gust' || e.k === 'oppHandBottomDraw' || e.k === 'oppDiscardTo' || e.k === 'discardOppHand' || e.k === 'discardOppEnergy') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 3 : 0;
+    else if (e.k === 'gust' || e.k === 'oppHandBottomDraw' || e.k === 'oppDiscardTo' || e.k === 'discardOppHand' || e.k === 'discardOppEnergy' || e.k === 'damageBoost' || e.k === 'choose') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 3 : 0;
     else if (e.k === 'attach' || e.k === 'recover') v += useful(g, p, o, { ...fx, effects: [e] }, null) ? 1.5 * e.n : 0;
     else v += drawValue(p, e);
   }
@@ -1977,6 +2013,7 @@ export function setup(g: Game, p: Player): boolean {
 /** Start of a turn: reset the per-turn limits and draw. False when the deck is empty (the player loses). */
 export function beginTurn(g: Game, p: Player): boolean {
   p.turn++;
+  p.turnStatics.length = 0;
   p.energyDone = 0;
   p.supporterDone = 0;
   p.retreatDone = 0;

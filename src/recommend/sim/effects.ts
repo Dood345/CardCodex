@@ -27,7 +27,7 @@
  */
 import { COST_LETTERS } from '../card-text';
 import type { Cond, DamageMod, PokeTest, SpecialCondition, StaticEffect } from './damage';
-import { parseCond, parseDamageMods, parsePokeTest, parseStatic } from './damage-text';
+import { parseCond, parseDamageMods, parsePokeTest, parseStatic, parseTurnBoost } from './damage-text';
 
 export type CardFilter = (
   | { k: 'any' }
@@ -135,6 +135,10 @@ export type Effect = {
   | { k: 'moveCounters'; n: number }
   /** "If you use this Ability, this Pokémon is Knocked Out." */
   | { k: 'selfKO' }
+  /** A damage bonus the player holds until the turn ends (Premium Power Pro, Black Belt's Training): standing effects as a Tool's, applied to the attacker they reach. */
+  | { k: 'damageBoost'; statics: StaticEffect[] }
+  /** "Choose 1: • … • …": the pilot takes the first option that is useful. */
+  | { k: 'choose'; options: Effect[][] }
 );
 
 export type SentenceStatus = 'read' | 'noop' | 'unread';
@@ -567,6 +571,23 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
   if ((m = RE_ENDS_TURN.exec(t))) marks.push({ start: m.index, end: m.index + m[0].length, exact: true });
 
   const mark = (at: number, len: number, exact = false, vague?: string) => marks.push({ start: at, end: at + len, exact, vague });
+  // "Choose 1: • A. • B.": each option read on its own; the whole text counts when every option is followed.
+  if (/^Choose 1: • /.test(t)) {
+    const options = t.slice('Choose 1:'.length).split(/ ?• /).map((x) => x.trim()).filter(Boolean).map((x) => parseText(x, mode));
+    if (options.length >= 2 && options.every((x) => x.followed && x.effects.length)) {
+      ef.push({ at: 0, e: { k: 'choose', options: options.map((x) => x.effects) } });
+      mark(0, t.length, true);
+      t = ' '.repeat(t.length);
+    }
+  }
+  // A damage bonus for the turn, one sentence read whole.
+  for (const s of splitSentences(t)) {
+    const st = parseTurnBoost(s.text.trim());
+    if (!st) continue;
+    ef.push({ at: s.start, e: { k: 'damageBoost', statics: st } });
+    mark(s.start, s.end - s.start, true);
+    t = t.slice(0, s.start) + ' '.repeat(s.end - s.start) + t.slice(s.end);
+  }
   let drew = false;
   if ((m = RE_PRIZE_DRAW.exec(t))) {
     const both = /^Each player/i.test(t.slice(0, m.index + 12)) || /each player draws/i.test(m[0]);
@@ -637,19 +658,31 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
     const parts = s[1].split(/,? and (?=(?:a|an|up to \d+|\d+) )/);
     let any = false;
     for (const p of parts) {
-      // "a Basic Fighting Energy card or a Basic Fighting Pokémon": one search, either kind.
-      const options = p.split(/ or (?=(?:a|an|up to \d+|\d+) )/);
+      // "a Basic Fighting Energy card or a Basic Fighting Pokémon": one search, either kind;
+      // "up to 3 in any combination of Ethan's Pokémon and Basic Fire Energy cards": one count shared across the kinds.
+      const combo = /^(a|an|up to \d+|\d+)(?: cards?)? in any combination of (.+)$/i.exec(p);
+      const options = combo ? combo[2].split(/,? (?:and|or) (?=(?:a |an )?[A-Z])/) : p.split(/ or (?=(?:a|an|up to \d+|\d+) )/);
       const fs = options.map((x) => parseFilter(x));
       const f = fs[0];
       if (!f || fs.some((x) => !x)) continue;
       any = true;
       const distinct = /of different types/i.test(p) || undefined;
-      ef.push({ at: s.index ?? 0, e: { k: 'search', n: countOf(p), f, to, target: to === 'attach' ? parseTarget(s[3] ?? '') : undefined, alts: fs.length > 1 ? (fs.slice(1) as CardFilter[]) : undefined, distinctTypes: distinct } });
-      mark(s.index ?? 0, s[0].length, false, fs.map((x) => x!.vague).find((v) => v));
+      ef.push({ at: s.index ?? 0, e: { k: 'search', n: countOf(combo ? combo[1] : p), f, to, target: to === 'attach' ? parseTarget(s[3] ?? '') : undefined, alts: fs.length > 1 ? (fs.slice(1) as CardFilter[]) : undefined, distinctTypes: distinct } });
+      // A combination read in full is exact: "in any combination" is otherwise a skipped phrase.
+      mark(s.index ?? 0, s[0].length, !!combo && !fs.some((x) => x!.vague), fs.map((x) => x!.vague).find((v) => v));
     }
     if (!any) mark(s.index ?? 0, s[0].length, false, s[1]);
   }
   for (const l of t.matchAll(RE_LOOK)) {
+    // "up to 2 in any combination of Grass Pokémon and Basic Grass Energy cards you find there": one count across the kinds.
+    const combo = /^in any combination of (.+)$/i.exec(l[3]);
+    if (combo) {
+      const fs = combo[1].split(/,? (?:and|or) (?=(?:a |an )?[A-Z])/).map((x) => parseFilter(x));
+      if (fs.some((x) => !x)) continue;
+      ef.push({ at: l.index ?? 0, e: { k: 'search', n: /any number/i.test(l[2]) ? 99 : countOf(l[2]), f: fs[0]!, to: 'hand', top: Number(l[1]), alts: fs.length > 1 ? (fs.slice(1) as CardFilter[]) : undefined } });
+      mark(l.index ?? 0, l[0].length, !fs.some((x) => x!.vague), fs.map((x) => x!.vague).find((v) => v));
+      continue;
+    }
     // "a Pokémon and a Trainer card you find there": one of each from the same cards.
     const parts = l[3].split(/,? and (?=(?:a|an|up to \d+|\d+) )/);
     const fs = parts.map((x) => parseFilter(x));
