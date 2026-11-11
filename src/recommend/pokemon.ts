@@ -29,7 +29,7 @@ import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-
 import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, ScorePart } from './types';
 import { expectedDamage, pokeMatches, staticView, sustainedOf, type DamageMod, type DeckSupply, type PokeLike } from './sim/damage';
-import { attackDrain, attackMiss, attackRest, parseAttackText } from './sim/effects';
+import { attackDrain, attackMiss, attackRest, normalizeEnergySymbols, parseAttackText } from './sim/effects';
 
 /* ---------- features ---------- */
 
@@ -108,6 +108,8 @@ export interface PokemonFeatures {
   roles: Set<Role>;
   /** Roles that come from an attack rather than a Trainer or Ability (they weigh half). */
   attackRoles: Set<Role>;
+  /** Trainers: the Energy type letter the card must find in the discard pile or hand to do anything (RE_ENERGY_GATE), else "". */
+  requiresEnergy: string;
   mentions: Mentions;
   /** Energy cards: the type letters the card provides, or "*" for any type. */
   provides: string;
@@ -348,6 +350,12 @@ const TYPE_NAMES = Object.keys(COST_LETTERS).filter((t) => t !== 'Colorless');
 const TYPE_ALT = TYPE_NAMES.join('|');
 const RE_TYPE_POKEMON = new RegExp(`\\b(${TYPE_ALT})(?:[- ]type)? Pokémon`, 'g');
 const RE_TYPE_ENERGY = new RegExp(`\\b(${TYPE_ALT}) Energy`, 'g');
+/**
+ * A Trainer whose whole effect starts by attaching a named Energy from the discard pile or the hand, the rest on
+ * "If you do": Melony's "Attach a Water Energy card from your discard pile to 1 of your Pokémon V. If you do, draw
+ * 3 cards." Without that Energy in the deck the card does nothing.
+ */
+const RE_ENERGY_GATE = new RegExp(`^Attach (?:a|an|\\d+|up to \\d+) (?:Basic |basic )?(${TYPE_ALT}) Energy cards? from your (?:discard pile|hand) to [^.]*\\.(?: If you do,[^.]*\\.)?$`);
 const RE_SUFFIX = /Pokémon[- ](ex|V|VMAX|VSTAR|GX|EX)\b|\b(VMAX|VSTAR)\b|\bRadiant Pokémon/g;
 
 const ROLE_RULES: [Role, RegExp][] = [
@@ -361,7 +369,7 @@ const ROLE_RULES: [Role, RegExp][] = [
   ['heal', /\bheal \d+ damage\b|\bremove (?:\d+|all) damage counters?\b/i],
   ['recover', /\bfrom your discard pile (?:into your hand|on top of your deck|and shuffle|into your deck|and put)/i],
   ['disrupt', /\byour opponent (?:shuffles|discards|reveals) (?:their|his or her) hand\b|\bopponent's hand\b/i],
-  ['rareCandy', /\bskipping the Stage 1\b/i],
+  ['rareCandy', /\bskipping the Stage 1\b|\bPut a Stage 2 Evolution card from your hand on the matching Basic Pokémon\b/i],
 ];
 
 /** Basic Energy by name → the letter it provides. */
@@ -456,6 +464,8 @@ interface DeckContext {
   species: Set<number>;
   /** Typed letters the attackers' best attacks need. */
   need: Set<string>;
+  /** Type letters of the deck's Basic Energy cards. */
+  basicEnergy: Set<string>;
   /** Copies of Stadium cards, over every name. */
   stadiumQty: number;
   /** The Pokémon's printing years, copy-weighted 10th and 90th percentile; 0 when there are none. */
@@ -632,6 +642,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       best,
       roles,
       attackRoles,
+      requiresEnergy: card.cat === 'Trainer' ? (COST_LETTERS[RE_ENERGY_GATE.exec(normalizeEnergySymbols(t?.fx ?? '').trim())?.[1] ?? ''] ?? '') : '',
       mentions: mentionsOf(roleTexts, isPokemon ? null : speciesRe, speciesId),
       provides: providesOf(card, energy),
       isEnergy: card.cat === 'Energy',
@@ -669,10 +680,12 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       species: new Set(),
       stadiumQty: lines.reduce((n, l) => n + (l.f.stadium ? l.qty : 0), 0),
       need: new Set(),
+      basicEnergy: new Set(),
       eraMin: percentileYear(pokemon, 0.1),
       eraMax: percentileYear(pokemon, 0.9),
     };
     for (const l of lines) ctx.byName.set(l.f.key, (ctx.byName.get(l.f.key) ?? 0) + l.qty);
+    for (const l of lines) if (l.f.isBasicEnergy) for (const t of l.f.provides) ctx.basicEnergy.add(t);
     for (const l of pokemon) {
       for (const t of l.f.types) ctx.types.add(t);
       if (l.f.stage) ctx.stages.add(l.f.stage);
@@ -682,6 +695,14 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       for (const t of l.f.best?.types ?? []) ctx.need.add(t);
     }
     return ctx;
+  }
+
+  /**
+   * A card that can do nothing in this deck: it needs an Energy type the deck neither runs nor has an attacker
+   * for. (A deck being built gets its attackers before its Energy, so the attackers' need counts as well.)
+   */
+  function deadIn(f: PokemonFeatures, ctx: DeckContext): boolean {
+    return !!f.requiresEnergy && !ctx.basicEnergy.has(f.requiresEnergy) && !ctx.need.has(f.requiresEnergy);
   }
 
   function mentionsMet(m: Mentions, ctx: DeckContext): boolean {
@@ -858,6 +879,8 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     for (const l of lines) {
       const r = l.f.roles;
       const ar = l.f.attackRoles;
+      // A card that cannot be used in this deck draws and searches nothing.
+      if (deadIn(l.f, ctx)) continue;
       const q = l.qty * stadiumScale(l, ctx);
       if (r.has('draw')) draw += q;
       if (r.has('searchPokemon') || r.has('searchAny')) search += q;
@@ -905,10 +928,10 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     const dead: string[] = [];
     for (const l of lines) {
       if (l.f.isPokemon && !l.f.text?.b?.length) continue;
-      if (!hasMentions(l.f.mentions)) continue;
+      if (!hasMentions(l.f.mentions) && !l.f.requiresEnergy) continue;
       const q = l.qty * stadiumScale(l, ctx);
       conditional += q;
-      if (mentionsMet(l.f.mentions, ctx)) met += q;
+      if (!deadIn(l.f, ctx) && (!hasMentions(l.f.mentions) || mentionsMet(l.f.mentions, ctx))) met += q;
       else dead.push(l.card.name);
     }
     parts.push(part('synergy', 'Synergy', conditional ? met / conditional : 1, dead.length ? `Nothing in the deck for ${dead.join(', ')}` : conditional ? `${Math.round(met)} cards find what they name` : 'No conditional cards'));
@@ -1047,12 +1070,17 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
           // A Special Energy is as relevant as the best it does for one of the deck's attackers.
           let best = 0;
           if (f.energy) for (const a of attackers) for (const t of a.f.best!.types) best = Math.max(best, energyCredit(f.energy, a.f, t));
-          if (best > 0) r = Math.max(r, best >= 1 ? 0.85 : 0.6);
+          // An Energy for a named group no attacker of the deck is known to belong to (Impact Energy and
+          // "Single Strike", which the card data does not record): the half credit is fair for a deck that
+          // already holds it, not a card to go and add.
+          const unsure = f.energy?.only?.kind === 'name' && !attackers.some((a) => meetsCond(f.energy!.only!, a.f) === true);
+          if (best > 0) r = Math.max(r, best >= 1 ? 0.85 : unsure ? 0.2 : 0.6);
           else r = Math.min(r, 0.1);
         }
       } else if (hasMentions(f.mentions)) r = Math.max(r, mentionsMet(f.mentions, ctx) ? 0.8 : 0.05);
       else if (f.roles.size) r = Math.max(r, 0.7);
       else r = Math.max(r, 0.3);
+      if (deadIn(f, ctx)) r = Math.min(r, 0.05);
       // A card with no printing near the deck's era is a poor fit, whatever it does.
       if (!f.isBasicEnergy && !printedInEra(f.key, ctx.eraMin, ctx.eraMax)) r *= 0.3;
       return r;

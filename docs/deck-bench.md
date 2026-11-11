@@ -365,3 +365,31 @@ lists Trainers 92.8%, Abilities 84.4%, Special Energy 97.2%, attacks 97.5%; the 
   well (0.9 and above) because most swaps hurt.
 - Pokémon only, like the evaluator; the harness itself reads the game through `DeckEvaluator`
   (`kindOf`, `card`) and will run a Yu-Gi-Oh! or Magic evaluator unchanged, with its own damage labels.
+
+## A built deck that scored 97 (2026-11-10)
+
+From a player's report: "Build one for me" around Chesnaught V returned a deck that scored 97 where
+their own deck scored 76, which looked like the same cards rearranged. It was another deck (11 cards
+in common), and the 97 was not all earned:
+
+- **Four Melony counted as draw.** "Attach a Water Energy card from your discard pile to 1 of your
+  Pokémon V. If you do, draw 3 cards" does nothing in a deck with no Water Energy. A Trainer whose
+  whole effect starts with attaching a named Energy from the discard pile or hand (eight names in
+  the catalog: Melony, Welder, Dark Patch, Aqua Patch, Blacksmith, Metal Saucer, Wondrous Patch,
+  Philippe) now counts for nothing where the deck neither runs that Energy nor has an attacker
+  that needs it, shows in the Synergy part as "Nothing in the deck for Melony", and is not offered
+  by the builder. The reported deck falls to 92.
+- **Twelve of its cards were blanks to the pilot**: Pokémon Breeder (Rare Candy under its older
+  wording), and Timer Ball and Lure Ball ("Flip N coins. For each heads, …"). All three are played
+  now.
+- **An Energy for a group the card data cannot confirm** (Impact Energy, Single Strike) is no
+  longer a card the builder goes looking for; a deck that already holds one keeps its half credit.
+
+What this did not fix, measured on the same seed: the builder still returns a deck that scores 96
+and attacks by turn three in 16% of practice games (29 damage a turn), and eight rounds of tuning by
+play find no swap that helps. The score saturates and the builder fills the rest with whatever keeps
+it there. That remains the open item of this document.
+
+Benchmark: the built corpus (Standard) and the tournament lists do not move, since none of these
+cards is in them; one duel ladder on the theme decks moved by two decks (0.789 → 0.737) now that
+their coin-flip Trainers are played. Baseline re-recorded.

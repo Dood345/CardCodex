@@ -556,6 +556,7 @@ describe('Special Energy', () => {
     expect(rel('sv02-190')).toBeLessThan(0.2); // Jet Energy: Colorless only
     expect(rel('sv10-182')).toBeLessThan(0.2); // Team Rocket's Energy: Psychic and Darkness, for Team Rocket's Pokémon
     expect(rel('xy6-97')).toBeLessThan(0.2); // Double Dragon Energy: Dragon Pokémon only
+    expect(rel('swsh6-157')).toBeLessThanOrEqual(0.2); // Impact Energy: Single Strike Pokémon only, which the card data cannot confirm
   });
 });
 

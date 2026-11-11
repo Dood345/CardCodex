@@ -163,6 +163,8 @@ export interface ParsedText {
   discardCostF?: CardFilter;
   /** 0.5 when the effect hangs on one coin flip. */
   chance: number;
+  /** "Flip N coins. For each heads, …": the one effect runs once per heads (Timer Ball, Lure Ball). */
+  flips?: number;
   /** "your turn ends". */
   endsTurn: boolean;
   /** Attacks: what the text does to the damage (damage.ts), applied by the engine at attack time. */
@@ -498,6 +500,15 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
     out.followed = out.sentences.every((s) => s.status !== 'unread');
     return out;
   }
+  // "Flip 2 coins. For each heads, search your deck for …": a search or a recovery, once per heads.
+  const each = /^Flip (\d+|two|three) coins\. For each heads?, (.+)$/is.exec(t0.trim());
+  if (each && mode === 'text' && t.trim() === t0.trim()) {
+    const inner = parseText(each[2].charAt(0).toUpperCase() + each[2].slice(1));
+    const one = inner.effects.length === 1 ? inner.effects[0] : null;
+    if (inner.followed && one && (one.k === 'search' || one.k === 'recover') && inner.chance === 1 && !inner.discardCost && !inner.cond) {
+      return { ...out, effects: [one], flips: countOf(each[1]), sentences: account(t0, [{ start: 0, end: t0.length, exact: true }], 1), followed: true };
+    }
+  }
   if (/Flip (?:\d+|two|three) coins|until you get tails|for each heads/i.test(t)) return fail('coin flips');
   let m: RegExpExecArray | null;
   if ((m = /^Flip a coin\. If heads,/i.exec(t0)) && /^Flip a coin\./i.test(t)) {
@@ -743,7 +754,8 @@ export function parseText(raw: string, mode: 'text' | 'attack' = 'text'): Parsed
     ef.push({ at: m.index, e: { k: 'switch' } });
     mark(m.index, m[0].length);
   }
-  if ((m = /skipping the Stage 1/i.exec(t))) {
+  // Pokémon Breeder is the same card under an older name and wording.
+  if ((m = /skipping the Stage 1|Put a Stage 2 Evolution card from your hand on the matching Basic Pokémon/i.exec(t))) {
     ef.push({ at: m.index, e: { k: 'rareCandy' } });
     // Rare Candy's whole text is the engine's rule: not on the first turn, not on a Basic played this turn.
     mark(0, t.length, true);

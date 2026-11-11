@@ -1076,6 +1076,13 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
     if (phase !== 'post') p.heads = p.rng.next() < fx.chance;
     if (!p.heads) return;
   }
+  // "For each heads": the one effect, as many times as the coins came up heads.
+  if (fx.flips) {
+    let heads = 0;
+    for (let k = 0; k < fx.flips; k++) if (p.rng.next() < 0.5) heads++;
+    if (!heads) return;
+    fx = { ...fx, flips: undefined, effects: fx.effects.map((e) => (e.k === 'search' || e.k === 'recover' ? { ...e, n: e.n * heads } : e)) };
+  }
   const altN = (e: { n: number; alt?: { if: Cond; n: number } }) => (e.alt && condHolds(g, p, o, e.alt.if) ? e.alt.n : e.n);
   const fetched: string[] = [];
   // "If you attached Energy to a Pokémon in this way, …": whether the effect before did anything, and to whom.
