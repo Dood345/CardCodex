@@ -388,3 +388,100 @@ describe('gaps the built decks fell into', () => {
     expect(energy(3)).toBeLessThan(energy(14));
   });
 });
+
+/**
+ * From a deck "Build one for me" made around Chesnaught V (reported 2026-11-10): it scored 97 with four
+ * Melony it could never use, and the pilot counted twelve of its cards as blanks.
+ */
+describe('cards a built deck was wrongly credited for', () => {
+  const part = (cards: DeckCard[], id: string) => ev.score(cards).parts.find((p) => p.id === id)!;
+  const CHESNAUGHT: [string, number][] = [['swsh12-015', 4], ['sve-009', 12]];
+
+  it('does not count a Trainer that needs an Energy type the deck does not run', () => {
+    // Melony: "Attach a Water Energy card from your discard pile to 1 of your Pokémon V. If you do, draw 3 cards."
+    const melony = ev.features(index.cardsById.get('swsh12.5gg-GG64')!);
+    expect(melony.requiresEnergy).toBe('W');
+    expect(melony.roles.has('draw')).toBe(true);
+    const grass = deck([...CHESNAUGHT, ['swsh12.5gg-GG64', 4]]);
+    expect(part(grass, 'draw').detail).toMatch(/^0 draw/);
+    expect(part(grass, 'synergy').detail).toBe('Nothing in the deck for Melony');
+    expect(part(grass, 'synergy').score).toBe(0);
+    // With Water Energy in the deck the same four cards draw.
+    const water = deck([['swsh12-015', 4], ['sve-003', 12], ['swsh12.5gg-GG64', 4]]);
+    expect(part(water, 'draw').detail).toMatch(/^4 draw/);
+    expect(part(water, 'synergy').detail).not.toMatch(/Melony/);
+    // Gardenia's Vigor draws first and attaches after: no gate.
+    expect(ev.features(index.cardsById.get('swsh12.5gg-GG61')!).requiresEnergy).toBe('');
+    // The gate is rare and exact: every card it names starts with the attachment.
+    const gated = index.catalog.cards.filter((c) => ev.features(c).requiresEnergy);
+    expect(new Set(gated.map((c) => c.name)).size).toBeGreaterThanOrEqual(6);
+    for (const c of gated) expect(ev.features(c).text?.fx, c.id).toMatch(/^Attach /);
+  });
+
+  it('is not offered to a deck it can do nothing for', () => {
+    const cards = deck(CHESNAUGHT);
+    const [melony, gardenia] = ev.relevance(cards, [index.cardsById.get('swsh12.5gg-GG64')!, index.cardsById.get('swsh12.5gg-GG61')!]);
+    expect(melony).toBeLessThan(0.1);
+    expect(gardenia).toBeGreaterThan(0.5);
+  });
+
+  it('reads Pokémon Breeder as the Rare Candy it is', () => {
+    const breeder = index.cardsById.get('lc-102')!;
+    expect(ev.features(breeder).roles.has('rareCandy')).toBe(true);
+    const d = compileDeck(ev, deck([['sm7-10', 2], ['sm8-20', 4], ['lc-102', 4], ['sve-009', 12]]));
+    const c = d.cards.find((x) => x.name === 'Pokémon Breeder')!;
+    expect(c.unread).toBe('');
+    expect(c.fx?.effects).toEqual([{ k: 'rareCandy' }]);
+    expect(d.rareCandy).toBe(4);
+    // Sceptile on Treecko with no Grovyle in the deck: the line stands on the four Breeders.
+    expect(part(deck([['sm7-10', 2], ['sm8-20', 4], ['lc-102', 4], ['sve-009', 12]]), 'lines').score).toBe(1);
+  });
+
+  it('plays "Flip N coins. For each heads" Trainers, once per heads', () => {
+    const list = deck([['sm7-10', 2], ['sm8-21', 4], ['sm8-20', 4], ['sm1-134', 4], ['sm7-138', 4], ['sve-009', 12]]);
+    const d = compileDeck(ev, list);
+    const card = (name: string) => d.cards.find((x) => x.name === name)!;
+    expect(card('Timer Ball').unread).toBe('');
+    expect(card('Timer Ball').fx).toMatchObject({ flips: 2, followed: true, effects: [{ k: 'search', n: 1, to: 'hand' }] });
+    expect(card('Lure Ball').fx).toMatchObject({ flips: 3, followed: true, effects: [{ k: 'recover', n: 1 }] });
+    expect(d.unread).toEqual([]);
+    const run = (hand: string, library: string[], discard: string[], seed: number): Player => {
+      const g = { rules: POKEMON_RULES_PAR_2023, stadium: null, winner: null, ending: '', guards: 0 } as unknown as Game;
+      const p = newPlayer(d, seed, false, 6, 5);
+      p.turn = 2;
+      p.active = { ...({ c: card('Treecko'), under: [], energy: [], dmg: 0, entered: 0, abilityTurn: -1, restTurn: 0, restAtk: '' } as unknown as Mon) };
+      p.hand = [card(hand).i];
+      p.deck = library.map((n) => card(n).i);
+      p.discard = discard.map((n) => card(n).i);
+      mainPhase(g, p, null);
+      return p;
+    };
+    // Timer Ball: 0, 1 or 2 Evolution Pokémon leave the deck, one a game on average.
+    const energy = new Array<string>(10).fill('Grass Energy');
+    let fetched = 0;
+    const seen = new Set<number>();
+    for (let seed = 1; seed <= 300; seed++) {
+      // Sceptile only: a fetched Grovyle would evolve and search again with its own Ability.
+      const p = run('Timer Ball', [...energy, 'Sceptile', 'Sceptile', 'Sceptile', 'Sceptile'], [], seed);
+      const n = 14 - p.deck.length;
+      seen.add(n);
+      fetched += n;
+      expect(p.discard).toContain(card('Timer Ball').i);
+    }
+    expect([...seen].sort()).toEqual([0, 1, 2]);
+    expect(fetched / 300).toBeGreaterThan(0.85);
+    expect(fetched / 300).toBeLessThan(1.15);
+    // Lure Ball: up to three come back from the discard pile, one and a half on average.
+    let back = 0;
+    let most = 0;
+    for (let seed = 1; seed <= 300; seed++) {
+      const p = run('Lure Ball', energy, ['Sceptile', 'Sceptile', 'Sceptile'], seed);
+      const left = p.discard.filter((i) => d.cards[i].kind === 'pokemon').length;
+      back += 3 - left;
+      most = Math.max(most, 3 - left);
+    }
+    expect(most).toBe(3);
+    expect(back / 300).toBeGreaterThan(1.3);
+    expect(back / 300).toBeLessThan(1.7);
+  });
+});
