@@ -123,7 +123,7 @@ with Capacitor. Your collection lives only on your device.
   says what to do next: cards to add while the deck is short, swaps once it is full, each with its
   reason and one tap to apply. You choose where suggestions come from ("Prefer my cards", "Only my
   cards", "Any card") and the format. A full Pokémon deck is also played 400 practice games by a
-  simple test pilot ("attacks by turn 3 in 45% of games"), "Find a swap by playing" looks for a swap
+  test pilot that follows the cards' text ("attacks by turn 3 in 45% of games"), "Find a swap by playing" looks for a swap
   that plays better, and "Practice hand" deals an opening hand you can draw from. Yu-Gi-Oh! (TCG
   Forbidden & Limited list or none) and Magic (Standard to Vintage, 60-card decks) have their own
   parts; see `docs/deck-recommender.md`. The score reads the cards' own rules text. It knows nothing

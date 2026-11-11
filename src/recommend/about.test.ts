@@ -73,6 +73,12 @@ describe('how decks are recommended (Settings → About)', () => {
     // Only Pokémon decks are played, with the number of games the screens really use.
     expect(pokemon).toContain(`${PLAY_GAMES} practice games`);
     expect(pokemon).toMatch(/Tune by playing/);
+    // What the pilot does with card text, and the two reasons a card sits unused.
+    expect(pokemon).toMatch(/plays the cards as they are written/);
+    expect(pokemon).toMatch(/Trainers, Tools, Stadiums, Abilities and Special Energy/);
+    expect(pokemon).toMatch(/With nobody across the table/);
+    expect(pokemon).toMatch(/Tera, Future and Ancient/);
+    expect(ygo).not.toMatch(/test pilot plays/);
     expect(ygo).toMatch(/scored, not played/);
     expect(mtg).toMatch(/scored, not played/);
     expect(ygo).toMatch(/Extra Deck is filled/);
