@@ -15,13 +15,15 @@ export const PLAY_GAMES = 400;
 export interface SourceOption {
   id: BuildOptions['source'];
   label: string;
+  /** One line under the choice, saying what it does. */
+  hint: string;
 }
 
 /** Where suggested cards may come from, in the order the screens offer them. */
 export const SOURCES: readonly SourceOption[] = [
-  { id: 'prefer-collection', label: 'Prefer my cards' },
-  { id: 'collection', label: 'Only my cards' },
-  { id: 'catalog', label: 'Any card' },
+  { id: 'prefer-collection', label: 'Prefer my cards', hint: 'Your cards first. A card you do not own is used only where it does clearly more.' },
+  { id: 'collection', label: 'Only my cards', hint: 'Only cards you own, and no more copies than you own.' },
+  { id: 'catalog', label: 'Any card', hint: 'Any card of the game, owned or not.' },
 ];
 
 const ANY: FormatOption = { id: 'any', label: 'Any format' };

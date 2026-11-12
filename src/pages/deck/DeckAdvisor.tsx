@@ -121,6 +121,7 @@ export function BuildChoices({
           </Chip>
         ))}
       </div>
+      <p className="advisor-detail advisor-source-hint">{SOURCES.find((s) => s.id === source)?.hint}</p>
       {formats.length > 1 && (
         <div className="chip-row inline" role="group" aria-label="Format">
           {formats.map((f) => (

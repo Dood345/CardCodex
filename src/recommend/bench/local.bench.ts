@@ -18,6 +18,7 @@ import type { Catalog, SpeciesFile } from '@/data/types';
 import type { SuggestOptions } from '../builder';
 import { buildTextIndex, type CardTextFile } from '../card-text';
 import { createPokemonEvaluator } from '../pokemon';
+import { withPokemonPlaytest } from '../pokemon-play';
 import { coverageOfDecks, coverageOfPool } from '../sim/coverage';
 import { compareReports, formatReport, runBench, scoreJudges, type BenchReport, type Corpus } from './bench';
 import { builtCorpus, pokemonSeeds } from './built';
@@ -37,7 +38,8 @@ it('deck benchmark', { timeout: 30 * 60_000 }, () => {
 
   const options: SuggestOptions = { source: 'catalog', collection: new Map(), format: 'standard' };
   const pool = ev.pool(options);
-  const corpora: Corpus[] = [builtCorpus(ev, pokemonSeeds(ev, pool, 4), options, pool)];
+  // Built as the app builds them: the evaluator that can play decks fills the last cards by playing.
+  const corpora: Corpus[] = [builtCorpus(withPokemonPlaytest(ev), pokemonSeeds(ev, pool, 4), options, pool)];
   const local = readCorpora(fileURLToPath(new URL('scripts/.cache/decks/', root)), index);
   corpora.push(...local);
 

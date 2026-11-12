@@ -393,3 +393,52 @@ it there. That remains the open item of this document.
 Benchmark: the built corpus (Standard) and the tournament lists do not move, since none of these
 cards is in them; one duel ladder on the theme decks moved by two decks (0.789 → 0.737) now that
 their coin-flip Trainers are played. Baseline re-recorded.
+
+## Built around the card, from the player's cards (2026-11-12, 1.14.0)
+
+The same report went on: the deck had been built with "Prefer my cards" and held mostly cards the
+player did not own, and on a second look it would play badly: an Energy nothing in it could use, ten
+usable Energy, eight Rare Candy-like cards, an Ivysaur on a Bulbasaur with no Venusaur.
+
+**Where the cards come from.**
+- "Prefer my cards" only chose the owned printing of whatever card won. Now an addition whose copies
+  are owned and not yet in the deck is worth 1.5 points of score (`OWNED_BONUS`): every near-tie
+  goes to the owned card, a card that does clearly more still wins. A probe collection of 40 cards
+  around Chesnaught V: 5 owned cards in the deck before, 24 or more after.
+- "Only my cards" took one printing per name and stopped at what was owned of it: fourteen Grass
+  Energy over four printings counted as six, and the deck stopped at 38 cards. The pool now holds
+  every owned printing as a card of its own (all three games).
+- The chips have a line under them saying what the chosen one does.
+
+**What a deck is built around.**
+- A seed went in as one copy, and the swap step could trade it away: "build another" around a weak
+  Stage 2 returned a deck without it. Seeds go in at up to three copies and no swap takes them, or
+  what they stand on, out.
+- With one copy the builder had been building a stronger deck around another attacker: over the 40
+  benchmark seeds the decks did 85 damage a turn that way and 65 once the seed was really played,
+  because the Energy check passed decks with the wrong Energy (below). Honest and fixed, 82.
+
+**What the builder no longer adds.**
+- Energy cover was a yes or no: three cards of a type, or one Special Energy of every type, covered
+  any attacker. A Hydreigon ex deck (three Darkness an attack) was built on twelve Psychic Energy
+  and never attacked. Cover is now the number of cards that give the type to that attacker against
+  what its attack asks (three for one symbol, five for two, eight for three), and the types a deck
+  needs are those of its real attackers (at least half the best attack's damage), not of a support
+  Pokémon's small attack.
+- An Energy for a group the card data cannot confirm is never offered; Rare Candy and Pokémon
+  Breeder together stop at the Stage 2 they can put down, four at most; a Pokémon is offered only if
+  it attacks about as hard as the deck's best, has an Ability that draws, searches or attaches, or
+  something in the deck evolves from it.
+- Among additions that do the same for the score, another copy of a card already in the deck comes
+  before a new name.
+
+**The last cards are chosen by playing.** From 40 cards on, the six best additions within one point
+of the top are each played 40 practice games on the same seeds and the one that plays best goes in
+(`fillByPlay`, on wherever the evaluator can play; about one second more per build on a desktop).
+
+Benchmark, with the built corpus now built as the app builds it: attacking by turn three 24% → 29%,
+by turn four 37% → 45%, damage a turn 65 → 82 (tournament lists: 53%, 65%, 91, unchanged, as the
+pilot did not change). Tournament lists score 90.2 → 89.7 on the stricter Energy count, and the
+score tells them from their damaged copies a little better. Still true: the score saturates near 99
+on built decks, a few seeds end with a plan that is not the seed, and Stage 2 attackers that cost
+four Energy stay slow. Baseline re-recorded.

@@ -111,7 +111,7 @@ describe('Pokémon evaluator', () => {
     // were calibrated against the playtest simulator (six Energy read as fewer than fit, and so they are). The
     // Power part reads attack text since 2026-11-10 (Burning Darkness: 180 plus 30 per Prize card the opponent has
     // taken, none on the typical board, so 180 as before).
-    expect(ev.score(cards).total).toBe(89.3);
+    expect(ev.score(cards).total).toBe(89.1);
   });
 
   it('explains each part in one line', () => {
@@ -540,12 +540,18 @@ describe('Special Energy', () => {
     const own = partOf(withExtra([]), 'energy');
     const half = partOf(withExtra([['sve-002', 3], ['sve-001', 3]]), 'energy');
     const allWrong = partOf(withExtra([['sve-001', 6]]), 'energy');
-    expect(own.score).toBeCloseTo(0.74, 2);
+    // 0.74 until Energy cover became a count of cards against what an attack asks (1.14.0).
+    expect(own.score).toBeCloseTo(0.725, 2);
     expect(half.score).toBeLessThan(own.score - 0.2); // the same for both before the amount counted only usable Energy
     expect(half.detail).toContain('3 that the attackers can use');
     expect(allWrong.score).toBeLessThan(half.score);
     // Colorless-only Special Energy still pays Colorless costs; one that provides nothing these attackers can hold does not.
-    expect(partOf(withExtra([['sve-002', 3], ['swsh9-151', 3]]), 'energy').score).toBeCloseTo(own.score, 3);
+    // It counts toward the amount, so the deck beats the one padded with Energy nothing can use; it gives no Fire,
+    // and three Fire Energy are thin cover for an attack that asks for two, so it stays below six Fire.
+    const colorless = partOf(withExtra([['sve-002', 3], ['swsh9-151', 3]]), 'energy');
+    expect(colorless.score).toBeGreaterThan(half.score);
+    expect(colorless.score).toBeLessThan(own.score);
+    expect(colorless.detail).not.toContain('that the attackers can use');
     expect(partOf(withExtra([['sve-002', 3], ['xy6-97', 3]]), 'energy').score).toBeCloseTo(half.score, 3);
   });
 

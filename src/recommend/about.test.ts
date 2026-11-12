@@ -73,6 +73,14 @@ describe('how decks are recommended (Settings → About)', () => {
     // Only Pokémon decks are played, with the number of games the screens really use.
     expect(pokemon).toContain(`${PLAY_GAMES} practice games`);
     expect(pokemon).toMatch(/Tune by playing/);
+    // What the three card sources mean, and how a deck is built around the cards picked.
+    for (const text of [pokemon, ygo, mtg]) {
+      expect(text).toMatch(/uses your cards first/);
+      expect(text).toMatch(/never uses more copies of a printing than you own/);
+      expect(text).toMatch(/up to three copies of each/);
+    }
+    expect(pokemon).toMatch(/played in practice games and the one that plays best goes in/);
+    expect(ygo).not.toMatch(/plays best goes in/);
     // What the pilot does with card text, and the two reasons a card sits unused.
     expect(pokemon).toMatch(/plays the cards as they are written/);
     expect(pokemon).toMatch(/Trainers, Tools, Stadiums, Abilities and Special Energy/);

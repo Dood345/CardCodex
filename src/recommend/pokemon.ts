@@ -692,8 +692,12 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       if (l.f.evolvesFrom) ctx.stages.add('Evolution');
       if (l.f.suffix) ctx.suffixes.add(l.f.suffix);
       for (const d of l.card.dex ?? []) ctx.species.add(d);
-      for (const t of l.f.best?.types ?? []) ctx.need.add(t);
     }
+    // The types the deck needs Energy for are those of its real attackers: the ones that hit at least half as
+    // hard as its best. A support Pokémon's small attack is not a reason to run its Energy (built decks filled
+    // up on Psychic Energy for an Alakazam that was there to draw cards).
+    const top = pokemon.reduce((m, l) => Math.max(m, l.f.best?.sustained ?? 0), 0);
+    for (const l of pokemon) if (l.f.best && l.f.best.sustained >= 0.5 * top) for (const t of l.f.best.types) ctx.need.add(t);
     return ctx;
   }
 
@@ -781,28 +785,34 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       ),
     );
 
-    // energy
-    const attackers = pokemon.filter((l) => l.f.best);
+    // energy: what the deck's real attackers need (those that hit at least half as hard as its best, as in
+    // `ctx.need`); a Basic's small attack on the way to its evolution does not ask for Energy of its own.
+    const topHit = pokemon.reduce((m, l) => Math.max(m, l.f.best?.sustained ?? 0), 0);
+    const attackers = pokemon.filter((l) => l.f.best && l.f.best.sustained >= 0.5 * topHit);
     const energyLines = lines.filter((l) => l.f.isEnergy);
     const energyCount = energyLines.reduce((n, l) => n + l.qty, 0);
     // Basic Energy covers a type outright. A Special Energy covers it for the attackers its text lets it
     // provide to (energyCredit): fully when the text says so, half where a condition could not be read.
-    // One or two Basic Energy of a type do not power an attacker that asks for it: the type counts in full
-    // from three copies (a deck built on Psychic Energy with a single Metal Energy once passed for covering
-    // four Pokemon with Metal attacks, which then never attacked in practice games).
+    // A type is covered by the number of cards that give it to that attacker, against what its attack asks:
+    // three cards for one symbol of the type, two or three more for each further symbol (five for two, eight
+    // for three). A count, not a yes or no: one Metal Energy once passed for covering four Pokémon with Metal
+    // attacks, and one Special Energy of every type for a deck whose attacker costs three Darkness, built on
+    // twelve Psychic Energy. Neither attacked in practice games.
     const basicCount = new Map<string, number>();
-    const specials: EnergyRule[] = [];
+    const specials: { rule: EnergyRule; qty: number }[] = [];
     for (const l of energyLines) {
       if (l.f.isBasicEnergy) for (const ch of l.f.provides) basicCount.set(ch, (basicCount.get(ch) ?? 0) + l.qty);
-      else if (l.f.energy) specials.push(l.f.energy);
+      else if (l.f.energy) specials.push({ rule: l.f.energy, qty: l.qty });
     }
     const creditFor = (a: PokemonFeatures, t: string): number => {
-      let best = Math.min(1, (basicCount.get(t) ?? 0) / 3);
-      if (best >= 1) return 1;
-      for (const rule of specials) best = Math.max(best, energyCredit(rule, a, t));
-      return best;
+      let symbols = 0;
+      for (const ch of a.best?.cost ?? '') if (ch === t) symbols++;
+      const wanted = Math.max(3, Math.ceil(2.5 * symbols));
+      let have = basicCount.get(t) ?? 0;
+      for (const s of specials) have += s.qty * energyCredit(s.rule, a, t);
+      return Math.min(1, have / wanted);
     };
-    const accel = lines.reduce((n, l) => n + (l.f.roles.has('accel') ? l.qty : l.f.roles.has('searchEnergy') ? l.qty / 2 : 0) * stadiumScale(l, ctx), 0);
+    const accel = lines.reduce((n, l) => n + (deadIn(l.f, ctx) ? 0 : l.f.roles.has('accel') ? l.qty : l.f.roles.has('searchEnergy') ? l.qty / 2 : 0) * stadiumScale(l, ctx), 0);
     let energyScore = 0.5;
     let energyDetail = 'No attackers yet';
     if (attackers.length) {
@@ -1006,18 +1016,19 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
   function pool(options: BuildOptions): CatalogCard[] {
     const out: CatalogCard[] = [];
     for (const printings of index.cardsByName.values()) {
-      // One printing per name: an owned one first, else the newest legal one with a picture.
-      let pick: CatalogCard | undefined;
-      if (options.source !== 'catalog') {
-        pick = printings.find((c) => (options.collection.get(c.id)?.qty ?? 0) > 0 && legalIn(c, options.format));
-        if (!pick && options.source === 'collection') continue;
+      // One printing per name, the newest legal one with a picture, unless the player's own cards count: then
+      // every printing they own is a card of its own (their fourteen Grass Energy may be four printings, and a
+      // deck from "Only my cards" may hold no more of a printing than they own of it).
+      const owned = options.source === 'catalog' ? [] : printings.filter((c) => (options.collection.get(c.id)?.qty ?? 0) > 0 && legalIn(c, options.format));
+      if (!owned.length && options.source === 'collection') continue;
+      const picks = owned.length ? owned : [printings.find((c) => c.img && legalIn(c, options.format)) ?? printings.find((c) => legalIn(c, options.format))];
+      for (const pick of picks) {
+        if (!pick) continue;
+        if (options.avoid?.has(pick.name)) continue;
+        // "Basic Fire Energy" is "Fire Energy" under another printed name.
+        if (!owned.length && pick.cat === 'Energy' && pick.name.startsWith('Basic ') && index.cardsByName.has(normalizeText(pick.name.slice(6)))) continue;
+        out.push(pick);
       }
-      pick ??= printings.find((c) => c.img && legalIn(c, options.format)) ?? printings.find((c) => legalIn(c, options.format));
-      if (!pick) continue;
-      if (options.avoid?.has(pick.name)) continue;
-      // "Basic Fire Energy" is "Fire Energy" under another printed name.
-      if (pick.cat === 'Energy' && pick.name.startsWith('Basic ') && index.cardsByName.has(normalizeText(pick.name.slice(6)))) continue;
-      out.push(pick);
     }
     return out;
   }
@@ -1048,15 +1059,26 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     const ctx = contextOf(cards);
     const evolvesFromInDeck = new Set(ctx.pokemon.map((l) => l.f.evolvesFrom).filter(Boolean));
     const attackers = ctx.pokemon.filter((l) => l.f.best);
+    const topSustained = attackers.reduce((m, l) => Math.max(m, l.f.best!.sustained), 0);
     return candidates.map((card) => {
       const f = featuresOf(card);
       if (!ctx.lines.length) return f.isPokemon && f.best ? Math.min(1, f.best.damage / 200) : 0.2;
       let r = ctx.byName.has(f.key) ? 0.9 : 0.1;
       if (f.isPokemon) {
-        if (f.evolvesFrom && ctx.byName.has(f.evolvesFrom)) r = Math.max(r, 1);
+        // A Pokémon is worth offering when it does something for the deck: it hits about as hard as the deck's
+        // best attack, or it has an Ability that draws, searches or attaches. One that only shares a type, or
+        // only evolves from something in the deck, is filler: built decks ended with an Ivysaur on a Bulbasaur
+        // and no Venusaur, three copies of each.
+        const useful = (f.best?.sustained ?? 0) >= 0.6 * topSustained || f.roles.size > 0;
+        // Filler stays on offer at the bottom of the list, for a deck built from a small collection that has
+        // nothing better left.
         if (evolvesFromInDeck.has(f.key)) r = Math.max(r, 1);
-        if (f.types.some((t) => ctx.types.has(t))) r = Math.max(r, 0.6);
-        if (f.text?.b?.length) r = Math.max(r, 0.5);
+        else if (!useful) r = f.isBasic ? Math.min(r, 0.1) : 0.05;
+        else {
+          if (f.evolvesFrom && ctx.byName.has(f.evolvesFrom)) r = Math.max(r, 1);
+          if (f.types.some((t) => ctx.types.has(t))) r = Math.max(r, 0.6);
+          if (f.text?.b?.length) r = Math.max(r, 0.5);
+        }
       } else if (f.isEnergy) {
         if (f.isBasicEnergy) {
           if ([...f.provides].some((t) => ctx.need.has(t))) r = Math.max(r, 0.95);
@@ -1074,9 +1096,16 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
           // "Single Strike", which the card data does not record): the half credit is fair for a deck that
           // already holds it, not a card to go and add.
           const unsure = f.energy?.only?.kind === 'name' && !attackers.some((a) => meetsCond(f.energy!.only!, a.f) === true);
-          if (best > 0) r = Math.max(r, best >= 1 ? 0.85 : unsure ? 0.2 : 0.6);
+          if (unsure) r = 0;
+          else if (best > 0) r = Math.max(r, best >= 1 ? 0.85 : 0.6);
           else r = Math.min(r, 0.1);
         }
+      } else if (f.roles.has('rareCandy')) {
+        // One Rare Candy (or Pokémon Breeder) for each Stage 2 the deck plays, four at most between them: a fifth
+        // has nothing to put down.
+        const stage2 = ctx.pokemon.reduce((n, l) => n + (l.f.stage === 'Stage 2' ? l.qty : 0), 0);
+        const candy = ctx.lines.reduce((n, l) => n + (l.f.roles.has('rareCandy') ? l.qty : 0), 0);
+        r = candy < Math.min(4, stage2) ? 0.85 : 0;
       } else if (hasMentions(f.mentions)) r = Math.max(r, mentionsMet(f.mentions, ctx) ? 0.8 : 0.05);
       else if (f.roles.size) r = Math.max(r, 0.7);
       else r = Math.max(r, 0.3);
