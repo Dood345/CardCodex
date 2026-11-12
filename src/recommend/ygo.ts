@@ -794,23 +794,28 @@ export function createYgoEvaluator({ index, text, format = 'tcg' }: YgoEvaluator
     return fmt !== 'tcg' || tcgLimitOf(text, card.pc) > 0;
   }
 
-  /** One printing per card that the options allow: an owned one first, else the newest. */
-  function pickPrinting(list: CatalogCard[], options: BuildOptions): CatalogCard | undefined {
-    if (!allowed(list[0], options.format) || options.avoid?.has(list[0].name)) return undefined;
+  /** The printings of a card that the options allow: every owned one when the player's cards count, else the newest. */
+  function pickPrintings(list: CatalogCard[], options: BuildOptions): CatalogCard[] {
+    if (!allowed(list[0], options.format) || options.avoid?.has(list[0].name)) return [];
     if (options.source !== 'catalog') {
-      const owned = list.find((c) => (options.collection.get(c.id)?.qty ?? 0) > 0);
-      if (owned) return owned;
-      if (options.source === 'collection') return undefined;
+      const owned = list.filter((c) => (options.collection.get(c.id)?.qty ?? 0) > 0);
+      if (owned.length) return owned;
+      if (options.source === 'collection') return [];
     }
-    return list[0];
+    return [list[0]];
   }
 
+  /** One of them: an owned one first, else the newest. */
+  function pickPrinting(list: CatalogCard[], options: BuildOptions): CatalogCard | undefined {
+    return pickPrintings(list, options)[0];
+  }
+
+  // Every owned printing is a card of its own: a deck from "Only my cards" may hold no more of a printing than is owned.
   function pool(options: BuildOptions): CatalogCard[] {
     const out: CatalogCard[] = [];
     for (const list of printings.values()) {
       if (isExtraDeckCard(list[0])) continue;
-      const pick = pickPrinting(list, options);
-      if (pick) out.push(pick);
+      out.push(...pickPrintings(list, options));
     }
     return out;
   }

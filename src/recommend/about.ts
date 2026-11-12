@@ -40,8 +40,10 @@ export function aboutRecommender(game: GameId): AboutRecommender | null {
       'Nothing is uploaded, and nothing is learned from other people’s decks.',
     `A deck gets a score out of 100, made of parts that are each a rule of thumb: ${parts}. Every part shows the finding behind its number.`,
     'A suggestion is the card, or the swap, that raises that score most, and it names the part that gained. ' +
-      '“Prefer my cards”, “Only my cards” and “Any card” decide where suggestions may come from, and the format decides which cards are legal.',
-    'A built deck starts from the one to three cards you pick, adds the best card one at a time until the deck is full, then tries swaps while they help. ' +
+      '“Prefer my cards”, “Only my cards” and “Any card” decide where suggestions may come from, and the format decides which cards are legal. ' +
+      '“Prefer my cards” uses your cards first and another card only where it does clearly more; “Only my cards” never uses more copies of a printing than you own.',
+    'A built deck starts from the one to three cards you pick, up to three copies of each, and keeps them. It adds the best card one at a time until the deck is full, then tries swaps while they help. ' +
+      (game === 'pokemon' ? 'For the last third of a Pokémon deck the score can no longer tell cards apart, so each candidate is played in practice games and the one that plays best goes in. ' : '') +
       (game === 'ygo' ? 'The Main Deck is built first and the Extra Deck is filled with monsters it can make. ' : '') +
       '“Build another” does the same without the cards of the last attempt.',
   ];

@@ -20,6 +20,8 @@ export interface SuggestOptions extends BuildOptions {
   limit?: number;
   /** Suggestions per score part among those returned (default 3), so a list is not six Energy cards. */
   perPart?: number;
+  /** Card names a swap may not take out (the cards a deck is built around, and what they stand on). */
+  keep?: ReadonlySet<string>;
 }
 
 function qtyByName(cards: readonly DeckCard[], index: Map<string, CatalogCard>): Map<string, number> {
@@ -63,6 +65,37 @@ export function reasonFor(before: DeckScore, after: DeckScore): { reason: string
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   return { reason: `${best.label}: ${pct(was)} → ${pct(best.score)}`, detail: best.detail, partId: best.id };
 }
+
+/**
+ * Score points an addition is worth on top of what it does for the deck when the cards come from "Prefer my
+ * cards" and the copies it adds are owned and not yet in the deck. Enough to settle every near-tie for the
+ * owned card (and a deck that has what it needs is all near-ties), not enough to pass over a card that does
+ * clearly more: until this, "Prefer my cards" only chose the owned printing of whatever card won.
+ */
+export const OWNED_BONUS = 1.5;
+
+/** The share of the copies `move` adds that the collection holds beyond what `cards` already uses (0 unless the source prefers owned cards). */
+export function ownedShare(move: Move, cards: readonly DeckCard[], options: BuildOptions): number {
+  if (options.source !== 'prefer-collection' || !move.add.length) return 0;
+  const used = new Map<string, number>();
+  for (const l of cards) used.set(l.cardId, (used.get(l.cardId) ?? 0) + l.qty);
+  let owned = 0;
+  for (const c of move.add) {
+    const n = used.get(c.id) ?? 0;
+    if ((options.collection.get(c.id)?.qty ?? 0) > n) owned++;
+    used.set(c.id, n + 1);
+  }
+  return owned / move.add.length;
+}
+
+/** Fill by play (buildDeck): from this many cards on, the additions within this many points of the best are played. */
+const FILL_FROM = 40;
+const FLAT_COST = 1;
+/** Copies of each card a deck is built around that go in before anything else. */
+const SEED_COPIES = 3;
+/** Additions played per step, and games each. */
+const FILL_BREADTH = 6;
+const FILL_GAMES = 40;
 
 /** The best suggestions with at most `perPart` for any one score part. */
 function diverse(all: Suggestion[], limit: number, perPart: number): Suggestion[] {
@@ -150,12 +183,18 @@ export function suggestAdds(ev: DeckEvaluator, cards: readonly DeckCard[], optio
   const index = indexOf(ev, pool, cards);
   const base = ev.score(cards);
   const out: Suggestion[] = [];
+  const bonus = new Map<Suggestion, number>();
   for (const move of candidateMoves(ev, cards, pool, options, index)) {
     const after = ev.score(apply(cards, move, index));
-    out.push({ move, total: after.total, delta: after.total - base.total, ...reasonFor(base, after) });
+    const s: Suggestion = { move, total: after.total, delta: after.total - base.total, ...reasonFor(base, after) };
+    bonus.set(s, OWNED_BONUS * ownedShare(move, cards, options));
+    out.push(s);
   }
-  out.sort((a, b) => b.delta - a.delta || (b.move.relevance ?? 0) - (a.move.relevance ?? 0));
-  return diverse(out, options.limit ?? 8, options.perPart ?? 3);
+  out.sort((a, b) => b.delta + bonus.get(b)! - (a.delta + bonus.get(a)!) || (b.move.relevance ?? 0) - (a.move.relevance ?? 0));
+  // One suggestion per card name: the pool holds every owned printing of a name.
+  const named = new Set<string>();
+  const unique = out.filter((s) => (named.has(s.move.add[0].name) ? false : (named.add(s.move.add[0].name), true)));
+  return diverse(unique, options.limit ?? 8, options.perPart ?? 3);
 }
 
 /** How much each line carries: the score lost when one copy leaves. Lowest first. */
@@ -180,7 +219,9 @@ export function contributions(ev: DeckEvaluator, cards: readonly DeckCard[], poo
 export function suggestSwaps(ev: DeckEvaluator, cards: readonly DeckCard[], options: SuggestOptions, pool = ev.pool(options)): Suggestion[] {
   const index = indexOf(ev, pool, cards);
   const base = ev.score(cards);
-  const weakest = contributions(ev, cards, pool).slice(0, 6);
+  const weakest = contributions(ev, cards, pool)
+    .filter((c) => !options.keep?.has(c.card.name))
+    .slice(0, 6);
   const out: Suggestion[] = [];
   for (const { card } of weakest) {
     const reduced = apply(cards, { add: [], remove: [card] }, index);
@@ -217,6 +258,8 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
   let cards: DeckCard[] = [];
   const steps: Suggestion[] = [];
   const dropped: string[] = [];
+  const keep = new Set<string>(options.keep);
+  const asked = new Map<string, number>();
   for (const id of seeds) {
     const wanted = ev.card(id);
     const card = index.get(id) ?? (wanted && pool.find((c) => c.name === wanted.name));
@@ -224,6 +267,9 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
       dropped.push(wanted?.name ?? id);
       continue;
     }
+    // A card named twice is wanted twice: the copies a first mention already brought in count toward it.
+    asked.set(card.name, (asked.get(card.name) ?? 0) + 1);
+    if ((qtyByName(cards, index).get(card.name) ?? 0) >= asked.get(card.name)!) continue;
     const move: Move = { add: [card, ...ev.requirements(card, cards, pool)], remove: [] };
     // A seed the rules forbid (a second ACE SPEC, a fifth copy) is left out and reported, like one the options rule out.
     const names = qtyByName(cards, index);
@@ -233,6 +279,14 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
       continue;
     }
     cards = apply(cards, move, index);
+    for (const c of move.add) keep.add(c.name);
+    // A deck built around a card plays it in numbers: up to three copies, as far as the rules and the source
+    // allow. One copy left the card a passenger in its own deck, and the swaps then took it out.
+    while ((qtyByName(cards, index).get(card.name) ?? 0) < SEED_COPIES) {
+      const more: Move = { add: [card], remove: [] };
+      if (roomFor(ev, card, qtyByName(cards, index), cards, options) <= 0 || !fitsLimits(ev, cards, more.add)) break;
+      cards = apply(cards, more, index);
+    }
   }
   const mainId = ev.rules.sections[0].id;
   const count = () => cards.reduce((n, c) => n + (ev.rules.sectionOf(index.get(c.cardId) ?? ev.card(c.cardId), c) === mainId ? c.qty : 0), 0);
@@ -241,19 +295,56 @@ export function buildDeck(ev: DeckEvaluator, seeds: readonly string[], options: 
     const before = ev.score(cards);
     const moves = candidateMoves(ev, cards, pool, options, index).filter((m) => count() + m.add.length <= target);
     if (!moves.length) break;
+    // The best addition: by score (plus the owned-card bonus); among additions that do the same for the score,
+    // another copy of a card the deck already plays before a new name, then by relevance. A deck that has what
+    // it needs is all near-ties, and filling it with new names gave it stray one-of lines and odd Trainers.
+    const inDeck = qtyByName(cards, index);
     let best: Suggestion | undefined;
+    let bestValue = -Infinity;
+    let bestKnown = false;
+    const scored: { s: Suggestion; value: number }[] = [];
     for (const move of moves) {
       const after = ev.score(apply(cards, move, index));
       const s: Suggestion = { move, total: after.total, delta: after.total - before.total, ...reasonFor(before, after) };
-      if (!best || s.total > best.total || (s.total === best.total && (move.relevance ?? 0) > (best.move.relevance ?? 0))) best = s;
+      const value = s.total + OWNED_BONUS * ownedShare(move, cards, options);
+      scored.push({ s, value });
+      const known = move.add.every((c) => inDeck.has(c.name));
+      const tie = Math.abs(value - bestValue) < 0.05;
+      if (!best || (!tie && value > bestValue) || (tie && (known !== bestKnown ? known : (move.relevance ?? 0) > (best.move.relevance ?? 0)))) {
+        best = s;
+        bestValue = value;
+        bestKnown = known;
+      }
     }
     if (!best) break;
+    // Once nothing raises the score any more, the score cannot tell the remaining additions apart, and a deck
+    // filled by relevance alone scored 96 and attacked by turn three in one game out of six. An evaluator that
+    // can play decks settles it: the flat additions (and those that cost the score a little, so that play can
+    // overrule a count the score has slightly wrong, such as one Energy more) are each played on the same
+    // seeded games and the one that plays best goes in.
+    if (ev.playtest && options.fillByPlay !== false && count() >= FILL_FROM) {
+      const flat = scored
+        .filter((x) => x.value > bestValue - FLAT_COST)
+        .sort((a, b) => b.value - a.value || (b.s.move.relevance ?? 0) - (a.s.move.relevance ?? 0))
+        .slice(0, FILL_BREADTH);
+      const play = { games: FILL_GAMES, seed: 7919 + count() };
+      let top = best;
+      let topPlay = -Infinity;
+      for (const x of flat) {
+        const v = ev.playtest(apply(cards, x.s.move, index), play).value * (1 + 0.1 * ownedShare(x.s.move, cards, options)) + 0.02 * x.s.delta;
+        if (v > topPlay) {
+          topPlay = v;
+          top = x.s;
+        }
+      }
+      best = top;
+    }
     cards = apply(cards, best.move, index);
     steps.push(best);
   }
   // Local improvement: swap while a swap helps, a bounded number of times.
   for (let i = 0; i < 12; i++) {
-    const swaps = suggestSwaps(ev, cards, { ...options, limit: 1, breadth: Math.min(options.breadth ?? 120, 60) }, pool);
+    const swaps = suggestSwaps(ev, cards, { ...options, keep, limit: 1, breadth: Math.min(options.breadth ?? 120, 60) }, pool);
     if (!swaps.length || swaps[0].delta <= 0.05) break;
     cards = apply(cards, swaps[0].move, index);
     steps.push(swaps[0]);

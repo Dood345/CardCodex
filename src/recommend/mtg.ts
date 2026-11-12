@@ -984,15 +984,12 @@ export function createMtgEvaluator({ index, text, format = 'any' }: MtgEvaluator
       const first = printings[0];
       if (!first || first.cat === 'Other') continue;
       if (!legalIn(first, options.format)) continue;
-      // One printing per name: an owned one first, else the newest (every Magic printing has a picture through its Scryfall id).
-      let pick: CatalogCard | undefined;
-      if (options.source !== 'catalog') {
-        pick = printings.find((c) => (options.collection.get(c.id)?.qty ?? 0) > 0);
-        if (!pick && options.source === 'collection') continue;
-      }
-      pick ??= printings.find((c) => c.sid) ?? first;
-      if (options.avoid?.has(pick.name)) continue;
-      out.push(pick);
+      if (options.avoid?.has(first.name)) continue;
+      // Every owned printing when the player's cards count (a deck from "Only my cards" may hold no more of a printing
+      // than is owned), else one printing per name, the newest (every Magic printing has a picture through its Scryfall id).
+      const owned = options.source === 'catalog' ? [] : printings.filter((c) => (options.collection.get(c.id)?.qty ?? 0) > 0);
+      if (owned.length) out.push(...owned);
+      else if (options.source !== 'collection') out.push(printings.find((c) => c.sid) ?? first);
     }
     return out;
   }

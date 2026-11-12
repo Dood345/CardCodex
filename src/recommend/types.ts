@@ -51,6 +51,8 @@ export interface FormatOption {
 export interface BuildOptions {
   /** Where cards may come from: the collection only, the whole catalog, or the catalog with owned cards preferred. */
   source: 'collection' | 'catalog' | 'prefer-collection';
+  /** false: never choose an addition by playing the deck (the builder then goes by the score alone). */
+  fillByPlay?: boolean;
   collection: CollectionMap;
   format: DeckFormat;
   /** Card names the builder should avoid (what the user's other decks already play), for variety. */
