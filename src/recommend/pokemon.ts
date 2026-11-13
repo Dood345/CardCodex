@@ -921,7 +921,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
     let topName = '';
     let topCostN = 0;
     const era = ctx.eraMin ? eraHp(ctx.eraMin, ctx.eraMax) : 120;
-    const pokeLike = (f: PokemonFeatures): PokeLike => ({ stage: f.stage === 'Stage 2' ? 2 : f.evolvesFrom ? 1 : 0, types: f.types.join(''), suffix: f.suffix, key: f.key, name: f.card.name, abilities: (f.text?.b ?? []).map((b) => ({ name: b.n })), attacks: f.attacks });
+    const pokeLike = (f: PokemonFeatures): PokeLike => ({ stage: f.stage === 'Stage 2' ? 2 : f.evolvesFrom ? 1 : 0, types: f.types.join(''), suffix: f.suffix, key: f.key, name: f.card.name, abilities: (f.text?.b ?? []).map((b) => ({ name: b.n })), attacks: f.attacks, labels: f.labels });
     const supply: DeckSupply = {
       pokemon: (t) => pokemon.reduce((n, l) => n + (pokeMatches(pokeLike(l.f), t) ? l.qty : 0), 0),
       energy: (type, special) => lines.reduce((n, l) => n + (l.f.isEnergy && (!special || !l.f.isBasicEnergy) && (!type || l.f.provides === '*' || [...l.f.provides].some((ch) => type.includes(ch))) ? l.qty : 0), 0),

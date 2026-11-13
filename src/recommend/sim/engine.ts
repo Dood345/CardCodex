@@ -228,6 +228,13 @@ function statics(p: Player, m: Mon, from: Player | null = null): StaticEffect[] 
   return out;
 }
 
+/** How many Pokémon `p` may have on the Bench: the rules' size, or a Stadium's larger one while `p` has the Pokémon it names in play (Area Zero Underdepths). */
+export function benchLimit(p: Player): number {
+  let n = p.benchSize;
+  for (const x of stadiumOf(p)?.fx?.statics ?? []) if (x.k === 'benchSize' && x.n > n && [...inPlay(p)].some((m) => pokeMatches(m.c, x.t))) n = x.n;
+  return n;
+}
+
 /** The Energy on `m` as its attacks may spend it: a type an Ability doubles counts twice (Wild Growth). */
 function energyOf(p: Player, m: Mon): EnergyLike[] {
   const doubled = statics(p, m).filter((x) => x.k === 'energyDouble');
@@ -278,6 +285,7 @@ function attackCost(p: Player, m: Mon, atk: SimAttack): string {
   }
   let cost = atk.cost;
   for (; less > 0 && cost; less--) cost = cost.includes('C') ? cost.replace('C', '') : cost.slice(0, -1);
+  for (const x of statics(p, m)) if (x.k === 'costMore') cost += 'C'.repeat(x.n);
   return cost;
 }
 
@@ -514,7 +522,7 @@ export function want(p: Player, c: SimCard, inHand = false, shallow = false): nu
   const plan = p.d.plan;
   const others = (test: (h: SimCard) => boolean) => handCount(p, test) - (inHand && test(c) ? 1 : 0);
   if (c.kind === 'pokemon') {
-    const room = p.bench.length < p.benchSize;
+    const room = p.bench.length < benchLimit(p);
     const spare = others((h) => h.key === c.key);
     if (plan) {
       const depth = plan.line.indexOf(c.key);
@@ -564,7 +572,7 @@ export function want(p: Player, c: SimCard, inHand = false, shallow = false): nu
   let v = 10;
   for (const e of c.fx.effects) {
     if (e.k === 'search' && e.to !== 'attach') {
-      if (e.to === 'bench' && p.bench.length >= p.benchSize) continue;
+      if (e.to === 'bench' && p.bench.length >= benchLimit(p)) continue;
       const j = bestInDeck(p, e.f, e.to, null, 0, true);
       // A look at the top few cards finds the card less often than a search of the whole deck.
       if (j >= 0) v = Math.max(v, 0.9 * want(p, cardOf(p, p.deck[j]), false, true) * (c.fx.discardCost ? 0.8 : 1) * (e.top ? 0.6 : 1));
@@ -589,6 +597,7 @@ function matches(c: SimCard, f: CardFilter): boolean {
   if (f.ruleBox === false && hasRuleBox(c)) return false;
   if (f.owner && !c.name.startsWith(f.owner)) return false;
   if (f.nameHas && !c.name.includes(f.nameHas)) return false;
+  if (f.label && !c.labels.includes(f.label)) return false;
   return true;
 }
 
@@ -623,7 +632,7 @@ function matchesKind(c: SimCard, f: CardFilter): boolean {
 
 function attachTargets(p: Player, t: AttachTarget, self: Mon | null): Mon[] {
   const out: Mon[] = [];
-  const ok = (m: Mon) => !t.type || m.c.types.includes(t.type);
+  const ok = (m: Mon) => (!t.type || m.c.types.includes(t.type)) && (!t.t || pokeMatches(m.c, t.t));
   if (t.where === 'self') {
     if (self) out.push(self);
   } else if (t.where === 'active') {
@@ -667,11 +676,11 @@ function bestInDeck(p: Player, f: CardFilter | { f: CardFilter; alts?: CardFilte
 }
 
 /** `notType`: an Energy type already fetched by another effect of the card (Crispin's "of different types"). Returns the types fetched. */
-function search(g: Game, p: Player, e: Extract<Effect, { k: 'search' }>, self: Mon | null, notType = ''): { got: number; types: string } {
+function search(_g: Game, p: Player, e: Extract<Effect, { k: 'search' }>, self: Mon | null, notType = ''): { got: number; types: string } {
   let got = 0;
   let types = notType;
   for (let k = 0; k < e.n; k++) {
-    if (e.to === 'bench' && p.bench.length >= g.rules.benchSize) break;
+    if (e.to === 'bench' && p.bench.length >= benchLimit(p)) break;
     const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, self) : null;
     if (e.top && e.top - got <= 0) break;
     const skip = e.distinctTypes || notType ? (c: SimCard) => c.kind === 'energy' && [...c.provides].some((ch) => types.includes(ch)) : undefined;
@@ -700,8 +709,11 @@ function search(g: Game, p: Player, e: Extract<Effect, { k: 'search' }>, self: M
 function attachFrom(p: Player, e: Extract<Effect, { k: 'attach' }>, self: Mon | null): Mon | null {
   let last: Mon | null = null;
   const src = e.from === 'hand' ? p.hand : p.discard;
-  for (let k = 0; k < e.n; k++) {
-    const targets = attachTargets(p, e.target, self);
+  const used = new Set<Mon>();
+  // "to each of your Future Pokémon": one for every target; "to each of them": each card to a different Pokémon.
+  const n = e.target.each ? 99 : e.n;
+  for (let k = 0; k < n; k++) {
+    const targets = attachTargets(p, e.target, self).filter((m) => !(e.target.each || e.target.distinct) || !used.has(m));
     let pick = -1;
     let to: Mon | null = null;
     for (let j = 0; j < src.length && !to; j++) {
@@ -714,6 +726,7 @@ function attachFrom(p: Player, e: Extract<Effect, { k: 'attach' }>, self: Mon | 
     const c = cardOf(p, src[pick]);
     src.splice(pick, 1);
     to.energy.push(c);
+    used.add(to);
     last = to;
   }
   return last;
@@ -779,8 +792,8 @@ function spareInHand(p: Player, f: CardFilter, maxWant: number): number[] {
 
 /** The Pokémon a heal may reach, most damaged first. */
 function healTargets(p: Player, e: Extract<Effect, { k: 'heal' }>): Mon[] {
-  const all = e.target === 'active' ? (p.active ? [p.active] : []) : [...inPlay(p)];
-  return all.filter((m) => m.dmg > 0 && (e.minEnergy === undefined || m.energy.length >= e.minEnergy) && (e.maxHpLeft === undefined || maxHp(p, m) - m.dmg <= e.maxHpLeft)).sort((a, b) => b.dmg - a.dmg);
+  const all = e.target === 'active' ? (p.active ? [p.active] : []) : e.bench ? p.bench : [...inPlay(p)];
+  return all.filter((m) => m.dmg > 0 && (!e.t || pokeMatches(m.c, e.t)) && (e.minEnergy === undefined || m.energy.length >= e.minEnergy) && (e.maxHpLeft === undefined || maxHp(p, m) - m.dmg <= e.maxHpLeft)).sort((a, b) => b.dmg - a.dmg);
 }
 
 /** Whether a Trainer's "only if" holds now (its conditions never read the attacker, so the Active stands in). */
@@ -867,11 +880,13 @@ const POST_DAMAGE = new Set<Effect['k']>(['selfDamage', 'benchDamageOwn', 'selfT
 
 /* ---------- what needs an opponent ---------- */
 
-const preventsEffects = (o: Player, m: Mon) => statics(o, m).some((x) => x.k === 'preventEffects');
+/** `m` on `o`'s side is shielded from effects of the opponent's attacks, or from those of attacker `by` when the shield names a kind (Sparkling Scales). */
+const preventsEffects = (o: Player, m: Mon, by: Mon | null = null) => statics(o, m).some((x) => x.k === 'preventEffects' && (!x.from || !by || pokeMatches(by.c, x.from)));
 
 /** Give a Special Condition to a Pokémon unless its side prevents effects; Asleep, Confused and Paralyzed replace one another. */
-function afflict(owner: Player, m: Mon, c: SpecialCondition): boolean {
-  if (preventsEffects(owner, m)) return false;
+function afflict(owner: Player, m: Mon, c: SpecialCondition, by: Mon | null = null): boolean {
+  if (preventsEffects(owner, m, by)) return false;
+  if (statics(owner, m).some((x) => x.k === 'noConditions' && (!x.only || x.only === c))) return false;
   if (!m.cond) m.cond = new Set();
   if (c === 'Asleep' || c === 'Confused' || c === 'Paralyzed') for (const x of ['Asleep', 'Confused', 'Paralyzed'] as const) m.cond.delete(x);
   m.cond.add(c);
@@ -947,6 +962,14 @@ export function sweep(g: Game, p: Player, o: Player | null): void {
     [o, p],
   ] as const) {
     if (!x || g.winner) continue;
+    // A Bench past its limit (Area Zero Underdepths left play, or the last Tera Pokémon did): the last Benched go to the discard pile, no Prize cards.
+    for (let limit = benchLimit(x); x.bench.length > limit; ) {
+      const m = x.bench.pop()!;
+      x.discard.push(m.c.i, ...m.under);
+      for (const e of m.energy) x.discard.push(e.i);
+      if (m.tool) x.discard.push(m.tool.i);
+      g.trace?.(`${m.c.name} discarded from the Bench: over the limit of ${limit}`);
+    }
     for (const m of x.bench.slice()) {
       if (m.dmg < maxHp(x, m)) continue;
       x.discard.push(m.c.i, ...m.under);
@@ -1094,7 +1117,7 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
     did = true;
     switch (e.k) {
       case 'draw':
-        did = draw(p, altN(e)) > 0;
+        did = draw(p, e.per ? e.n * [...inPlay(p)].filter((m) => pokeMatches(m.c, e.per!)).length : altN(e)) > 0;
         break;
       case 'drawUntil':
         did = draw(p, altN(e) - p.hand.length) > 0;
@@ -1208,7 +1231,7 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
       case 'condition': {
         if (e.on === 'self') {
           if (self) afflict(p, self, e.c);
-        } else if (o?.active) afflict(o, o.active, e.c);
+        } else if (o?.active) afflict(o, o.active, e.c, self);
         break;
       }
       case 'lock': {
@@ -1418,9 +1441,11 @@ function runEffects(g: Game, p: Player, o: Player | null, fx: ParsedText, self: 
 function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon | null): boolean {
   for (const e of fx.effects) {
     switch (e.k) {
-      case 'draw':
-        if (p.deck.length - e.n >= reserve(p) && !glutted(p)) return true;
+      case 'draw': {
+        const n = e.per ? e.n * [...inPlay(p)].filter((m) => pokeMatches(m.c, e.per!)).length : e.n;
+        if (n > 0 && p.deck.length - n >= reserve(p) && !glutted(p)) return true;
         break;
+      }
       case 'drawUntil':
         if (p.hand.length < e.n - 1 && p.deck.length - (e.n - p.hand.length) >= reserve(p)) return true;
         break;
@@ -1429,7 +1454,7 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
         if (drawValue(p, e) > 1) return true;
         break;
       case 'search': {
-        if (e.to === 'bench' && p.bench.length >= g.rules.benchSize) break;
+        if (e.to === 'bench' && p.bench.length >= benchLimit(p)) break;
         // A look that discards the rest thins the deck like a draw.
         if (e.top && e.discardRest && p.deck.length - e.top < reserve(p)) break;
         const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, self) : null;
@@ -1517,7 +1542,8 @@ function useful(g: Game, p: Player, o: Player | null, fx: ParsedText, self: Mon 
           const after = hit();
           p.turnStatics.length -= e.statics.length;
           const left = maxHp(o, def) - def.dmg;
-          if (after >= left && before < left) return true;
+          // A damage bonus that makes the Knock Out; a Prize card more (Briar) when the Knock Out is there anyway.
+          if (e.statics.some((x) => x.k === 'prizeMore') ? before >= left : after >= left && before < left) return true;
         } else if (mainReady(p, a) && p.d.plan && atk.name === p.d.plan.attack.name && e.statics.every((x) => x.k !== 'damage' || !x.vs || pokeMatches(a.c, x.vs))) return true;
         break;
       }
@@ -1560,7 +1586,7 @@ function supporterValue(g: Game, p: Player, o: Player | null, fx: ParsedText): n
   let v = 0;
   for (const e of fx.effects) {
     if (e.k === 'search') {
-      if (e.to === 'bench' && p.bench.length >= g.rules.benchSize) continue;
+      if (e.to === 'bench' && p.bench.length >= benchLimit(p)) continue;
       const targets = e.to === 'attach' ? attachTargets(p, e.target ?? { where: 'any' }, null) : null;
       const j = bestInDeck(p, e.f, e.to, targets, 5);
       if (j >= 0) v += (e.to === 'attach' ? 50 : want(p, cardOf(p, p.deck[j]))) / 25 + 0.5 * (e.n - 1);
@@ -1609,7 +1635,7 @@ function triggerAbilities(g: Game, p: Player, o: Player | null, m: Mon, trigger:
 }
 
 function benchBasic(g: Game, p: Player, o: Player | null): boolean {
-  const room = g.rules.benchSize - p.bench.length;
+  const room = benchLimit(p) - p.bench.length;
   if (room <= 0) return false;
   let at = -1;
   let bestW = -1;
@@ -1832,7 +1858,7 @@ function stadiumFavours(p: Player, o: Player | null, c: SimCard): number {
   let favour = 0;
   for (const x of st) {
     const t = 't' in x ? x.t : undefined;
-    const good = x.k === 'hp' ? x.delta > 0 : x.k === 'retreat' ? x.delta < 0 : x.k === 'damage' || x.k === 'costLess' || x.k === 'evolveSameTurn' || x.k === 'damageTaken' || x.k === 'drawWhenHit' || x.k === 'prizeLess';
+    const good = x.k === 'hp' ? x.delta > 0 : x.k === 'retreat' ? x.delta < 0 : x.k === 'damage' || x.k === 'costLess' || x.k === 'evolveSameTurn' || x.k === 'damageTaken' || x.k === 'drawWhenHit' || x.k === 'prizeLess' || x.k === 'benchSize' || x.k === 'noConditions';
     const diff = mine(t) - theirs(t);
     favour += good ? diff : -diff;
     if (x.k === 'noTools') favour -= 0.5;
@@ -1902,7 +1928,8 @@ function attachEnergy(g: Game, p: Player): boolean {
       for (let j = 0; j < p.hand.length; j++) {
         const e = cardOf(p, p.hand[j]);
         if (e.kind !== 'energy') continue;
-        const ok = pass === 0 ? [...miss].some((ch) => ch !== 'C' && covers(e, ch)) : miss.includes('C');
+        // A Special Energy that may only go onto a kind of Pokémon (Single Strike Energy) is refused elsewhere.
+        const ok = pass === 0 ? [...miss].some((ch) => ch !== 'C' && covers(e, ch, m.c)) : miss.includes('C') && covers(e, 'C', m.c);
         if (ok) {
           pick = j;
           break;
@@ -2008,7 +2035,7 @@ export function setup(g: Game, p: Player): boolean {
     }
   }
   p.active = newMon(cardOf(p, removeFromHand(p, at)), 0);
-  for (let j = p.hand.length - 1; j >= 0 && p.bench.length < g.rules.benchSize; j--) {
+  for (let j = p.hand.length - 1; j >= 0 && p.bench.length < benchLimit(p); j--) {
     const c = cardOf(p, p.hand[j]);
     if (c.basic) p.bench.push(newMon(cardOf(p, removeFromHand(p, j)), 0));
   }
@@ -2329,7 +2356,9 @@ export function knockOut(g: Game, p: Player, o: Player): void {
   o.active = null;
   o.koBefore = o.turn + 1;
   o.koName = m.c.name;
-  takePrizes(g, p, o, prizesFor(o, m));
+  let more = 0;
+  for (const x of p.turnStatics) if (x.k === 'prizeMore' && p.active && (!x.t || pokeMatches(p.active.c, x.t))) more += x.n;
+  takePrizes(g, p, o, prizesFor(o, m) + more);
   if (g.winner) return;
   promote(o, p);
 }

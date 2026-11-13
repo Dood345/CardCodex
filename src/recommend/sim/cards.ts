@@ -60,6 +60,8 @@ export interface SimCard {
   abilities: ParsedAbility[];
   prize: number;
   suffix: string;
+  /** Printed labels the card carries (card-text.ts CARD_LABELS), [] for most. */
+  labels: readonly string[];
   /** Trainer subtype: Item, Supporter, Stadium, Tool. */
   tt: string;
   /** A Trainer's text, or a Special Energy's (whose effects the pilot does not act on: `provides` is what it reads). */
@@ -186,6 +188,7 @@ export function compileCard(ev: PokemonEvaluator, card: CatalogCard, i: number):
     abilities,
     prize: kind === 'pokemon' ? prizeValue(card.name) : 0,
     suffix: f.suffix,
+    labels: f.labels,
     tt: f.trainerType,
     fx,
     // A Special Energy's unconditional letters; what an upgrade adds is resolved per holder (`energy`).

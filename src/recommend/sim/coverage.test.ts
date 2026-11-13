@@ -47,11 +47,14 @@ describe('sentence accounting', () => {
   });
 
   it('does not count a card whose search is wider than the text, or whose draw has a clause the pilot skips', () => {
-    // Tera Orb: "a Tera Pokémon". The pilot searches for any Pokémon, and says so.
+    // Tera Orb: "a Tera Pokémon" is a printed label the data carries since 2026-11-12, so the search is exact; Mega Signal's
+    // "Mega Evolution Pokémon ex" is still a kind the data does not mark: the pilot searches wider, and says so.
     const orb = one(index.cardsByName.get('tera orb')![0].id);
-    expect(orb.fx?.effects[0]).toMatchObject({ k: 'search', f: { k: 'pokemon', vague: 'Tera' } });
-    expect(orb.fx?.followed).toBe(false);
-    expect(kindOf(orb.fx!)).toBe('search wider than "Tera"');
+    expect(orb.fx?.effects[0]).toMatchObject({ k: 'search', f: { k: 'pokemon', label: 'Tera' } });
+    expect(orb.fx?.followed).toBe(true);
+    const signal = one(index.cardsByName.get('mega signal')![0].id);
+    expect(signal.fx?.followed).toBe(false);
+    expect(kindOf(signal.fx!)).toMatch(/^search wider than "Mega/);
     // Lillie's Determination: "If you have exactly 6 Prize cards remaining, draw 8 cards instead." is an alternative.
     const lillie = one('me01-119');
     expect(lillie.fx?.effects).toEqual([{ k: 'shuffleHandDraw', n: 6, bottom: false, alt: { if: { k: 'prizes', side: 'self', exactly: [6] }, n: 8 } }]);

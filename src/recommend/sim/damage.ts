@@ -40,10 +40,14 @@ export interface PokeTest {
   notType?: string;
   /** Not these normalized names ("except any Iron Crown ex"). */
   notNames?: string[];
-  /** "that don't have a Rule Box": no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega Pokémon. */
-  ruleBox?: false;
+  /** "that don't have a Rule Box" (false): no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega Pokémon; "with a Rule Box" (true). */
+  ruleBox?: boolean;
   /** Any of these suffixes ("Active Pokémon ex and Active Pokémon V"). */
   suffixAny?: string[];
+  /** A printed label the card carries (card-text.ts CARD_LABELS): "Future Pokémon", "Tera Pokémon", "Single Strike Pokémon". */
+  label?: string;
+  /** Not this label ("except for Future Pokémon"). */
+  notLabel?: string;
 }
 
 /** ex, V, VMAX, VSTAR, GX, EX, Radiant and Mega Pokémon carry a Rule Box. */
@@ -79,8 +83,16 @@ export type StaticEffect = {
   | { k: 'boomerang' }
   /** The card is discarded at the end of its owner's turn (Ignition Energy). */
   | { k: 'discardAtTurnEnd' }
-  /** Effects of the opponent's attacks (Special Conditions, locks, counters placed) are not done to the holder (Hide 'n' Sneak, Mist Energy). */
-  | { k: 'preventEffects' }
+  /** Effects of the opponent's attacks (Special Conditions, locks, counters placed) are not done to the holder (Hide 'n' Sneak, Mist Energy); `from`: only from such attackers (Milotic ex's Sparkling Scales). */
+  | { k: 'preventEffects'; from?: PokeTest }
+  /** The holder cannot be given Special Conditions (`only`: that one) and recovers from them (Ancient Booster Energy Capsule, Bubbly Water Energy, Impact Energy). */
+  | { k: 'noConditions'; only?: SpecialCondition; t?: PokeTest }
+  /** A player with a matching Pokémon in play may have `n` Pokémon on the Bench (Area Zero Underdepths). */
+  | { k: 'benchSize'; n: number; t: PokeTest }
+  /** A Knock Out by a matching attacker this turn takes `n` more Prize cards (Briar). */
+  | { k: 'prizeMore'; n: number; t?: PokeTest }
+  /** Matching Pokémon's attacks cost `n` Colorless more (Nighttime Mine). */
+  | { k: 'costMore'; n: number; t?: PokeTest }
   /** Damage from the opponent's attacks to matching Benched Pokémon is prevented (Flower Curtain, Battle Cage). */
   | { k: 'preventBenchDamage'; t?: PokeTest }
   /** The holder's owner draws `n` when it is damaged by an attack in the Active Spot. */
@@ -114,6 +126,8 @@ export interface CardTest {
   /** A Pokémon with an Ability of this name. */
   ability?: string;
   pokemon?: boolean;
+  /** A card carrying this printed label ("Ancient card", "Future Supporter card", "Fusion Strike Energy"). */
+  label?: string;
 }
 
 export type Count =
@@ -194,6 +208,8 @@ export interface PokeLike {
   name: string;
   abilities: readonly { name: string }[];
   attacks: readonly { name: string }[];
+  /** Printed labels (card-text.ts CARD_LABELS), [] for most cards. */
+  labels: readonly string[];
 }
 
 /** What a card looks like to a `CardTest`. */
@@ -204,6 +220,7 @@ export interface CardLike {
   tt: string;
   name: string;
   abilities: readonly { name: string }[];
+  labels: readonly string[];
 }
 
 export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
@@ -220,6 +237,9 @@ export function pokeMatches(c: PokeLike, t: PokeTest): boolean {
   if (t.notType && c.types.includes(t.notType)) return false;
   if (t.notNames && t.notNames.includes(c.key)) return false;
   if (t.ruleBox === false && hasRuleBoxLike(c)) return false;
+  if (t.ruleBox === true && !hasRuleBoxLike(c)) return false;
+  if (t.label && !c.labels.includes(t.label)) return false;
+  if (t.notLabel && c.labels.includes(t.notLabel)) return false;
   return true;
 }
 
@@ -231,6 +251,7 @@ export function cardMatches(c: CardLike, t: CardTest): boolean {
   if (t.pokemon && c.kind !== 'pokemon') return false;
   if (t.nameHas && !c.name.includes(t.nameHas)) return false;
   if (t.ability && !c.abilities.some((a) => a.name === t.ability)) return false;
+  if (t.label && !c.labels.includes(t.label)) return false;
   return true;
 }
 
