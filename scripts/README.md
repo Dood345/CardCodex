@@ -325,6 +325,10 @@ Strike, Rapid Strike, Fusion Strike (Sword & Shield), Ancient, Future and Tera (
   Future 70, Tera 151. A card can carry several: Deoxys of Fusion Strike has all three Strike badges.
 - **Printings of one card share the label** (same name and same text, in the label's series), which
   covers a print whose artwork hides the badge and the cards without a picture.
+- **Only what is new.** The record keeps, per set, how many cards and pictures the set had when it was
+  read (`read`) and what the reading was made with (`method`: templates, threshold, search window). A
+  run reads the sets whose numbers changed and takes the others from the record: after a new set, that
+  set alone; with nothing new, nothing (about a second). `--all` reads everything again.
 - **Where it goes.** `scripts/card-labels.json` is the record of the reading (ids per label, committed);
   the labels are put into `public/data/text.json` (`lb`), by this script and again by `npm run text`,
   which rebuilds that file from TCGdex. `npm run labels -- --report` reads and reports without writing;

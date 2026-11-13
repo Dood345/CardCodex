@@ -12,6 +12,7 @@ import { GAMES } from '@/games';
 import { aboutRecommender } from '@/recommend/about';
 import { Chip, Sheet, Toast, TopBar, useToast } from '@/ui/components';
 import { GAME_BLURB } from '@/ui/GameSwitch';
+import { ACCENTS } from '@/app/themes';
 
 function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
@@ -128,6 +129,31 @@ export default function SettingsPage() {
               ))}
             </div>
           </div>
+          <div className="setting-row">
+            <span>Colour</span>
+            <div className="swatch-row" role="radiogroup" aria-label="Accent colour">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={settings.accent === a.id}
+                  aria-label={a.label}
+                  title={a.label}
+                  className={`swatch${settings.accent === a.id ? ' active' : ''}`}
+                  style={{ background: a.accent }}
+                  onClick={() => update({ accent: a.id })}
+                />
+              ))}
+            </div>
+          </div>
+          <label className="setting-row">
+            <span>
+              True black background
+              <small className="setting-note">In the dark theme. Pixels that are black are switched off on an OLED screen.</small>
+            </span>
+            <input type="checkbox" checked={settings.trueBlack} onChange={(e) => update({ trueBlack: e.target.checked })} />
+          </label>
           <div className="setting-row">
             <span>Card size</span>
             <div className="chip-row inline">

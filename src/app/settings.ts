@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { isGameId, type GameId } from '@/games/ids';
+import { applyAppearance, DEFAULT_ACCENT, isAccentId, type AccentId } from './themes';
 
 export type Theme = 'system' | 'dark' | 'light';
 export type TileSize = 'small' | 'medium' | 'large';
@@ -13,6 +14,10 @@ export interface Settings {
   /** Which card game the app shows. The collection keeps every game's cards. */
   game: GameId;
   theme: Theme;
+  /** The accent colour (src/app/themes.ts, ACCENTS). */
+  accent: AccentId;
+  /** In the dark theme, a true black background instead of the dark grey one (OLED screens). */
+  trueBlack: boolean;
   tileSize: TileSize;
   /** Dim cards you don't own in set binders. */
   dimMissing: boolean;
@@ -47,6 +52,8 @@ const KEY = 'cardcodex.settings';
 const DEFAULTS: Settings = {
   game: 'pokemon',
   theme: 'system',
+  accent: DEFAULT_ACCENT,
+  trueBlack: false,
   tileSize: 'medium',
   dimMissing: true,
   reserveDeckCopies: true,
@@ -66,6 +73,7 @@ function read(): Settings {
     if (!raw) return DEFAULTS;
     const s = { ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) };
     if (!isGameId(s.game)) s.game = DEFAULTS.game;
+    if (!isAccentId(s.accent)) s.accent = DEFAULTS.accent;
     return s;
   } catch {
     return DEFAULTS;
@@ -90,7 +98,7 @@ export function getSettings(): Settings {
 export function updateSettings(patch: Partial<Settings>): void {
   current = { ...current, ...patch };
   write(current);
-  applyTheme(current.theme);
+  applyTheme();
   for (const l of listeners) l();
 }
 
@@ -107,14 +115,15 @@ export function useSettings(): [Settings, (patch: Partial<Settings>) => void] {
   return [state, update];
 }
 
-export function applyTheme(theme: Theme): void {
+/** Put the chosen theme, accent colour and background on the document (src/app/themes.ts). */
+export function applyTheme(): void {
   if (typeof document === 'undefined') return;
-  const root = document.documentElement;
-  if (theme === 'system') root.removeAttribute('data-theme');
-  else root.setAttribute('data-theme', theme);
-  const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-  const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', dark ? '#0f1115' : '#f6f7fb');
+  const systemDark = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  applyAppearance(current, systemDark, document.documentElement, document.querySelector('meta[name="theme-color"]'));
 }
 
-applyTheme(current.theme);
+applyTheme();
+// The status bar colour follows the device when the theme is "system" and the device changes over.
+if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => applyTheme());
+}

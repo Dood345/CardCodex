@@ -4,8 +4,14 @@
  * Strike, Ancient, Future and Tera. The card data (TCGdex) has no field for them, and card text depends
  * on them ("attacks used by your Future Pokémon", "can only be attached to a Single Strike Pokémon").
  *
- *   npm run labels              # read, write scripts/card-labels.json, put them into public/data/text.json
+ *   npm run labels              # read what is new, write scripts/card-labels.json, put the labels into public/data/text.json
+ *   npm run labels -- --all     # read every set again, also those already read
  *   npm run labels -- --report  # read and report only, write nothing
+ *
+ * Only what has not been read yet is read: the record keeps, for each set, how many cards and pictures it
+ * had when it was read, and a set whose numbers are the same is taken from the record as it stands. A new
+ * set, a set that gained cards or pictures, and every set after a change to the templates or the threshold
+ * are read (the first of these changes the set's numbers, the last the record's `method`).
  *
  * How: each label is a badge printed at a fixed place under the name bar. A template of the badge is cut
  * from one exemplar card and matched (normalised correlation over the three colour channels) against that place on every
@@ -27,7 +33,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { applyCardLabels, CARD_LABELS_FILE, LABELS } from './card-labels.mjs';
+import crypto from 'node:crypto';
+import { applyCardLabels, CARD_LABELS_FILE, LABELS, readCardLabels } from './card-labels.mjs';
 import { writeDataManifest } from './data-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,6 +43,8 @@ const setsArg = args.indexOf('--sets');
 /** `--sets swsh5,sv04`: read these sets only, for a quick look (implies --report). */
 const ONLY_SETS = setsArg >= 0 ? new Set(args[setsArg + 1].split(',')) : null;
 const REPORT_ONLY = args.includes('--report') || !!ONLY_SETS;
+/** Read every set, whatever the record says was read before. */
+const ALL = args.includes('--all') || !!ONLY_SETS;
 const cacheArg = args.indexOf('--cache-dir');
 const CACHE = path.resolve(cacheArg >= 0 ? args[cacheArg + 1] : process.env.CARDCODEX_CACHE_DIR || path.join(ROOT, 'scripts', '.cache'));
 const IMG = path.join(CACHE, 'images', 'pokemon');
@@ -83,6 +92,19 @@ const UP = 4;
 const DOWN = 46;
 
 /** The picture as W × H × 3 bytes (red, green, blue), or null when the cache has none. */
+/**
+ * What the reading depends on besides the pictures: a record made with other templates, another threshold
+ * or another search window says nothing about what this run would find, so its sets are all read again.
+ * Raise METHOD_VERSION when the matching itself changes.
+ */
+const METHOD_VERSION = 1;
+const methodOf = () =>
+  crypto
+    .createHash('md5')
+    .update(JSON.stringify({ v: METHOD_VERSION, t: TEMPLATES.map((t) => [t.label, t.exemplar, t.box]), THRESHOLD, DX, UP, DOWN, W, H }))
+    .digest('hex')
+    .slice(0, 12);
+
 async function pixels(id) {
   const file = path.join(IMG, `${id}.webp`);
   if (!fs.existsSync(file)) return null;
@@ -153,14 +175,32 @@ export async function readLabels({ log = () => {} } = {}) {
   const textIndex = new Map(text.ids.map((id, i) => [id, text.ti[i]]));
   const byId = new Map(catalog.cards.map((c) => [c.id, c]));
 
+  // What each set that can carry a label looks like now, and which of them the record already covers.
+  const method = methodOf();
+  const previous = ALL ? null : readCardLabels();
+  const counts = new Map();
+  for (const card of catalog.cards) {
+    if (!templates.some((t) => inEra(card, t.era))) continue;
+    const c = counts.get(card.set) ?? { cards: 0, pictures: 0 };
+    c.cards++;
+    if (fs.existsSync(path.join(IMG, `${card.id}.webp`))) c.pictures++;
+    counts.set(card.set, c);
+  }
+  const signature = Object.fromEntries([...counts].sort().map(([id, c]) => [id, `${c.cards}/${c.pictures}`]));
+  const unchanged = new Set(previous?.method === method ? Object.keys(signature).filter((id) => previous.read?.[id] === signature[id]) : []);
+  log(`sets that can carry a label: ${counts.size}; already read and unchanged: ${unchanged.size}; to read: ${counts.size - unchanged.size}`);
+
   /** label → Map(card id → score), for the cards read with the badge; and those in doubt. */
   const read = new Map(LABELS.map((l) => [l, new Map()]));
+  // The labels of the sets not read again come from the record (no score: they were judged when they were read).
+  for (const label of LABELS) for (const id of previous?.labels?.[label] ?? []) if (byId.has(id) && unchanged.has(byId.get(id).set)) read.get(label).set(id, Number.NaN);
   const doubt = [];
   const perSet = new Map();
   let pictures = 0;
   let missing = 0;
   for (const card of catalog.cards) {
     if (ONLY_SETS && !ONLY_SETS.has(card.set)) continue;
+    if (unchanged.has(card.set)) continue;
     const mine = templates.filter((t) => inEra(card, t.era));
     if (!mine.length) continue;
     const g = await pixels(card.id);
@@ -208,16 +248,17 @@ export async function readLabels({ log = () => {} } = {}) {
   const clashes = [...several].filter(([, ls]) => ls.length > 1).map(([id, ls]) => `${id} ${byId.get(id).name}: ${ls.join(', ')}`);
   log(`pictures read: ${pictures} (${missing} cards of those sets have no picture in the cache)`);
   for (const label of LABELS) {
-    const scores = [...read.get(label).values()].sort((a, b) => a - b);
-    log(`${label}: ${labels[label].length} cards (${scores.length} read off a picture, lowest match ${scores[0]?.toFixed(2) ?? '-'}, ${labels[label].length - scores.length} by sharing a printing's text)`);
+    const all = [...read.get(label).values()];
+    const scores = all.filter((v) => !Number.isNaN(v)).sort((a, b) => a - b);
+    log(`${label}: ${labels[label].length} cards (${scores.length} read off a picture now, lowest match ${scores[0]?.toFixed(2) ?? '-'}; ${all.length - scores.length} from the record; ${labels[label].length - all.length} by sharing a printing's text)`);
   }
-  return { labels, doubt, spread, clashes, perSet, byId, read };
+  return { labels, doubt, spread, clashes, perSet, byId, read, method, signature };
 }
 
 async function main() {
-  const { labels, doubt, spread, clashes, perSet, byId, read } = await readLabels({ log: console.log });
+  const { labels, doubt, spread, clashes, perSet, byId, read, method, signature } = await readLabels({ log: console.log });
   if (args.includes('--lowest')) {
-    for (const [label, scores] of read) console.log(`lowest ${label}: ${[...scores].sort((a, b) => a[1] - b[1]).slice(0, 12).map(([id, v]) => `${id}=${v.toFixed(2)}`).join(' ')}`);
+    for (const [label, scores] of read) console.log(`lowest ${label}: ${[...scores].filter(([, v]) => !Number.isNaN(v)).sort((a, b) => a[1] - b[1]).slice(0, 12).map(([id, v]) => `${id}=${v.toFixed(2)}`).join(' ')}`);
   }
   console.log(`\nby set: ${[...perSet].sort().map(([k, n]) => `${k} ${n}`).join(' | ')}`);
   console.log(`\nin doubt (match between ${DOUBT} and ${THRESHOLD}, not labelled): ${doubt.length}`);
@@ -241,7 +282,8 @@ async function main() {
     process.exit(1);
   }
   if (REPORT_ONLY) return;
-  const record = { version: 1, builtAt: new Date().toISOString(), source: 'read off the card pictures by scripts/build-labels.mjs', labels };
+  // `read`: cards and pictures of each set when it was read; `method`: what the reading was made with.
+  const record = { version: 1, builtAt: new Date().toISOString(), source: 'read off the card pictures by scripts/build-labels.mjs', method, read: signature, labels };
   fs.writeFileSync(CARD_LABELS_FILE, `${JSON.stringify(record, null, 1)}\n`);
   const textPath = path.join(DATA, 'text.json');
   const text = JSON.parse(fs.readFileSync(textPath, 'utf8'));

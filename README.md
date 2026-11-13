@@ -117,6 +117,8 @@ with Capacitor. Your collection lives only on your device.
   come from YGOPRODeck (`npm run decks:ygo`, one copy per printed card); Pokémon has no starter
   decks yet, because TCGdex carries no deck lists and the official product pages cannot be
   fetched by a build script.
+- **Appearance** – system, dark or light theme; six accent colours; a true black background for the
+  dark theme on OLED screens; three card sizes.
 - **Deck check** – every deck page has a "Deck check" that scores the deck out of 100, part by part
   with a one-line finding each (for Pokémon: deck rules including ACE SPEC and Radiant limits, Basics
   for the opening hand, evolution lines, Energy, draw and search, power, synergy, focus, era), and
