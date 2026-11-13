@@ -71,7 +71,7 @@ describe('reading Tools and Stadiums', () => {
     expect(st(IDS.mountain)).toEqual([{ k: 'hp', delta: -30, t: { stage: 2 } }]);
     expect(st(IDS.ruins)).toEqual([{ k: 'benchCounters', n: 2, t: { basic: true, notType: 'D' } }]);
     expect(st(IDS.forest)).toEqual([{ k: 'evolveSameTurn', t: { type: 'G' } }]);
-    expect(st(IDS.watchtower)).toEqual([{ k: 'noAbilities', t: { type: 'C' } }]);
+    expect(st(IDS.watchtower)).toEqual([{ k: 'noAbilities', t: { type: 'C' }, scope: 'both' }]); // "both yours and your opponent's"
     expect(st(IDS.postwick)).toEqual([{ k: 'damage', n: 30, t: { owner: "Hop's" } }]);
     expect(st(IDS.castle)).toEqual([{ k: 'retreat', delta: -99, t: { owner: "N's" } }]);
     expect(st(IDS.jamming)).toEqual([{ k: 'noTools' }]);

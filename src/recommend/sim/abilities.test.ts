@@ -79,8 +79,8 @@ describe('reading Abilities', () => {
     expect(ab(IDS.latias, 'Skyliner').fx.statics).toEqual([{ k: 'retreat', delta: -99, t: { basic: true }, scope: 'own' }]);
     expect(ab(IDS.meganium, 'Wild Growth').fx).toMatchObject({ statics: [{ k: 'energyDouble', type: 'G', scope: 'own' }], followed: true });
     expect(ab(IDS.crustle, 'Mysterious Rock Inn').fx).toMatchObject({ statics: [{ k: 'preventDamage', from: { suffix: 'ex' }, scope: 'self' }], followed: true });
-    // "Future Pokémon" is a kind the card data does not mark: Cobalt Command stays unread.
-    expect(ab(IDS.ironcrown, 'Cobalt Command').fx.followed).toBe(false);
+    // "Future Pokémon" is a printed label the card data carries since 2026-11-12: Cobalt Command reaches the deck's Future Pokémon, Iron Crown ex excepted.
+    expect(ab(IDS.ironcrown, 'Cobalt Command').fx).toMatchObject({ statics: [{ k: 'damage', n: 20, t: { label: 'Future', notNames: ['iron crown ex'] }, scope: 'own' }], followed: true });
     expect(ab(IDS.ursaluna, 'Seasoned Skill').fx).toMatchObject({ statics: [{ k: 'costLess', n: 1, attack: 'Blood Moon', per: { k: 'prizesTaken', side: 'opponent' } }], followed: true });
     expect(ab(IDS.clefairy, 'Fairy Zone').fx).toMatchObject({ statics: [{ k: 'weakness', to: 'P', t: { type: 'N' }, scope: 'opponent' }], followed: true });
     for (const [id, name] of [[IDS.latias, 'Skyliner'], [IDS.meganium, 'Wild Growth'], [IDS.crustle, 'Mysterious Rock Inn'], [IDS.ursaluna, 'Seasoned Skill'], [IDS.clefairy, 'Fairy Zone']]) {

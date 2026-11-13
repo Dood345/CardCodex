@@ -33,6 +33,9 @@ function negate(c: Cond): Cond {
 const SPECIAL_CONDITION = /^(?:Poisoned|Burned|Asleep|Paralyzed|Confused)$|affected by a Special Condition/;
 
 /** "Pokémon ex", "Basic Pokémon", "Fire Pokémon", "Stage 2 Pokémon", "Lunatone", "Beedrill and Beedrill ex", "Pokémon that has the Round attack". */
+/** The printed labels, as card text spells them (card-text.ts CARD_LABELS). */
+export const LABEL_ALT = 'Single Strike|Rapid Strike|Fusion Strike|Ancient|Future|Tera';
+
 export function parsePokeTest(raw: string): PokeTest | null {
   let s = raw.trim().replace(/^(?:a|an|any|your|of your|of your opponent's) /i, '');
   if (SPECIAL_CONDITION.test(s)) return null;
@@ -50,6 +53,17 @@ export function parsePokeTest(raw: string): PokeTest | null {
   if ((m = /^(.+?) that (?:doesn't|don't) have a Rule Box$/.exec(s))) {
     s = m[1];
     t.ruleBox = false;
+  }
+  if ((m = /^(.+?) (?:with|that (?:has|have)) a Rule Box$/.exec(s))) {
+    s = m[1];
+    t.ruleBox = true;
+  }
+  // A printed label ("Future Pokémon", "Basic Rapid Strike Pokémon", "Tera Pokémon ex").
+  if ((m = new RegExp(`^(?:(Basic) )?(${LABEL_ALT}) Pokémon(?: (ex|V|VMAX|VSTAR))?$`).exec(s))) {
+    t.label = m[2];
+    if (m[1]) t.basic = true;
+    if (m[3]) t.suffix = m[3];
+    return t;
   }
   if ((m = /^(.+?) Pokémon$/.exec(s)) && (m[1] === 'Basic' || m[1] === 'Evolution' || m[1] === 'Evolved')) {
     if (m[1] === 'Basic') t.basic = true;
@@ -70,7 +84,7 @@ export function parsePokeTest(raw: string): PokeTest | null {
   }
   if (s === 'Pokémon') return t;
   // Kinds the card data does not mark: a card cannot be told to be one.
-  if (/^(?:Future|Ancient|Tera|Mega Evolution|Fossil|Rule Box|Pokémon with a Rule Box) Pokémon$|^(?:Future|Ancient|Tera)$/.test(s)) return null;
+  if (/^(?:Mega Evolution|Fossil|Rule Box) Pokémon$/.test(s)) return null;
   if ((m = /^(?:(Basic) )?((?:Team Rocket's|[A-Z][a-z]*'s)) Pokémon$/.exec(s))) {
     t.owner = m[2];
     if (m[1]) t.basic = true;
@@ -98,6 +112,14 @@ export function parseCardTest(raw: string): CardTest | null {
     const t: CardTest = { energy: true };
     if (m[1] === 'Basic') t.basicEnergy = true;
     if (m[2]) t.energyType = COST_LETTERS[m[2]];
+    return t;
+  }
+  // A printed label on a card of a kind: "Ancient card", "Future Supporter card", "Single Strike Energy card", "Fusion Strike Energy".
+  if ((m = new RegExp(`^(${LABEL_ALT}) (?:(Supporter|Trainer|Energy|Pokémon) )?(?:cards?)?$`).exec(s))) {
+    const t: CardTest = { label: m[1] };
+    if (m[2] === 'Supporter') t.supporter = true;
+    if (m[2] === 'Energy') t.energy = true;
+    if (m[2] === 'Pokémon') t.pokemon = true;
     return t;
   }
   if ((m = /^Supporter cards? that (?:has|have) "([^"]+)" in (?:its|their) names?$/.exec(s))) return { supporter: true, nameHas: m[1] };
@@ -190,6 +212,10 @@ export function parseCond(raw: string): Cond | null {
     if (!t) return null;
     return { k: 'discard', side: 'self', t, min: N(m[1]) };
   }
+  if ((m = /^your opponent has (?:any )?(.+?) in play$/.exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? { k: 'inPlay', side: 'opponent', t, min: 1 } : null;
+  }
   if ((m = /^you have at least (\d+) (?:([A-Z][a-z]+) )?Energy in play$/.exec(s))) {
     if (m[2] && !RE_TYPE.test(m[2])) return null;
     return { k: 'energyInPlay', type: m[2] ? COST_LETTERS[m[2]] : undefined, min: N(m[1]) };
@@ -230,6 +256,11 @@ function subjectTest(raw: string | undefined): PokeTest | null | undefined {
  * scales it. The same standing effect a Tool carries, held by the player until the turn ends.
  */
 export function parseTurnBoost(s: string): StaticEffect[] | null {
+  let b: RegExpExecArray | null;
+  if ((b = /^During this turn, if your opponent's Active Pokémon is Knocked Out by damage from an attack used by your (.+?), take (\d+) more Prize cards?\.$/.exec(s))) {
+    const t = b[1] === 'Pokémon' ? undefined : parsePokeTest(b[1]);
+    return t === null ? null : [{ k: 'prizeMore', n: Number(b[2]), t }];
+  }
   const m = new RegExp(String.raw`^During this turn, (?:attacks used by your (.+?)|your (.+?)'s attacks|each of your Active Pokémon's attacks) do(?:es)? (\d+) more damage to (?:your opponent's|the) Active Pokémon( ex and Active Pokémon V| ex)?( for each Prize card your opponent has taken)?${WR}\.$`).exec(s);
   if (!m) return null;
   let subj = m[1] ?? m[2];
@@ -257,6 +288,11 @@ export function parseStatic(sentence: string): StaticEffect[] {
   if ((m = /^The (?:(.+?) )?Pokémon this card is attached to gets \+(\d+) HP\.$/.exec(s))) {
     const t = subjectTest(m[1]);
     return t === null ? [] : [{ k: 'hp', delta: n(m[2]), t }];
+  }
+  // Sparkling Crystal: "When the Tera Pokémon this card is attached to uses an attack, that attack costs 1 Energy less."
+  if ((m = /^When the (?:(.+?) )?Pokémon this card is attached to uses an attack, that attack costs (\d+) Energy less\.$/.exec(s))) {
+    const t = subjectTest(m[1]);
+    return t === null ? [] : [{ k: 'costLess', n: n(m[2]), t }];
   }
   if ((m = /^The (?:(.+?) )?Pokémon this card is attached to has no Retreat Cost\.$/.exec(s))) {
     const t = subjectTest(m[1]);
@@ -290,6 +326,23 @@ export function parseStatic(sentence: string): StaticEffect[] {
     return t === null ? [] : [{ k: 'hitBack', n: n(m[2]), t }];
   }
   if (/^If this card is discarded by an effect of an attack used by the Pokémon this card is attached to, attach this card from your discard pile to that Pokémon after attacking\.$/.test(s)) return [{ k: 'boomerang' }];
+  // "The Ancient Pokémon this card is attached to gets +60 HP, recovers from all Special Conditions, and can't be affected by any Special Conditions."
+  if ((m = /^The (?:(.+?) )?Pokémon this card is attached to (.+?)\.$/.exec(s)) && /, and | and /.test(m[2].replace(/\([^)]*\)/g, ''))) {
+    const t = subjectTest(m[1]);
+    if (t === null) return [];
+    const out: StaticEffect[] = [];
+    for (const clause of m[2].split(/, and |, | and (?=(?:the attacks|has|gets|can't|recovers|if))/)) {
+      let c: RegExpExecArray | null;
+      if ((c = /^gets \+(\d+) HP$/.exec(clause))) out.push({ k: 'hp', delta: n(c[1]), t });
+      else if (/^has no Retreat Cost$/.test(clause)) out.push({ k: 'retreat', delta: -99, t });
+      else if ((c = new RegExp(String.raw`^the attacks it uses do (\d+) more damage to your opponent's Active Pokémon( ex)?${WR}$`).exec(clause))) out.push({ k: 'damage', n: n(c[1]), t, vs: c[2] ? { suffix: 'ex' } : undefined });
+      else if (/^can't be affected by any Special Conditions$/.test(clause)) out.push({ k: 'noConditions', t });
+      else if ((c = /^can't be (Poisoned|Burned|Asleep|Paralyzed|Confused)$/.exec(clause))) out.push({ k: 'noConditions', only: c[1] as SpecialCondition, t });
+      else if (/^recovers from all Special Conditions$/.test(clause) || /^if it is already (?:Poisoned|Burned|Asleep|Paralyzed|Confused), it recovers from that Special Condition$/.test(clause)) continue; // never given one while the card is attached
+      else return [];
+    }
+    return out;
+  }
   // Abilities (passive): the holder, the owner's Pokémon, or the opponent's.
   if ((m = /^As long as this Pokémon is in the Active Spot, (.+)$/.exec(s))) {
     return parseStatic(m[1].charAt(0).toUpperCase() + m[1].slice(1)).map((x) => ({ ...x, activeOnly: true }));
@@ -313,6 +366,11 @@ export function parseStatic(sentence: string): StaticEffect[] {
     const from = parsePokeTest(m[1]);
     return from ? [{ k: 'preventDamage', from, scope: 'self' }] : [];
   }
+  // Milotic ex's Sparkling Scales: damage and effects from a kind of attacker.
+  if ((m = /^Prevent all damage from and effects of attacks from your opponent's (.+?) done to this Pokémon\.$/.exec(s))) {
+    const from = parsePokeTest(m[1]);
+    return from ? [{ k: 'preventDamage', from, scope: 'self' }, { k: 'preventEffects', from, scope: 'self' }] : [];
+  }
   if (/^Prevent all effects of (?:your opponent's Pokémon's attacks and Abilities|attacks used by your opponent's Pokémon) done to (?:this Pokémon|the (?:[A-Z][a-z]+ )?Pokémon this card is attached to)\.$/.test(s)) return [{ k: 'preventEffects', scope: 'self' }];
   if ((m = /^Prevent all effects of attacks used by your opponent's Pokémon done to your (.+?)\.$/.exec(s))) {
     const t = subjectTest(m[1]);
@@ -332,9 +390,22 @@ export function parseStatic(sentence: string): StaticEffect[] {
     const t = subjectTest(m[1]);
     return t === null ? [] : [{ k: 'hp', delta: n(m[2]), t }];
   }
-  if ((m = new RegExp(String.raw`^(.+?) Pokémon in play${BOTH} have no Abilities\.$`).exec(s))) {
-    const t = subjectTest(m[1]);
-    return t ? [{ k: 'noAbilities', t }] : [];
+  if ((m = new RegExp(String.raw`^(.+?) in play${BOTH} have no Abilities(?:, except for (${LABEL_ALT}) Pokémon)?\.$`).exec(s))) {
+    // "Stage 2 Pokémon", "Pokémon with a Rule Box" (Iron Thorns ex's Initialization, with its exception for Future Pokémon).
+    const t = /Pokémon$|Rule Box$/.test(m[1]) ? parsePokeTest(m[1]) : subjectTest(m[1]);
+    if (!t) return [];
+    if (m[2]) t.notLabel = m[2];
+    return [/both yours/.test(s) ? { k: 'noAbilities', t, scope: 'both' } : { k: 'noAbilities', t }];
+  }
+  // Nighttime Mine: "Attacks used by each Tera Pokémon in play (both yours and your opponent's) cost Colorless more."
+  if ((m = new RegExp(String.raw`^Attacks used by each (.+?) in play${BOTH} cost ((?:Colorless)+) more\.$`).exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? [{ k: 'costMore', n: m[2].length / 'Colorless'.length, t }] : [];
+  }
+  // Area Zero Underdepths: "Each player who has any Tera Pokémon in play can have up to 8 Pokémon on their Bench."
+  if ((m = /^Each player who has any (.+?) in play can have up to (\d+) Pokémon on their Bench\.$/.exec(s))) {
+    const t = parsePokeTest(m[1]);
+    return t ? [{ k: 'benchSize', n: n(m[2]), t }] : [];
   }
   if ((m = new RegExp(String.raw`^(.+?) Pokémon in play${BOTH} have no Retreat Cost\.$`).exec(s))) {
     const t = subjectTest(m[1]);

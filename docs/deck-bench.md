@@ -354,6 +354,24 @@ card text in the catalog carries the Tera rule-box sentence, so nothing exact ca
 lists Trainers 92.8%, Abilities 84.4%, Special Energy 97.2%, attacks 97.5%; the Standard pool 49.8% / 34.9% /
 83.3% / 83.4%.
 
+## Printed labels in the pilot (2026-11-12)
+
+Single Strike, Rapid Strike, Fusion Strike, Ancient, Future and Tera (read off the card pictures,
+PR #67) are kinds the pilot's filters, targets, heals, draws, counts, conditions and standing
+effects accept wherever a type is accepted (`deck-playtest.md`, Printed labels): Tera Orb, Awakening
+Drum, Reboot Pod, Glass Trumpet, Professor Sada's Vitality, Briar, Area Zero Underdepths (a Bench of
+8 while a Tera Pokémon is in play, the extra discarded when it leaves), Nighttime Mine, Sparkling
+Crystal, both Booster Energy Capsules, Cobalt Command, Sparkling Scales, Initialization's exception,
+Koraidon's and Roaring Moon's counts, Scream Tail's heal; Single Strike, Rapid Strike, Fusion Strike
+and Impact Energy go only onto the Pokémon they name. Bubbly Water Energy and Impact Energy keep
+Special Conditions off their holder. Coverage on the tournament lists: Trainers 92.8% → 94.7%,
+Abilities 84.4% → 85.5%, Special Energy 97.2% → 100.0%, attacks 97.5% → 97.5%; the Standard pool 49.8% → 53.3% /
+34.9% → 36.7% / 83.3% → 88.9% / 83.3% → 83.5%. The judges held: solo damage per turn, the online shares and the solo ladders of the lists within a
+point or two (the Trainer ladders up: live 0.664 → 0.721, attacking by turn four 0.840 → 0.881); the
+duel judge's Energy-swap ladder on the lists 0.923 → 0.872 and the live judge's correlation with real
+win rates 0.124 → 0.091, both inside the band the engine moves between seeds; the archetypes' duel
+judge correlation rose 0.233 → 0.255.
+
 ## Limits
 
 - Built decks maximise the score, so the score judges pass on them by construction; that corpus

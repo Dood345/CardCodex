@@ -92,6 +92,7 @@ those from `features(card).text`.
 | One coin flip | "Flip a coin. If heads, …" | the effect happens half the time |
 | Several coins, once per heads | Timer Ball, Lure Ball ("Flip N coins. For each heads, …") | a search or a recovery from the discard pile, run once for each heads on the game's seeded coins |
 | Rare Candy under its old name | Pokémon Breeder ("Put a Stage 2 Evolution card from your hand on the matching Basic Pokémon") | the same effect as Rare Candy |
+| Printed labels | Tera Orb, Awakening Drum, Reboot Pod, Glass Trumpet, Professor Sada's Vitality, Briar, Area Zero Underdepths, Nighttime Mine, Sparkling Crystal, the Booster Energy Capsules, Single Strike Energy | Single Strike, Rapid Strike, Fusion Strike, Ancient, Future and Tera, read off the card pictures (`labels` on the evaluator's features, `SimCard.labels`), name a kind of Pokémon or card wherever a type does: a search or recovery filter ("a Tera Pokémon", "an Ancient card", "a Future Supporter card"), an attach target ("to each of your Future Pokémon", "your Tera Pokémon in any way you like"), a heal ("1 of your Benched Ancient Pokémon"), a draw for each in play, a count (Koraidon's Primordial Beatdown, Roaring Moon's Vengeance Fletching), a condition ("if you have any Tera Pokémon in play", "if your opponent has any Future Pokémon in play"), a standing effect's subject (Cobalt Command's "your Future Pokémon, except any Iron Crown ex", the Booster Energy Capsules, Sparkling Crystal, Milotic ex's Sparkling Scales, Initialization's "except for Future Pokémon"), a Stadium's rule (Area Zero Underdepths' Bench of 8 while a Tera Pokémon is in play, Nighttime Mine's Colorless more), Briar's Prize card more on a Knock Out by a Tera Pokémon, and a Special Energy's holder (Single Strike, Rapid Strike, Fusion Strike and Impact Energy go only onto the Pokémon they name; the engine refuses them elsewhere) |
 | Searches narrowed by kind | Poké Pad, Team Rocket's Proton, Fighting Gong, Brock's Scouting, Ethan's Adventure, Bug Catching Set | "that doesn't have a Rule Box" (no ex, V, VMAX, VSTAR, GX, EX, Radiant or Mega), an owner ("Team Rocket's Pokémon"), a name ("that has "Team Rocket" in its name"), "X or Y" (either kind), "of different types", "up to N in any combination of X and Y" (one count shared across the kinds, from the deck or from a look at the top cards) |
 | A damage bonus for the turn | Premium Power Pro, Black Belt's Training, Gladion's Final Battle, Kieran | "During this turn, attacks used by your (Fighting) Pokémon do N more damage to your opponent's Active Pokémon (ex)": the same standing effect a Tool carries, held by the player until the turn ends (`Player.turnStatics`); the attacker it reaches, a Pokémon ex across the table, a holder without a Rule Box and "for each Prize card your opponent has taken" are honoured. Played in a duel when it turns the Active's best attack into a Knock Out, in a solo game when the plan's attack is about to be used. "Choose 1: • … • …" takes the first option that is useful |
 | A draw with an alternative | Lillie's Determination, Lacey, Team Rocket's Ariana | "If …, draw N cards instead": the other number when the condition holds (Prize cards remaining, every Pokémon in play of an owner) |
@@ -452,11 +453,10 @@ discards the one in play.
 
 **Gaps that matter for this deck:**
 
-- **Cards whose text is not read.** The pilot never plays them. That covers "only if" conditions
-  about things the card data does not carry (a Tera Pokémon in play: the catalog has no Tera
-  marker), Tools and Stadiums tied to the opponent's attacks in wordings not yet read (Binding Mochi,
-  Punk Helmet), Area Zero Underdepths (Tera), multi-coin effects, "If tails, …" branches, and a few
-  wordings (Salvatore's evolve-from-deck, Naveen, Kieran's "Choose 1", Academy at Night). The report
+- **Cards whose text is not read.** The pilot never plays them. That covers Tools and Stadiums
+  tied to the opponent's attacks in wordings not yet read (Binding Mochi, Punk Helmet), multi-coin
+  effects, "If tails, …" branches, and a few wordings (Salvatore's evolve-from-deck, Naveen, Academy
+  at Night). The report
   names them in two groups: cards that need an opponent to matter (gust, disruption, Special
   Conditions and healing that sat idle in a solo game) and cards the pilot does not know how to play.
 - **Damage modifiers.** Attack text is read (see Expected damage above); Tools, Abilities and
@@ -487,7 +487,8 @@ discards the one in play.
   when attached from the hand; Spiky Energy's counters land on the attacker (and can Knock it Out);
   Legacy Energy withholds a Prize card once per game; Boomerang Energy comes back after its holder's
   own attack discards it. Mist Energy's "prevent all effects of attacks" is a standing effect that
-  keeps Special Conditions, locks and placed counters off its holder.
+  keeps Special Conditions, locks and placed counters off its holder; Bubbly Water Energy, Impact
+  Energy and the Ancient Booster Energy Capsule keep Special Conditions (or one of them) off theirs.
 - **Solo games.** Everything that needs an opponent (gust, disruption, Special Conditions, Bench
   damage, locks, protection) does nothing in a solo game: the cards sit idle and the report says
   so. The duel plays them (see Head-to-head race).
@@ -569,38 +570,31 @@ The pilot's mistakes in duels were found by tracing lost games (`duelGame(…, t
 tuning to the tests. Before the stuck-Active and deck-reserve rules, the Charizard deck decked out
 in 9% of mirror games and lost 3–5% to random piles, stalled behind a Manaphy with no Energy.
 
-### What is still not followed (2026-11-10)
+### What is still not followed (2026-11-12)
 
-> **2026-11-12:** the labels below no longer lack a source. Single Strike, Rapid Strike, Fusion Strike,
-> Ancient, Future and Tera are read off the card pictures (`scripts/README.md`, Printed labels) and are
-> in the card text file (`lb`) and in the evaluator's features (`labels`). The score uses them (an
-> Energy or Trainer for a labelled kind of Pokémon is checked against the deck exactly); the pilot's
-> conditions on them ("your Future Pokémon", "a Tera Pokémon in play") are the next step, so the
-> entries about Tera, Future and Ancient in this list describe the pilot until then.
-
-
-The coverage measure (`coverageOfDecks`, `coverageOfPool`) after the seven families, by copies
+The coverage measure (`coverageOfDecks`, `coverageOfPool`) after the seven families, the three
+groups of 2026-11-10 and the printed labels of 2026-11-12, by copies
 over the 346 tournament lists and by name over the Standard pool, with the largest unread groups
 (`kindOf`, example cards from the report) and why each is left:
 
 | Measure | Tournament lists | Standard pool |
 | --- | --- | --- |
-| Trainer copies played with every sentence followed | 92.8% | 49.8% |
-| Ability copies used with every sentence followed | 84.4% | 34.9% |
-| Special Energy copies followed beyond what they provide | 97.2% | 83.3% |
-| Damaging attack copies fully acted on | 97.5% | 83.4% |
+| Trainer copies played with every sentence followed | 94.7% | 53.3% |
+| Ability copies used with every sentence followed | 85.5% | 36.7% |
+| Special Energy copies followed beyond what they provide | 100.0% | 88.9% |
+| Damaging attack copies fully acted on | 97.5% | 83.5% |
 
-- **Markers the source does not carry** (Area Zero Underdepths, 175 copies on the lists with the
-  other "opponent's hand or deck" Trainers; Iron Crown ex's Cobalt Command, "attacks used by your
-  Future Pokémon"): Tera, Future and Ancient are not in the card data and not in the source. The
-  TCGdex card object (checked on Charizard ex sv03-125, a Tera ex, and Gouging Fire ex sv05-038, a
-  Future Pokémon, fetched one at a time, and on the cached GraphQL downloads) has no field for them:
-  its fields are category, dexId, hp, id, illustrator, image, legal, localId, name, pricing,
-  rarity, regulationMark, retreat, set, stage, suffix, types, updated, variants, weaknesses,
-  abilities, attacks, description, and `suffix` is only "ex" and the like. The Tera rule-box
-  sentence is not in any card's text either (no text in the catalog carries it), so there is
-  nothing exact to derive a marker from. Left unread; a marker would have to come from another
-  source.
+- **Label texts the engine does not act on yet** (the labels themselves are read since
+  2026-11-12, see Printed labels above): Great Tusk's Land Collapse ("discard 3 more cards" after an
+  Ancient Supporter this turn), Iron Valiant's Majestic Sword and Seviper's Strong Tail ("if you played
+  a Future / Single Strike Supporter card from your hand during this turn": what was played this turn
+  is not tracked), Koraidon's Unrelenting Onslaught and Zeraora V's Cross Fist ("if 1 of your other
+  Ancient / Rapid Strike Pokémon used an attack during your last turn"), Iron Thorns's Destructo-Press
+  (Future cards among the top cards), Team Rocket's Mimikyu's Gemstone Mimicry and Mew VMAX's Cross
+  Fusion Strike (an attack borrowed from another Pokémon), Flutter Mane's Perplexing Transfer (damage
+  counters moved from a Benched Ancient Pokémon), Technical Machine: Fluorite (a Tool's attack),
+  Azumarill's Glistening Bubbles (an attack for a different cost), and the Scrolls (a Tool's attack
+  for a Strike style).
 - **Healing in other wordings** (72 copies: Wally's Compassion heals all damage from a Mega
   Evolution Pokémon ex and returns its Energy; Jacinthe heals 150 from a Psychic Pokémon): the
   engine heals a number of damage counters from a Pokémon of any type.
@@ -610,8 +604,6 @@ over the 346 tournament lists and by name over the Standard pool, with the large
   Call, "once during your first turn"), Pecharunt ex's Subjugating Chains (38 copies: a switch with
   an exception and a follow-up), and Stadiums shared on a condition (Team Rocket's Factory: a draw
   for a player who played a Team Rocket Supporter this turn).
-- **Special Energy tied to Special Conditions** (24 copies: Bubbly Water Energy recovers from and
-  prevents them): protection from a condition is not a standing effect yet.
 - **Attacks**: damage for each Benched Pokémon by HP or by the counters on them (24 copies:
   Igglybuff's Bouncy Circle, Cynthia's Spiritomb's Raging Curse), Team Rocket's Murkrow's Torment
   (24 copies: a lock on one attack chosen by name), Energy moved by the attack to the Bench (19
