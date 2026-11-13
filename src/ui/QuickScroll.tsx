@@ -8,6 +8,7 @@
  * (src/ui/quick-scroll.ts) and puts that item's tile under the top bar.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
+import { setSystemScrollbar } from '@/app/shell';
 import { contentLine, firstBelow, mainPane, settleAlign } from './pane';
 import { fractionOf, labelStride, positionAt, type Section } from './quick-scroll';
 
@@ -59,7 +60,12 @@ export function QuickScroll({
     const pane = mainPane();
     if (!pane) return;
     pane.classList.add(QUICK_SCROLL_PANE_CLASS);
-    return () => pane.classList.remove(QUICK_SCROLL_PANE_CLASS);
+    // In the Android app the bar beside the zone is the system's, drawn on the WebView where CSS does not reach.
+    setSystemScrollbar(false);
+    return () => {
+      pane.classList.remove(QUICK_SCROLL_PANE_CLASS);
+      setSystemScrollbar(true);
+    };
   }, []);
 
   // Between the top bar and the bottom nav, following both when they change size.

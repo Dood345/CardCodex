@@ -26,8 +26,9 @@ starting one.
 | `decks.e2e.mjs` | the copy-limit reminder in all three games; twelve old Special Darkness Energy flagged, explained and switched to basic Energy with the owned copies; a mixed deck not flagged; the large card view from a deck line |
 | `recommender.e2e.mjs` | the three card sources and their one-line explanations; "Only my cards" building from owned cards alone; in each game a deck built from an idea, kept, its Deck check and a practice hand |
 | `settings.e2e.mjs` | "How decks are recommended" for each game, the version, the Scrydex credit and link |
+| `appearance.e2e.mjs` | an accent colour and the true black background apply at once and last a reload; true black stays out of the light theme; a list with a quick scroll hides the pane's own scrollbar |
 
-Sixteen checks, under a minute on a desktop. CI runs them on every push and pull request.
+Nineteen checks, about a minute on a desktop. CI runs them on every push and pull request.
 
 ## What is not covered
 
@@ -38,7 +39,9 @@ Sixteen checks, under a minute on a desktop. CI runs them on every push and pull
   that depends on someone else's server fails for reasons that are not ours. The picture rules are
   covered by unit tests (`src/data/card-images.test.ts`).
 - **The Android shell.** These run the web app; the APK is checked on the emulator (the `emulator-qa`
-  skill).
+  skill). One thing only the shell can show: the system scrollbar Android draws on the WebView beside
+  the quick scroll, which the app turns off through `ShellPlugin` (checked on the emulator, scrolled past
+  a fifth of the Pokédex, where the bar's thumb comes out from under the top bar).
 
 ## How it works
 
