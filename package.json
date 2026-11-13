@@ -9,6 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "test": "vitest run",
+    "e2e": "node e2e/run.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "catalog": "node scripts/build-catalog.mjs",

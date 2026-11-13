@@ -20,6 +20,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npx vite build
+      # Browser checks in the headless Chrome the runner already has (e2e/README.md).
+      - run: npm run e2e
       # Kept short: the repository's artifact storage filled up once (each run adds a build and a 100 MB APK set).
       # The uploads are a convenience, so a storage-quota refusal must not fail the build or skip the Android job.
       - uses: actions/upload-artifact@v4

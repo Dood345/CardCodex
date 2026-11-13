@@ -38,3 +38,6 @@ scripts/.cache/
 release/
 android/keystore/
 android/keystore.properties
+
+# Screenshots of failed browser checks (npm run e2e)
+e2e/.out/
