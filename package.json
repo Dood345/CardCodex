@@ -20,6 +20,7 @@
     "android:release": "node scripts/android-release.mjs",
     "android:debug": "node scripts/android-release.mjs --debug",
     "hashes": "node scripts/build-hashes.mjs",
+    "labels": "node scripts/build-labels.mjs",
     "hashes:ygo": "node scripts/build-hashes.mjs --game ygo",
     "energy-refs": "node scripts/build-energy-refs.mjs",
     "decks:ygo": "node scripts/decks-ygo.mjs",

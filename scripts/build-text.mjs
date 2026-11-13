@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
+import { applyCardLabels } from './card-labels.mjs';
 import { writeDataManifest } from './data-manifest.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -238,6 +239,9 @@ async function main() {
   }
 
   const file = { version: 1, builtAt, game: 'pokemon', texts, ids, ti, mk, lg };
+  // The labels printed on the cards (Tera, Ancient, Single Strike, …) are not in TCGdex's data: they were read
+  // off the pictures by `npm run labels` and are put back from its record after every rebuild of the text.
+  const labelled = applyCardLabels(file);
   const str = JSON.stringify(file);
   fs.writeFileSync(path.join(OUT, 'text.json'), str);
   writeDataManifest(OUT);
@@ -247,6 +251,7 @@ async function main() {
   log('cards with text:', counts.withText, 'without:', counts.noText, 'unique texts:', texts.length);
   log('with attacks:', counts.attacks, 'abilities:', counts.abilities, 'trainer/energy effects:', counts.effects, 'odd costs:', counts.oddCost);
   log('regulation marks:', counts.marks, 'standard-legal:', counts.standard, 'expanded-legal:', counts.expanded);
+  log('printed labels (scripts/card-labels.json):', labelled);
   log('no-text examples:', noTextExamples.join(' '));
   log('bytes:', str.length, 'gzip:', zlib.gzipSync(str).length);
   log('sample sv01-001:', JSON.stringify(byId.get('sv01-001')));

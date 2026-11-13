@@ -48,7 +48,7 @@ pictures for good): a first run makes about 1,400 requests (six minutes), a reru
 build fails if Scrydex cannot be reached, rather than write a catalog that silently lost these pictures and
 their scanner hashes. Today 1,335 of the 1,390 cards TCGdex lacks get a picture this way; the 55 others
 (My First Battle, eight Aquapolis variants, the Yellow A alternates and a few promos) keep the card back.
-After a catalog build that changes pictures, run `npm run hashes` and `npm run energy-refs`.
+After a catalog build that changes pictures, run `npm run hashes`, `npm run energy-refs` and `npm run labels`.
 
 ## build-ygo-catalog.mjs
 
@@ -298,3 +298,37 @@ The workflows above are wrapped as project skills in `.claude/skills/` (`emulato
 `release-build`, `catalog-refresh`, `scanner-bench`) and two Sonnet-class subagents in
 `.claude/agents/` (`emulator-qa`, `scanner-bench`); see the "Working with Claude Code" section of
 the top-level README.
+
+## Printed labels (`npm run labels`)
+
+Card text speaks of "Future Pokémon", "a Single Strike Pokémon", "Tera Pokémon in play". Those are
+labels printed on the cards, and TCGdex has no field for any of them (its card object was checked; see
+`docs/deck-playtest.md`). `scripts/build-labels.mjs` reads six of them off the card pictures: Single
+Strike, Rapid Strike, Fusion Strike (Sword & Shield), Ancient, Future and Tera (Scarlet & Violet on).
+
+- **How.** Each label is a badge drawn at a fixed place under the name bar. A template of the badge is
+  cut from one exemplar card and matched, by normalised correlation over the three colour channels, around
+  that place on every card of the series that can carry it. It uses the small pictures `npm run hashes`
+  already keeps (`scripts/.cache/images/pokemon/`, 245 × 337), so it downloads nothing; about six minutes
+  for 8,800 pictures.
+- **Why not a text reader.** Tried first: Tesseract on the top band of the large picture read "Ancient",
+  "Future" and the Tera rule sentence, and missed every Single Strike and Rapid Strike ribbon. The badges
+  are drawings, so matching the drawing fits; a stronger reader (PP-OCRv5 through ONNX) would have added
+  a model and a dependency for a job the pictures do themselves.
+- **How sure.** A card with the badge matches at 0.63 to 0.99, the best card without one at 0.53; the
+  line is 0.58, and matches between 0.50 and 0.58 are listed by the run for a look (three on 2026-11-12,
+  none of them a labelled card). The counts for the two promo sets and the 2024 McDonald's set equal the
+  totals Scrydex's public expansion pages show for these labels (all seven: Single Strike 12, Rapid
+  Strike 14, Fusion Strike 6; Tera 10, Future 9, Ancient 9; Ancient 1), every card whose name starts with
+  a Strike label was read with it, and the twelve weakest matches of each label were looked at.
+- **What it found.** 653 labels: Single Strike 146, Rapid Strike 159, Fusion Strike 53, Ancient 74,
+  Future 70, Tera 151. A card can carry several: Deoxys of Fusion Strike has all three Strike badges.
+- **Printings of one card share the label** (same name and same text, in the label's series), which
+  covers a print whose artwork hides the badge and the cards without a picture.
+- **Where it goes.** `scripts/card-labels.json` is the record of the reading (ids per label, committed);
+  the labels are put into `public/data/text.json` (`lb`), by this script and again by `npm run text`,
+  which rebuilds that file from TCGdex. `npm run labels -- --report` reads and reports without writing;
+  `--sets swsh5,sv04` reads a few sets only.
+- **Not read:** Ultra Beast, Team Plasma, Delta Species and other older groups, which are printed as
+  text or frames, not as these badges.
+

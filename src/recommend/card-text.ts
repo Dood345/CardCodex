@@ -55,6 +55,12 @@ export interface CardTextFile {
   mk: string[];
   /** Bit 1: Standard-legal, bit 2: Expanded-legal (as TCGdex reports them). */
   lg: number[];
+  /**
+   * The labels printed on the cards that the card data has no field for, each with the ids that carry it:
+   * Single Strike, Rapid Strike, Fusion Strike, Ancient, Future, Tera. Read off the card pictures
+   * (scripts/build-labels.mjs); absent from a file built before that.
+   */
+  lb?: Record<string, string[]>;
 }
 
 export interface CardTextEntry {
@@ -63,6 +69,8 @@ export interface CardTextEntry {
   mark: string;
   standard: boolean;
   expanded: boolean;
+  /** The printed labels the card carries (CARD_LABELS), [] for most cards. */
+  labels: readonly string[];
 }
 
 export interface CardTextIndex {
@@ -107,13 +115,20 @@ export function damageValue(d: string | undefined): number {
   return m ? Number(m[0]) : 0;
 }
 
+/** The printed labels a card can carry, as card text spells them ("your Future Pokémon", "a Single Strike Pokémon"). */
+export const CARD_LABELS = ['Single Strike', 'Rapid Strike', 'Fusion Strike', 'Ancient', 'Future', 'Tera'] as const;
+
+const NO_LABELS: readonly string[] = [];
+
 export function buildTextIndex(file: CardTextFile): CardTextIndex {
+  const labels = new Map<string, string[]>();
+  for (const [label, ids] of Object.entries(file.lb ?? {})) for (const id of ids) labels.set(id, [...(labels.get(id) ?? []), label]);
   const byId = new Map<string, CardTextEntry>();
   for (let i = 0; i < file.ids.length; i++) {
     const text = file.texts[file.ti[i]];
     if (!text) continue;
     const bits = file.lg[i] ?? 0;
-    byId.set(file.ids[i], { text, mark: file.mk[i] ?? '', standard: (bits & 1) !== 0, expanded: (bits & 2) !== 0 });
+    byId.set(file.ids[i], { text, mark: file.mk[i] ?? '', standard: (bits & 1) !== 0, expanded: (bits & 2) !== 0, labels: labels.get(file.ids[i]) ?? NO_LABELS });
   }
   return { game: file.game, builtAt: file.builtAt, byId };
 }
