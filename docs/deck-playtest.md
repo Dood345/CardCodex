@@ -571,6 +571,14 @@ in 9% of mirror games and lost 3–5% to random piles, stalled behind a Manaphy 
 
 ### What is still not followed (2026-11-10)
 
+> **2026-11-12:** the labels below no longer lack a source. Single Strike, Rapid Strike, Fusion Strike,
+> Ancient, Future and Tera are read off the card pictures (`scripts/README.md`, Printed labels) and are
+> in the card text file (`lb`) and in the evaluator's features (`labels`). The score uses them (an
+> Energy or Trainer for a labelled kind of Pokémon is checked against the deck exactly); the pilot's
+> conditions on them ("your Future Pokémon", "a Tera Pokémon in play") are the next step, so the
+> entries about Tera, Future and Ancient in this list describe the pilot until then.
+
+
 The coverage measure (`coverageOfDecks`, `coverageOfPool`) after the seven families, by copies
 over the 346 tournament lists and by name over the Standard pool, with the largest unread groups
 (`kindOf`, example cards from the report) and why each is left:

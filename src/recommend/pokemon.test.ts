@@ -508,9 +508,14 @@ describe('Special Energy', () => {
     expect(credit('sm6-117', CHARMANDER, 'R')).toBe(0.5); // Beast: Ultra Beast, a group the catalog does not record
     expect(credit('sv02-192', CHARMANDER, 'R')).toBe(0.5); // Reversal: depends on Prize cards
     expect(credit('sv02-191', CHARMANDER, 'R')).toBe(0.5); // Luminous: "{C} instead" beside other Special Energy
-    expect(credit('swsh8-244', CHARMANDER, 'R')).toBe(0.5); // Fusion Strike: a group the printed name does not say
+    // Fusion Strike was such a group until the label was read off the pictures (card-labels.test.ts): a card
+    // without the badge now gets nothing from Fusion Strike Energy, and one with it gets it all.
+    expect(credit('swsh8-244', CHARMANDER, 'R')).toBe(0);
+    expect(credit('swsh8-244', 'swsh8-113', 'P')).toBe(1); // Mew V, Fusion Strike
     expect(credit('neo4-16', CHARMANDER, 'R')).toBe(0.5); // Miracle: Shining or Light Pokémon
-    expect(energyCredit(rule('swsh5-140'), { ...feat(CHARMANDER), card: { ...card(CHARMANDER), name: 'Rapid Strike Urshifu' } }, 'W')).toBe(1);
+    expect(energyCredit(rule('swsh5-140'), { ...feat(CHARMANDER), labels: ['Rapid Strike'] }, 'W')).toBe(1);
+    // Where the labels are not known at all (a caller without the card text), the name still decides.
+    expect(energyCredit(rule('swsh5-140'), { ...feat(CHARMANDER), labels: undefined, card: { ...card(CHARMANDER), name: 'Rapid Strike Urshifu' } }, 'W')).toBe(1);
   });
 
   it('covers the attackers its text lets it, not every attacker', () => {

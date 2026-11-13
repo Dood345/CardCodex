@@ -26,7 +26,7 @@ import { overLimit } from '@/data/decks';
 import { normalizeText } from '@/data/normalize';
 import type { CatalogCard } from '@/data/types';
 import { isBasicEnergy, POKEMON_DECK_RULES, type DeckRules } from '@/games/deck-rules';
-import { COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
+import { CARD_LABELS, COST_LETTERS, costCount, costTypes, damageValue, type CardText, type CardTextIndex } from './card-text';
 import type { BuildOptions, DeckEvaluator, DeckScore, FormatOption, ScorePart } from './types';
 import { expectedDamage, pokeMatches, staticView, sustainedOf, type DamageMod, type DeckSupply, type PokeLike } from './sim/damage';
 import { attackDrain, attackMiss, attackRest, normalizeEnergySymbols, parseAttackText } from './sim/effects';
@@ -45,6 +45,8 @@ export interface Mentions {
   suffixes: Set<string>;
   /** National Dex ids of species the text names. */
   species: Set<number>;
+  /** Printed labels the text names ("Future Pokémon", "Single Strike Energy"). */
+  labels: Set<string>;
 }
 
 /** What an evolution card evolves from when the card data does not say and no other printing of the name does. */
@@ -111,6 +113,8 @@ export interface PokemonFeatures {
   /** Trainers: the Energy type letter the card must find in the discard pile or hand to do anything (RE_ENERGY_GATE), else "". */
   requiresEnergy: string;
   mentions: Mentions;
+  /** The labels printed on the card that the card data has no field for (card-text.ts CARD_LABELS). */
+  labels: readonly string[];
   /** Energy cards: the type letters the card provides, or "*" for any type. */
   provides: string;
   isEnergy: boolean;
@@ -307,7 +311,7 @@ export function parseEnergyText(fx: string): EnergyRule | null {
 }
 
 /** Does the Pokémon meet the condition? undefined when the data cannot say. */
-export function meetsCond(c: PokeCond, f: Pick<PokemonFeatures, 'types' | 'stage' | 'isBasic' | 'isPokemon' | 'card'>): boolean | undefined {
+export function meetsCond(c: PokeCond, f: Pick<PokemonFeatures, 'types' | 'stage' | 'isBasic' | 'isPokemon' | 'card'> & { labels?: readonly string[] }): boolean | undefined {
   switch (c.kind) {
     case 'type':
       return f.types.includes(c.letter);
@@ -318,6 +322,9 @@ export function meetsCond(c: PokeCond, f: Pick<PokemonFeatures, 'types' | 'stage
     case 'evolution':
       return !f.isBasic;
     case 'name':
+      // A printed label ("Single Strike") is known for every card: yes or no. Another group ("Ultra Beast", an
+      // owner's name) is known only when the card's name says it.
+      if (f.labels && (CARD_LABELS as readonly string[]).includes(c.text)) return f.labels.includes(c.text);
       return new RegExp(`\\b${c.text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i').test(f.card.name) ? true : undefined;
   }
 }
@@ -329,7 +336,7 @@ export function meetsCond(c: PokeCond, f: Pick<PokemonFeatures, 'types' | 'stage
  * does not record), 0 when it does not provide it or the Pokémon is not one it
  * may be attached to.
  */
-export function energyCredit(rule: EnergyRule, attacker: Pick<PokemonFeatures, 'types' | 'stage' | 'isBasic' | 'isPokemon' | 'card'>, letter: string): number {
+export function energyCredit(rule: EnergyRule, attacker: Pick<PokemonFeatures, 'types' | 'stage' | 'isBasic' | 'isPokemon' | 'card'> & { labels?: readonly string[] }, letter: string): number {
   let gate = 1;
   if (rule.only) {
     const ok = meetsCond(rule.only, attacker);
@@ -356,6 +363,8 @@ const RE_TYPE_ENERGY = new RegExp(`\\b(${TYPE_ALT}) Energy`, 'g');
  * 3 cards." Without that Energy in the deck the card does nothing.
  */
 const RE_ENERGY_GATE = new RegExp(`^Attach (?:a|an|\\d+|up to \\d+) (?:Basic |basic )?(${TYPE_ALT}) Energy cards? from your (?:discard pile|hand) to [^.]*\\.(?: If you do,[^.]*\\.)?$`);
+/** A printed label named as a kind of card: "Future Pokémon", "a Single Strike Energy card", "Tera Pokémon ex". */
+const RE_LABEL = new RegExp(`\\b(${CARD_LABELS.join('|')}) (?:Pokémon|Energy|card)`, 'g');
 const RE_SUFFIX = /Pokémon[- ](ex|V|VMAX|VSTAR|GX|EX)\b|\b(VMAX|VSTAR)\b|\bRadiant Pokémon/g;
 
 const ROLE_RULES: [Role, RegExp][] = [
@@ -393,7 +402,7 @@ function providesOf(card: CatalogCard, rule: EnergyRule | undefined): string {
 export const STADIUM_CREDIT = 3;
 
 function mentionsOf(texts: string[], speciesRe: RegExp | null, speciesId: Map<string, number>): Mentions {
-  const m: Mentions = { types: new Set(), stages: new Set(), suffixes: new Set(), species: new Set() };
+  const m: Mentions = { types: new Set(), stages: new Set(), suffixes: new Set(), species: new Set(), labels: new Set() };
   for (const t of texts) {
     for (const x of t.matchAll(RE_TYPE_POKEMON)) m.types.add(COST_LETTERS[x[1]]);
     for (const x of t.matchAll(RE_TYPE_ENERGY)) m.types.add(COST_LETTERS[x[1]]);
@@ -402,13 +411,14 @@ function mentionsOf(texts: string[], speciesRe: RegExp | null, speciesId: Map<st
     if (/\bEvolution (?:Pokémon|cards?)\b|\bEvolved Pokémon\b/.test(t)) m.stages.add('Evolution');
     for (const x of t.matchAll(RE_SUFFIX)) m.suffixes.add(x[1] ?? x[2] ?? 'Radiant');
     if (speciesRe) for (const x of t.matchAll(speciesRe)) m.species.add(speciesId.get(x[1])!);
+    for (const x of t.matchAll(RE_LABEL)) m.labels.add(x[1]);
   }
   return m;
 }
 
 /** Trainer text mentioning only "Basic Pokémon" asks nothing special of a deck, so Basic is not a mention. */
 function hasMentions(m: Mentions): boolean {
-  return m.types.size + m.stages.size + m.suffixes.size + m.species.size > 0;
+  return m.types.size + m.stages.size + m.suffixes.size + m.species.size + m.labels.size > 0;
 }
 
 /* ---------- evaluator ---------- */
@@ -462,6 +472,8 @@ interface DeckContext {
   stages: Set<string>;
   suffixes: Set<string>;
   species: Set<number>;
+  /** Printed labels of the deck's Pokémon (Tera, Future, Single Strike, …). */
+  labels: Set<string>;
   /** Typed letters the attackers' best attacks need. */
   need: Set<string>;
   /** Type letters of the deck's Basic Energy cards. */
@@ -644,6 +656,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       attackRoles,
       requiresEnergy: card.cat === 'Trainer' ? (COST_LETTERS[RE_ENERGY_GATE.exec(normalizeEnergySymbols(t?.fx ?? '').trim())?.[1] ?? ''] ?? '') : '',
       mentions: mentionsOf(roleTexts, isPokemon ? null : speciesRe, speciesId),
+      labels: text.byId.get(card.id)?.labels ?? [],
       provides: providesOf(card, energy),
       isEnergy: card.cat === 'Energy',
       isBasicEnergy: isBasicEnergy(card),
@@ -678,6 +691,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       stages: new Set(),
       suffixes: new Set(),
       species: new Set(),
+      labels: new Set(),
       stadiumQty: lines.reduce((n, l) => n + (l.f.stadium ? l.qty : 0), 0),
       need: new Set(),
       basicEnergy: new Set(),
@@ -692,6 +706,7 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       if (l.f.evolvesFrom) ctx.stages.add('Evolution');
       if (l.f.suffix) ctx.suffixes.add(l.f.suffix);
       for (const d of l.card.dex ?? []) ctx.species.add(d);
+      for (const label of l.f.labels) ctx.labels.add(label);
     }
     // The types the deck needs Energy for are those of its real attackers: the ones that hit at least half as
     // hard as its best. A support Pokémon's small attack is not a reason to run its Energy (built decks filled
@@ -714,7 +729,8 @@ export function createPokemonEvaluator({ index, text }: PokemonEvaluatorDeps): P
       [...m.types].some((t) => ctx.types.has(t)) ||
       [...m.stages].some((s) => ctx.stages.has(s)) ||
       [...m.suffixes].some((s) => ctx.suffixes.has(s)) ||
-      [...m.species].some((s) => ctx.species.has(s))
+      [...m.species].some((s) => ctx.species.has(s)) ||
+      [...m.labels].some((s) => ctx.labels.has(s))
     );
   }
 

@@ -213,6 +213,9 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   from YGOPRODeck; Oracle text, keywords, produced mana and format legality from Scryfall), 0.8 to
   1.4 MB gzipped each. Only the deck check and the deck builder load them, on first use
   (`npm run text`, `text:ygo`, `text:mtg`).
+  The Pokémon file also holds the labels printed on the cards that the card data has no field for
+  (Single Strike, Rapid Strike, Fusion Strike, Ancient, Future, Tera; 653 cards), read off the card
+  pictures by `npm run labels` (`scripts/README.md`).
 - `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (21.4k cards,
   32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
   (`src/scanner/hash.ts`). Built from the TCGdex images, and Scrydex's for the cards TCGdex has no
