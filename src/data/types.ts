@@ -75,8 +75,11 @@ export interface CatalogCard {
   /**
    * Image flag (Pokémon). When true the image lives at the predictable TCGdex
    * path `${ASSETS}/${series}/${set}/${num}/{low|high}.webp` (see cardImageUrl).
-   * When a string, it is a full base URL that must be used instead (rare).
-   * Absent when TCGdex has no image for the card.
+   * When a string, it is a full base URL that must be used instead: a TCGdex
+   * path under another set (the Shiny Vault and gallery subsets), or, for a
+   * card TCGdex has no picture of, the card's picture at Scrydex
+   * (`https://images.scrydex.com/pokemon/<their id>`, see SCRYDEX_IMAGES).
+   * Absent when neither source has an image for the card.
    */
   img?: true | string;
 
@@ -190,6 +193,22 @@ export function scryfallImageUrl(scryfallId: string, quality: ImageQuality = 'lo
   return `${SCRYFALL_IMAGES}/${quality === 'high' ? 'display' : 'grid'}/front/${scryfallId[0]}/${scryfallId[1]}/${scryfallId}.webp`;
 }
 
+/**
+ * Scrydex card images, for the Pokémon cards TCGdex has no picture of:
+ * `${base}/pokemon/<id>/small` (245 px wide, the tile size) and `/large`. Used
+ * with Scrydex's written permission (docs/scrydex-permission.md), which covers
+ * loading them from this host with local caching: the app fetches each once
+ * and keeps it on the device (src/data/imageCache.ts). The ids are Scrydex's
+ * own (`me6-48`, `mcd21-3`), so the catalog stores the whole base URL in `img`
+ * (scripts/scrydex-images.mjs) and nothing here derives one.
+ */
+export const SCRYDEX_IMAGES = 'https://images.scrydex.com';
+
+/** Whether an image URL (or a catalog `img` base) points at Scrydex. */
+export function isScrydexImage(url: unknown): url is string {
+  return typeof url === 'string' && url.startsWith(`${SCRYDEX_IMAGES}/`);
+}
+
 export type ImageQuality = 'low' | 'high';
 
 /** URL of a card's image, or undefined when the catalog has none. */
@@ -201,6 +220,7 @@ export function cardImageUrl(
   if (card.pc !== undefined) return ygoImageUrl(card.pc, quality);
   if (card.sid) return scryfallImageUrl(card.sid, quality);
   if (!card.img) return undefined;
+  if (isScrydexImage(card.img)) return `${card.img}/${quality === 'high' ? 'large' : 'small'}`;
   const base = card.img === true ? `${TCGDEX_ASSETS}/${series}/${card.set}/${card.num}` : card.img;
   return `${base}/${quality}.webp`;
 }

@@ -2,9 +2,9 @@
   "version": 1,
   "files": {
     "catalog.json": {
-      "hash": "7842187eb1e4",
-      "bytes": 3363391,
-      "builtAt": "2026-11-08T17:56:21.331Z"
+      "hash": "2fc0652a7ec5",
+      "bytes": 3431737,
+      "builtAt": "2026-11-13T00:11:43.473Z"
     },
     "species.json": {
       "hash": "0574e3e1b79a",
@@ -37,14 +37,14 @@
       "builtAt": "2026-11-09T22:32:16.972Z"
     },
     "hashes.json": {
-      "hash": "ffc67648d080",
-      "bytes": 643538,
-      "builtAt": "2026-11-08T19:38:17.534Z"
+      "hash": "e4872971ef72",
+      "bytes": 688427,
+      "builtAt": "2026-11-13T00:13:01.827Z"
     },
     "energy-refs.json": {
-      "hash": "88fc2cbc40fc",
-      "bytes": 89539,
-      "builtAt": "2026-11-10T03:08:46.777Z"
+      "hash": "d023965a79d5",
+      "bytes": 201091,
+      "builtAt": "2026-11-13T00:14:13.762Z"
     },
     "ygo/hashes.json": {
       "hash": "63b4bd3c45c8",

@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 // Builds public/data/catalog.json and public/data/species.json.
 // Node built-ins only. Usage: node scripts/build-catalog.mjs [--no-cache]
+// Downloads are cached in scripts/.cache (or $CARDCODEX_CACHE_DIR, as for the hash build).
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { writeDataManifest } from './data-manifest.mjs';
+import { fillScrydexImages } from './scrydex-images.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const CACHE = path.join(ROOT, 'scripts', '.cache');
+const CACHE = path.resolve(process.env.CARDCODEX_CACHE_DIR || path.join(ROOT, 'scripts', '.cache'));
 const OUT = path.join(ROOT, 'public', 'data');
 const NO_CACHE = process.argv.includes('--no-cache');
 const API = 'https://api.tcgdex.net/v2';
@@ -399,6 +401,14 @@ async function main() {
   buckets.custom += probed.parent;
   buckets.none -= probed.own + probed.parent;
 
+  // What TCGdex has no picture of in any place probed: Scrydex's, where they list the same card
+  // (used with their permission, docs/scrydex-permission.md; scripts/scrydex-images.mjs has the rules).
+  const withoutPicture = cards.filter((c) => !c.img);
+  log(`Scrydex pictures for the ${withoutPicture.length} cards TCGdex has none of...`);
+  const scrydex = await fillScrydexImages({ pending: withoutPicture, allCards: cards, sets, cacheDir: CACHE, noCache: NO_CACHE, log });
+  buckets.scrydex = scrydex.marked;
+  buckets.none -= scrydex.marked;
+
   // Drop empty sets
   const counts = new Map();
   for (const c of cards) counts.set(c.set, (counts.get(c.set) || 0) + 1);
@@ -476,9 +486,11 @@ async function main() {
   log('sets:', sets.length, '(excluded tcgp sets:', excludedSets.length + ', empty dropped:', emptySets.length + ')');
   log('cards:', cards.length, '(dropped from excluded series:', droppedTcgp.n + ')');
   log('categories:', JSON.stringify(catCounts), 'non-standard raw categories:', JSON.stringify(oddCats));
-  log('img buckets: predictable=' + buckets.true, 'custom=' + buckets.custom, 'none=' + buckets.none);
+  log('img buckets: predictable=' + buckets.true, 'custom=' + buckets.custom, 'scrydex=' + buckets.scrydex, 'none=' + buckets.none);
   if (customExamples.length) log('custom img examples:\n  ' + customExamples.join('\n  '));
   log(`pictures found on the CDN for cards the feed left blank: ${probed.own} at their own path, ${probed.parent} under the parent set, ${probed.none} nowhere (${probed.asked} asked, the rest remembered)`);
+  log(`pictures from Scrydex for cards TCGdex has none of: ${scrydex.marked} of ${scrydex.pending} (${scrydex.byName} paired by name where the numbering differs; ${scrydex.noExpansion} in sets Scrydex does not list, ${scrydex.notListed} not listed in their expansion, ${scrydex.placeholder} listed without a picture; ${scrydex.requests} requests)`);
+  if (scrydex.mismatched.length) log('  same number under another name at Scrydex (left without a picture):\n    ' + scrydex.mismatched.join('\n    '));
   log('out-of-range dex ids:', badDex.length, badDex.slice(0, 20).map((b) => `${b.id}:${b.dex}`).join(' '));
   log('Pokemon cards without dex:', pokeNoDex.length);
   log('  examples:', pokeNoDex.slice(0, 10).map((c) => `${c.id} (${c.name})`).join('; '));

@@ -12,7 +12,11 @@
  *
  * Pokémon: every card with an image (`img`) has its low-resolution TCGdex image
  * (~245×337 WebP, ~16 KB) downloaded once into scripts/.cache/images/pokemon/
- * (or $CARDCODEX_CACHE_DIR/images/pokemon/). Yu-Gi-Oh!: every card (passcode)
+ * (or $CARDCODEX_CACHE_DIR/images/pokemon/). The cards TCGdex has no picture of
+ * use Scrydex's small picture (~245×342 PNG, with their permission:
+ * docs/scrydex-permission.md); the catalog build has usually cached it already
+ * (scripts/scrydex-images.mjs), under the same `<id>.webp` name whatever the
+ * format, which `sharp` reads from the bytes. Yu-Gi-Oh!: every card (passcode)
  * has its YGOPRODeck small render (`cards_small/<passcode>.jpg`, 268×391,
  * ~28 KB) downloaded once into images/ygo/, as their guide asks (each image
  * fetched once and stored, never hotlinked); the table is keyed by passcode,
@@ -31,6 +35,7 @@ import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import sharp from 'sharp';
 import { writeDataManifest } from './data-manifest.mjs';
+import { md5, scrydexPlaceholder, SCRYDEX_IMAGES } from './scrydex-images.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -118,6 +123,14 @@ const missingPath = (card) => card.file.replace(/\.[a-z]+$/, '.404');
 // for the cards that were missing last time (a few requests) instead of trusting the markers.
 for (const f of fs.readdirSync(IMAGES)) if (f.endsWith('.404')) fs.unlinkSync(path.join(IMAGES, f));
 
+/** Scrydex answers an id without a picture with status 200 and a card back: its checksum, asked for on first need. */
+let placeholder;
+async function isScrydexPlaceholder(card, buf) {
+  if (!card.url.startsWith(SCRYDEX_IMAGES)) return false;
+  placeholder ??= scrydexPlaceholder(CACHE);
+  return md5(buf) === (await placeholder).md5;
+}
+
 /** The card's cached image bytes, downloading once; null when the server has none (remembered). */
 async function imageBytes(card, stats) {
   if (fs.existsSync(card.file)) {
@@ -142,6 +155,12 @@ async function imageBytes(card, stats) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
       if (!buf.length) throw new Error('empty body');
+      if (await isScrydexPlaceholder(card, buf)) {
+        fs.writeFileSync(missingPath(card), card.url);
+        stats.missing++;
+        stats.newMissing++;
+        return null;
+      }
       fs.writeFileSync(card.file, buf);
       stats.downloaded++;
       return buf;

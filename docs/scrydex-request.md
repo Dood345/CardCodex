@@ -1,5 +1,9 @@
 # Request to Scrydex for permission to use card pictures
 
+**Status:** sent on 2026-11-08 and answered on 2026-11-12: Scrydex permits both uses. Their answer, what it
+covers and what the app does with it are in [`scrydex-permission.md`](scrydex-permission.md). The draft
+below is kept as the description of the use that the permission refers to.
+
 Draft of the message to send to Scrydex (see `card-art-gaps.md`, section 3, for why their written
 permission is needed). Fill in the sender's name; send from the project owner's address so the reply
 reaches them. Where: `contact@scrydex.com` (the address behind the "Contact Us" link on

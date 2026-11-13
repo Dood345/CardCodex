@@ -9,12 +9,13 @@ Two builders, Node 22+, built-ins only, run from the repo root (details: `script
 
 | command | writes | sources |
 |---|---|---|
-| `npm run catalog` | `public/data/catalog.json` (~3.3 MB, all English Pokémon sets and cards), `public/data/species.json` (~61 KB, species 1–1025) | TCGdex GraphQL (bulk cards) + REST (per-set details), PokéAPI CSVs on GitHub |
+| `npm run catalog` | `public/data/catalog.json` (~3.4 MB, all English Pokémon sets and cards), `public/data/species.json` (~61 KB, species 1–1025) | TCGdex GraphQL (bulk cards) + REST (per-set details), PokéAPI CSVs on GitHub; pictures TCGdex lacks from Scrydex's public expansion pages and image host (with their permission, `docs/scrydex-permission.md`) |
+| `npm run hashes` (after a `npm run catalog` that changed pictures; then `npm run energy-refs`) | `public/data/hashes.json` (~690 KB; one artwork hash per Pokémon card with a picture, for the scanner) | the card pictures, each downloaded once into `scripts/.cache/images/pokemon/` |
 | `npm run catalog:ygo` | `public/data/ygo/catalog.json` (~3.6 MB; cards by passcode + printings by set code) | YGOPRODeck API v7 `cardinfo.php` + `cardsets.php` |
 | `npm run text` (after `npm run catalog`) | `public/data/text.json` (~4.6 MB; rules text, regulation mark and legality per Pokémon card, for the deck recommender; only cards in the catalog are kept, so rebuild it whenever the catalog changes) | TCGdex GraphQL (bulk cards), REST for the few cards GraphQL rejects |
 | `npm run text:ygo` (after `npm run catalog:ygo`) | `public/data/ygo/text.json` (~4.8 MB; effect text, Extra Deck materials and the TCG Forbidden & Limited list per card, for the deck recommender) | the cached YGOPRODeck `cardinfo.php` download |
 | `npm run text:mtg` (after `npm run catalog:mtg`) | `public/data/mtg/text.json` (~6.2 MB; Oracle text, keywords, colour identity, produced mana and format legality per card, for the deck recommender) | Scryfall bulk data (`oracle_cards`) |
-| `npm run energy-refs` (after `npm run hashes`) | `public/data/energy-refs.json` (~104 KB; symbol thumbnail and art colour per basic Energy printing with a picture, for cards that print only "ENERGY") | the reference images `npm run hashes` cached under `scripts/.cache/images/pokemon/`; no network |
+| `npm run energy-refs` (after `npm run hashes`) | `public/data/energy-refs.json` (~196 KB; symbol thumbnail and art colour per basic Energy printing with a picture, for cards that print only "ENERGY") | the reference images `npm run hashes` cached under `scripts/.cache/images/pokemon/`; no network |
 | `npm run deck-bench` (after `npm run text`) | nothing shipped: `scripts/.cache/deck-bench/report.md`, checked against `src/recommend/bench/baseline.json` (see `docs/deck-bench.md`; built decks change with the pool, so read the report and, if the change is expected, `npm run deck-bench:update`) | the catalog and card text just built, plus local deck corpora |
 
 Both also rewrite `public/data/manifest.json` (content hash, size and `builtAt` per data file; see
@@ -27,13 +28,17 @@ All raw downloads land in `scripts/.cache/` (gitignored):
 
 - Pokémon: `sets_list.json`, `set_<id>.json` per set, `cards_graphql.json` (the 5 MB bulk card
   dump), `card_*.json` samples, `csv_*.csv` (PokéAPI species / names / types).
+- Pokémon pictures: `image-probe.json` (which blank cards have a file on TCGdex's CDN after all, kept a
+  week), `scrydex/` (Scrydex's expansion pages, kept a week) and `images/pokemon/` (the small pictures,
+  kept for good; the hash build reads them).
 - Yu-Gi-Oh!: `ygo_cardinfo.json` (~21 MB) and `ygo_cardsets.json`.
 - Not the catalog's: `scan/`, `scan-real/`, `scan-ygo/`, `tess/` (scanner bench), `emu/`,
   `chrome-profile/` (emulator / grid bench). Leave them alone.
 
 With the cache present a run reuses every download, so it **cannot** pick up new sets or cards.
 The only network traffic of a cached Pokémon run is the logo/symbol `HEAD` probe per set (not
-cached). To refresh for real:
+cached), plus, once the week-old answers have expired, the picture probes: a `HEAD` per blank card on
+TCGdex and about fifty expansion pages on Scrydex (four requests a second). To refresh for real:
 
 ```bash
 npm run catalog -- --no-cache
@@ -56,7 +61,10 @@ exit means nothing was written that can be trusted.
 Pokémon `===== SUMMARY =====` block: `sets:` and `cards:` (compare with the committed file, they
 only grow), `categories:` only Pokemon/Trainer/Energy, `out-of-range dex ids: 0`, `species: 1025`,
 `asset probes [ok, fail]` (a handful of failures is normal: the logo flag is cleared for them),
-`catalog.json: … bytes raw, … gzip` (~3.3 MB / ~365 KB), `species.json` (~61 KB / ~11 KB),
+`img buckets:` (`scrydex=` about 1,300 and `none=` a few dozen; `scrydex=0` with a large `none` means
+the Scrydex step found nothing and the catalog must not be committed), the `pictures from Scrydex …` line
+(any card listed under "same number under another name" was left without a picture on purpose),
+`catalog.json: … bytes raw, … gzip` (~3.4 MB / ~377 KB), `species.json` (~61 KB / ~11 KB),
 `duplicate set names: []`.
 
 Yu-Gi-Oh!: `N cards, M sets, P printings (X codes shared by different cards, Y cards with no TCG
@@ -88,7 +96,9 @@ node scripts/data-manifest.mjs --check
 
 prints `public/data/manifest.json matches public/data` with the `v=<hash>` per file, or exits 1
 (`node scripts/data-manifest.mjs` regenerates it; the `public/data/manifest.json` test in
-`src/data/manifest.test.ts` fails on the same mismatch). In `git diff public/data/manifest.json` the
+`src/data/manifest.test.ts` fails on the same mismatch). When cards gained or lost a picture, also run
+`npm run hashes` and `npm run energy-refs` before committing: `src/data/card-images.test.ts` fails when a
+card with a Scrydex picture has no scanner hash. In `git diff public/data/manifest.json` the
 hash must change for exactly the files whose content changed. Then run `npx vitest run` and commit
 the JSON and the manifest together with any code that depends on them.
 

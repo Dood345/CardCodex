@@ -9,32 +9,32 @@
    {
     "id": "total",
     "label": "Score",
-    "mean": 99.30250000000001,
+    "mean": 99.31749999999998,
     "pile": 1,
     "damage": {
      "swap-6": 1,
      "swap-12": 1,
      "swap-24": 1,
-     "trainers": 1,
-     "energy": 0.99,
+     "trainers": 0.99,
+     "energy": 0.9825,
      "pokemon": 1
     },
-    "order": 0.9920000000000003
+    "order": 0.9968733971724046
    },
    {
     "id": "part:rules",
     "label": "Deck rules",
     "mean": 1,
-    "pile": 0.64,
+    "pile": 0.6325,
     "damage": {
-     "swap-6": 0.525,
-     "swap-12": 0.57,
-     "swap-24": 0.625,
-     "trainers": 0.6975,
-     "energy": 0.635,
-     "pokemon": 0.5025
+     "swap-6": 0.5475,
+     "swap-12": 0.565,
+     "swap-24": 0.6,
+     "trainers": 0.73,
+     "energy": 0.63,
+     "pokemon": 0.5
     },
-    "order": 0.25002789154741173
+    "order": 0.21037614604737648
    },
    {
     "id": "part:basics",
@@ -42,14 +42,14 @@
     "mean": 1,
     "pile": 0.5,
     "damage": {
-     "swap-6": 0.5325,
+     "swap-6": 0.5475,
      "swap-12": 0.5225,
-     "swap-24": 0.51,
+     "swap-24": 0.5075,
      "trainers": 0.5,
      "energy": 0.5,
      "pokemon": 0.675
     },
-    "order": -0.015260169612480844
+    "order": -0.02828427124746191
    },
    {
     "id": "part:lines",
@@ -57,29 +57,29 @@
     "mean": 1,
     "pile": 1,
     "damage": {
-     "swap-6": 0.975,
-     "swap-12": 0.9975,
+     "swap-6": 0.9675,
+     "swap-12": 1,
      "swap-24": 1,
      "trainers": 0.535,
      "energy": 0.5,
-     "pokemon": 1
+     "pokemon": 0.99
     },
-    "order": 0.9790652789907699
+    "order": 0.984815273346683
    },
    {
     "id": "part:energy",
     "label": "Energy",
-    "mean": 0.9987106069727985,
+    "mean": 0.9987444662103832,
     "pile": 1,
     "damage": {
      "swap-6": 0.9825,
      "swap-12": 1,
      "swap-24": 1,
-     "trainers": 0.7775,
-     "energy": 0.9625,
-     "pokemon": 0.96
+     "trainers": 0.6825,
+     "energy": 0.96,
+     "pokemon": 0.945
     },
-    "order": 0.9484741882031942
+    "order": 0.9600748126787043
    },
    {
     "id": "part:draw",
@@ -87,107 +87,107 @@
     "mean": 1,
     "pile": 1,
     "damage": {
-     "swap-6": 0.6775,
+     "swap-6": 0.6625,
      "swap-12": 0.79,
-     "swap-24": 0.9275,
-     "trainers": 0.7475,
-     "energy": 0.5875,
-     "pokemon": 0.7
+     "swap-24": 0.9475,
+     "trainers": 0.755,
+     "energy": 0.565,
+     "pokemon": 0.715
     },
-    "order": 0.8655455935855245
+    "order": 0.8889321771510539
    },
    {
     "id": "part:power",
     "label": "Power",
-    "mean": 0.9380731922398589,
+    "mean": 0.9384327092660424,
     "pile": 1,
     "damage": {
-     "swap-6": 0.5975,
-     "swap-12": 0.7325,
-     "swap-24": 0.84,
+     "swap-6": 0.615,
+     "swap-12": 0.6975,
+     "swap-24": 0.8575,
      "trainers": 0.5,
      "energy": 0.5,
-     "pokemon": 0.79
+     "pokemon": 0.8125
     },
-    "order": 0.7973838345723308
+    "order": 0.7943019386429995
    },
    {
     "id": "part:synergy",
     "label": "Synergy",
     "mean": 1,
-    "pile": 0.59,
+    "pile": 0.6125,
     "damage": {
-     "swap-6": 0.5575,
-     "swap-12": 0.56,
-     "swap-24": 0.595,
-     "trainers": 0.775,
-     "energy": 0.6225,
-     "pokemon": 0.55
+     "swap-6": 0.545,
+     "swap-12": 0.535,
+     "swap-24": 0.58,
+     "trainers": 0.7075,
+     "energy": 0.515,
+     "pokemon": 0.53
     },
-    "order": 0.15201753103628154
+    "order": 0.1831648592089242
    },
    {
     "id": "part:focus",
     "label": "Focus",
-    "mean": 0.9937198067632851,
+    "mean": 0.9950793650793649,
     "pile": 1,
     "damage": {
-     "swap-6": 1,
+     "swap-6": 0.9975,
      "swap-12": 1,
      "swap-24": 1,
      "trainers": 0.5,
      "energy": 0.5,
      "pokemon": 1
     },
-    "order": 0.9970000000000002
+    "order": 0.9988733971724045
    },
    {
     "id": "part:era",
     "label": "Era",
-    "mean": 1,
-    "pile": 0.5825,
+    "mean": 0.9996794871794872,
+    "pile": 0.5075,
     "damage": {
-     "swap-6": 0.6325,
-     "swap-12": 0.7625,
-     "swap-24": 0.8325,
-     "trainers": 0.9525,
-     "energy": 0.7775,
-     "pokemon": 0.705
+     "swap-6": 0.5475,
+     "swap-12": 0.555,
+     "swap-24": 0.57,
+     "trainers": 0.7525,
+     "energy": 0.6275,
+     "pokemon": 0.535
     },
-    "order": 0.24013678846482886
+    "order": 0.027108252129705347
    }
   ],
   "coverage": [
    {
     "id": "trainers",
     "label": "Trainer copies played with every sentence followed",
-    "copies": 1053,
-    "followed": 945,
-    "share": 0.8974358974358975,
+    "copies": 1054,
+    "followed": 942,
+    "share": 0.8937381404174574,
     "groups": []
    },
    {
     "id": "abilities",
     "label": "Ability copies used with every sentence followed",
-    "copies": 298,
-    "followed": 214,
-    "share": 0.7181208053691275,
+    "copies": 296,
+    "followed": 211,
+    "share": 0.7128378378378378,
     "groups": []
    },
    {
     "id": "energy",
     "label": "Special Energy copies whose text is followed",
-    "copies": 100,
-    "followed": 97,
-    "share": 0.97,
+    "copies": 111,
+    "followed": 111,
+    "share": 1,
     "groups": []
    },
    {
     "id": "attacks",
     "label": "Damaging attack copies whose text is fully acted on",
-    "copies": 875,
-    "followed": 815,
-    "share": 0.9314285714285714,
+    "copies": 865,
+    "followed": 798,
+    "share": 0.922543352601156,
     "groups": []
    }
   ]
@@ -801,77 +801,77 @@
    {
     "id": "total",
     "label": "Score",
-    "mean": 99.30250000000001,
+    "mean": 99.31749999999998,
     "pile": 1,
     "damage": {
      "swap-6": 1,
      "swap-12": 1,
      "swap-24": 1,
-     "trainers": 1,
-     "energy": 0.9958333333333333,
+     "trainers": 0.9875,
+     "energy": 0.975,
      "pokemon": 1
     },
-    "order": 0.9900000000000001
+    "order": 0.9989556619540074
    },
    {
     "id": "sim:online3",
     "label": "Attacking by turn 3",
-    "mean": 0.29337500000000005,
-    "pile": 0.9416666666666667,
+    "mean": 0.311375,
+    "pile": 0.9583333333333334,
     "damage": {
-     "swap-6": 0.9125,
-     "swap-12": 0.9291666666666667,
-     "swap-24": 0.9291666666666667,
-     "trainers": 0.7208333333333333,
-     "energy": 0.7,
-     "pokemon": 0.8291666666666667
+     "swap-6": 0.8666666666666667,
+     "swap-12": 0.9333333333333333,
+     "swap-24": 0.9375,
+     "trainers": 0.7666666666666667,
+     "energy": 0.7375,
+     "pokemon": 0.8541666666666666
     },
-    "order": 0.8382246398102793
+    "order": 0.8597738000156395
    },
    {
     "id": "sim:online4",
     "label": "Attacking by turn 4",
-    "mean": 0.4518749999999999,
+    "mean": 0.45825000000000005,
     "pile": 0.9875,
     "damage": {
-     "swap-6": 0.9333333333333333,
-     "swap-12": 0.9583333333333334,
+     "swap-6": 0.8833333333333333,
+     "swap-12": 0.9666666666666667,
      "swap-24": 0.9708333333333333,
-     "trainers": 0.7583333333333333,
-     "energy": 0.725,
-     "pokemon": 0.9
+     "trainers": 0.8125,
+     "energy": 0.7958333333333333,
+     "pokemon": 0.85
     },
-    "order": 0.9337259064096294
+    "order": 0.9258582373557
    },
    {
     "id": "sim:damage",
     "label": "Damage per turn",
-    "mean": 82.03270833333332,
+    "mean": 82.855625,
     "pile": 1,
     "damage": {
-     "swap-6": 0.9833333333333333,
-     "swap-12": 0.9916666666666667,
+     "swap-6": 0.95,
+     "swap-12": 1,
      "swap-24": 1,
-     "trainers": 0.825,
-     "energy": 0.8,
-     "pokemon": 0.9083333333333333
+     "trainers": 0.875,
+     "energy": 0.8833333333333333,
+     "pokemon": 0.9583333333333334
     },
-    "order": 0.971666666666667
+    "order": 0.9666666666666671
    },
    {
     "id": "sim:live",
     "label": "Turns with a play",
-    "mean": 0.8872291666666667,
+    "mean": 0.8921666666666666,
     "pile": 1,
     "damage": {
-     "swap-6": 0.8791666666666667,
-     "swap-12": 0.9666666666666667,
-     "swap-24": 0.9833333333333333,
-     "trainers": 0.8125,
-     "energy": 0.7625,
-     "pokemon": 0.9125
+     "swap-6": 0.9416666666666667,
+     "swap-12": 0.9833333333333333,
+     "swap-24": 1,
+     "trainers": 0.8958333333333334,
+     "energy": 0.75,
+     "pokemon": 0.9083333333333333
     },
-    "order": 0.946461143508725
+    "order": 0.9618669858620229
    }
   ]
  },
@@ -1147,32 +1147,32 @@
    {
     "id": "total",
     "label": "Score",
-    "mean": 99.30250000000001,
+    "mean": 99.31749999999998,
     "pile": 1,
     "damage": {
      "swap-6": 1,
      "swap-12": 1,
      "swap-24": 1,
-     "trainers": 1,
-     "energy": 1,
+     "trainers": 0.9875,
+     "energy": 0.975,
      "pokemon": 1
     },
-    "order": 0.9924999999999999
+    "order": 0.9993669858620224
    },
    {
     "id": "sim:duel",
     "label": "Wins against the field",
-    "mean": 0.4253333333333334,
+    "mean": 0.4051666666666667,
     "pile": 1,
     "damage": {
-     "swap-6": 0.75,
-     "swap-12": 0.9875,
+     "swap-6": 0.725,
+     "swap-12": 0.85,
      "swap-24": 1,
-     "trainers": 0.7875,
-     "energy": 0.775,
-     "pokemon": 0.925
+     "trainers": 0.725,
+     "energy": 0.725,
+     "pokemon": 0.825
     },
-    "order": 0.9447246045913891
+    "order": 0.9026703236896523
    }
   ]
  },
@@ -1332,9 +1332,9 @@
    {
     "id": "attacks",
     "label": "Damaging attack copies whose text is fully acted on",
-    "copies": 1448,
-    "followed": 1207,
-    "share": 0.8335635359116023,
+    "copies": 1447,
+    "followed": 1206,
+    "share": 0.8334485141672425,
     "groups": []
    }
   ]
