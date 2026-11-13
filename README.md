@@ -295,6 +295,7 @@ npm install
 npm run dev          # http://localhost:5173 (also reachable on your LAN for phone testing)
 npm test             # vitest unit tests (search, collection, scanner parsing/matching)
 npm run typecheck
+npm run e2e          # browser checks in a headless Chrome at phone size, all three games (e2e/README.md)
 npx vite build       # production build in dist/
 ```
 
