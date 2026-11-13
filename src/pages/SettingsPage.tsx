@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { saveFile, savedMessage } from '@/app/saveFile';
 import { useCatalog, useGame } from '@/app/context';
 import { useSettings, type Theme, type TileSize } from '@/app/settings';
@@ -7,7 +7,7 @@ import { PAGE_LAYOUTS } from '@/scanner/page';
 import { clearCollection, exportCollection, importCollection } from '@/data/collection';
 import { importDecks } from '@/data/decks';
 import { clearImageCache, imageCacheStats } from '@/data/imageCache';
-import { YGOPRODECK_IMAGES } from '@/data/types';
+import { isScrydexImage, YGOPRODECK_IMAGES } from '@/data/types';
 import { GAMES } from '@/games';
 import { aboutRecommender } from '@/recommend/about';
 import { Chip, Sheet, Toast, TopBar, useToast } from '@/ui/components';
@@ -30,14 +30,18 @@ export default function SettingsPage() {
   const [cache, setCache] = useState<{ count: number; bytes: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Pokémon cards whose picture comes from Scrydex (the ones TCGdex has none of); they share the image store with Yu-Gi-Oh!.
+  const scrydexCount = useMemo(() => (game.id === 'pokemon' ? index.catalog.cards.filter((c) => isScrydexImage(c.img)).length : 0), [game.id, index]);
+  const storesImages = game.id === 'ygo' || scrydexCount > 0;
+
   useEffect(() => {
-    if (game.id !== 'ygo') return;
+    if (!storesImages) return;
     let live = true;
     imageCacheStats().then((s) => live && setCache(s)).catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [game.id]);
+  }, [storesImages]);
 
   async function onExport() {
     const data = await exportCollection();
@@ -194,34 +198,45 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {game.id === 'ygo' && (
+        {storesImages && (
           <section className="settings-section">
             <h2>Card images</h2>
-            <p className="hint">
-              YGOPRODeck asks apps not to hotlink its images, so each one is downloaded once and kept on this device. If you mirror the
-              image folders yourself, point the app at that server instead.
-            </p>
-            <label className="setting-row column">
-              <span>Image server</span>
-              <input
-                className="search-input"
-                type="url"
-                inputMode="url"
-                placeholder={YGOPRODECK_IMAGES}
-                value={imageBase}
-                onChange={(e) => setImageBase(e.target.value)}
-                onBlur={() => {
-                  const v = imageBase.trim();
-                  if (v !== settings.ygoImageBase) {
-                    update({ ygoImageBase: v });
-                    showToast(v ? 'Using your image server' : 'Using YGOPRODeck');
-                  }
-                }}
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </label>
-            <p className="hint">Expected layout: {'<server>'}/cards_small/{'<passcode>'}.jpg and {'<server>'}/cards/{'<passcode>'}.jpg.</p>
+            {game.id === 'ygo' ? (
+              <p className="hint">
+                YGOPRODeck asks apps not to hotlink its images, so each one is downloaded once and kept on this device. If you mirror the
+                image folders yourself, point the app at that server instead.
+              </p>
+            ) : (
+              <p className="hint">
+                TCGdex has no picture of {scrydexCount.toLocaleString()} cards. Their pictures come from Scrydex: each one is downloaded once
+                and kept on this device, so it also shows offline afterwards.
+              </p>
+            )}
+            {game.id === 'ygo' && (
+              <>
+                <label className="setting-row column">
+                  <span>Image server</span>
+                  <input
+                    className="search-input"
+                    type="url"
+                    inputMode="url"
+                    placeholder={YGOPRODECK_IMAGES}
+                    value={imageBase}
+                    onChange={(e) => setImageBase(e.target.value)}
+                    onBlur={() => {
+                      const v = imageBase.trim();
+                      if (v !== settings.ygoImageBase) {
+                        update({ ygoImageBase: v });
+                        showToast(v ? 'Using your image server' : 'Using YGOPRODeck');
+                      }
+                    }}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </label>
+                <p className="hint">Expected layout: {'<server>'}/cards_small/{'<passcode>'}.jpg and {'<server>'}/cards/{'<passcode>'}.jpg.</p>
+              </>
+            )}
             <div className="btn-row">
               <button
                 type="button"
@@ -289,6 +304,25 @@ export default function SettingsPage() {
             Company, Konami, Shueisha or 4K Media.
           </p>
           <p className="hint">{GAMES.find((g) => g.id === 'mtg')?.text.disclaimer}</p>
+          <p className="hint">
+            Card pictures: Pokémon cards from{' '}
+            <a href="https://tcgdex.dev" target="_blank" rel="noreferrer">
+              TCGdex
+            </a>
+            ; for the Pokémon cards TCGdex has no picture of, card images provided by{' '}
+            <a href="https://scrydex.com" target="_blank" rel="noreferrer">
+              Scrydex
+            </a>
+            , used with their permission. Yu-Gi-Oh! cards from{' '}
+            <a href="https://ygoprodeck.com" target="_blank" rel="noreferrer">
+              YGOPRODeck
+            </a>
+            , Magic cards from{' '}
+            <a href="https://scryfall.com" target="_blank" rel="noreferrer">
+              Scryfall
+            </a>
+            . The pictures belong to the games' rights holders, not to these services or to CardCodex.
+          </p>
           {recommender && (
             <details className="about-details">
               <summary>How decks are recommended ({game.short})</summary>

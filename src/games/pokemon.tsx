@@ -96,7 +96,8 @@ export const pokemon: GameProfile = {
       'Find any card by name, set, set code like SVI, or the printed number such as 057/198. Filters narrow by owned, type, rarity and series.',
     tourScan:
       'Point the camera at cards to add them with a tap, or switch to Binder page mode to read a whole page at once and confirm how many copies sit in each pocket.',
-    credits: 'Built from TCGdex and PokéAPI. Card images © The Pokémon Company; served by TCGdex.',
+    credits:
+      'Built from TCGdex and PokéAPI. Card images © The Pokémon Company; served by TCGdex, and for the cards TCGdex has no picture of, card images provided by Scrydex.',
     disclaimer: 'Not affiliated with Nintendo, Creatures, GAME FREAK or The Pokémon Company.',
   },
   deckRules: POKEMON_DECK_RULES,

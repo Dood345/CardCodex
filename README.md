@@ -194,7 +194,9 @@ What comes next (Pokémon starter decks, the Magic scanner) is in [ROADMAP.md](R
 The card catalogs are prebuilt, offline snapshots in `public/data/`:
 
 - `catalog.json` – every English Pokémon set and card from [TCGdex](https://tcgdex.dev) (id, set,
-  number, name, kind, National Dex ids, energy types, rarity, HP, stage, image flag).
+  number, name, kind, National Dex ids, energy types, rarity, HP, stage, and where the card's picture
+  is: on TCGdex for 20,042 of the 21,432 cards, at [Scrydex](https://scrydex.com) for 1,335 that TCGdex
+  has no picture of, nowhere for 55).
 - `species.json` – the National Pokédex (name, generation, types) from PokéAPI's CSV data.
 - `ygo/catalog.json` – every Yu-Gi-Oh! TCG card and printing from the
   [YGOPRODeck API](https://ygoprodeck.com/api-guide/) (two-level: cards by passcode with type,
@@ -211,12 +213,12 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
   from YGOPRODeck; Oracle text, keywords, produced mana and format legality from Scryfall), 0.8 to
   1.4 MB gzipped each. Only the deck check and the deck builder load them, on first use
   (`npm run text`, `text:ygo`, `text:mtg`).
-- `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (19.7k cards,
+- `hashes.json` – a 128-bit perceptual hash of every Pokémon card's reference image (21.4k cards,
   32 bytes each), the artwork-matching table the binder-page scanner compares pocket crops against
-  (`src/scanner/hash.ts`). Built from the TCGdex images by `npm run hashes` (each image is downloaded
-  once into `scripts/.cache/`).
-- `energy-refs.json` – for the 191 basic Energy printings that have a picture, a 20×20 grey thumbnail
-  of the big symbol and the colour of the art under it (104 KB, 75 KB gzipped). Basic Energy cards
+  (`src/scanner/hash.ts`). Built from the TCGdex images, and Scrydex's for the cards TCGdex has no
+  picture of, by `npm run hashes` (each image is downloaded once into `scripts/.cache/`).
+- `energy-refs.json` – for the 361 basic Energy printings that have a picture, a 20×20 grey thumbnail
+  of the big symbol and the colour of the art under it (196 KB, 117 KB gzipped). Basic Energy cards
   since Sun & Moon print no name, number or set code, only "ENERGY", so the scanner tells their types
   apart by the symbol (`src/scanner/energy.ts`). Built from the cached reference images by
   `npm run energy-refs`, after `npm run hashes`.
@@ -227,7 +229,20 @@ The card catalogs are prebuilt, offline snapshots in `public/data/`:
 
 Pokémon card images are served by TCGdex (`assets.tcgdex.net`), species sprites and artwork by the
 PokéAPI sprites repository; Yu-Gi-Oh! images by YGOPRODeck, stored on the device after the first
-view (see above); Magic images by Scryfall. Rebuild a catalog to pick up new sets:
+view (see above); Magic images by Scryfall.
+
+TCGdex has no English picture of 1,390 of these cards (the Trainer Kits, the McDonald's collections,
+Dragon Majesty, Shining Legends, the Scarlet & Violet and Mega Evolution Energy sets, the newest set
+while its scans are uploaded, some promos). For 1,335 of them the card images are provided by
+[Scrydex](https://scrydex.com), with their written permission: [`docs/scrydex-permission.md`](docs/scrydex-permission.md)
+has the text, what it covers and its limit. The app loads such a picture from `images.scrydex.com`
+the first time its card is shown, keeps it on the device and shows it from there afterwards, also
+offline; nothing is bundled. The catalog build takes the card ids and image URLs from Scrydex's public
+expansion pages and uses a picture only when the card's name agrees (`scripts/scrydex-images.mjs`). The
+55 cards neither source has a picture of (My First Battle, eight Aquapolis variants, the Yellow A
+alternates, a few promos) show a drawn card back with the card's name.
+
+Rebuild a catalog to pick up new sets:
 
 ```bash
 npm run catalog
@@ -367,7 +382,10 @@ SDK under `%LOCALAPPDATA%`, Chrome for the grid bench) and say what to do when s
 
 ## Credits and legal
 
-Pokémon card data and images: [TCGdex](https://tcgdex.dev). Pokédex data and sprites:
+Pokémon card data and most Pokémon card images: [TCGdex](https://tcgdex.dev). For the Pokémon cards
+TCGdex has no picture of (about 6 % of the catalog), card images provided by
+[Scrydex](https://scrydex.com), used with their permission ([record](docs/scrydex-permission.md)).
+Pokédex data and sprites:
 [PokéAPI](https://pokeapi.co). Yu-Gi-Oh! card data and images: [YGOPRODeck](https://ygoprodeck.com).
 Magic: The Gathering card data and images: [Scryfall](https://scryfall.com); CardCodex is not
 produced by or endorsed by Scryfall.

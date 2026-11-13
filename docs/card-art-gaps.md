@@ -1,5 +1,14 @@
 # Card picture gaps: causes, sources and options
 
+> **What happened since (2026-11-12).** Option (a) is part of the catalog build now (it probes the file paths; see
+> `scripts/README.md`). Scrydex was asked (`scrydex-request.md`) and gave written permission
+> (`scrydex-permission.md`), so option (b) followed: the app loads Scrydex's picture, with caching on the
+> device, for 1,335 of the 1,390 cards that were still without one, and the build pairs cards through
+> Scrydex's public expansion pages with a name check instead of the derived ids described below
+> (`scripts/scrydex-images.mjs`). That also recovered most of the two Classic Collections (52 of 55 cards) and the Unown
+> Collection, which this report counts as "nowhere". 55 cards remain without a picture. The numbers below
+> are the ones measured on 2026-11-08 and are kept as the record of that research.
+
 Measured and probed on 2026-11-08 against `public/data/*.json` as built that day (Pokémon catalog built 16:19 UTC).
 Research only: no app code, catalog or version changed. The probe script is `scripts/probe-card-images.mjs`
 (Node built-ins only, paced at about 4 requests per second, descriptive `User-Agent`, every response cached in

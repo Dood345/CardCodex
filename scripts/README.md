@@ -11,14 +11,44 @@ Sources: TCGdex GraphQL (bulk cards) and REST (set details), PokeAPI CSV dumps o
 The `tcgp` series (Pokemon TCG Pocket) and sets with zero cards are excluded.
 Set `logo`/`symbol` flags are only true when the `.webp` URL under `https://assets.tcgdex.net/en/{series}/{set}/` was verified with HEAD.
 
+A card's picture (`img`) is settled in three steps: the TCGdex feed's `image` field; for the cards it leaves
+blank, a HEAD of the file on TCGdex's CDN at the card's own path and under the parent set's (answers kept
+for a week in `scripts/.cache/image-probe.json`); and for the cards still without one, Scrydex
+(`scrydex-images.mjs`, below).
+
 Run (Node 18+, built-ins only):
 
-    node scripts/build-catalog.mjs             # uses scripts/.cache for raw downloads
+    node scripts/build-catalog.mjs             # uses scripts/.cache for raw downloads ($CARDCODEX_CACHE_DIR when set)
     node scripts/build-catalog.mjs --no-cache  # re-download everything
 
 The script validates (unique ids, set references, dex range, species sanity) and fails loudly on violations.
 The generated `public/data/*.json` are build artifacts but are committed to git.
-Expected sizes: catalog.json ~3.3 MB (~365 KB gzip), species.json ~61 KB (~11 KB gzip).
+Expected sizes: catalog.json ~3.4 MB (~377 KB gzip), species.json ~61 KB (~11 KB gzip).
+
+## scrydex-images.mjs
+
+Pictures for the Pokémon cards TCGdex has none of, from [Scrydex](https://scrydex.com), used with their
+written permission (`docs/scrydex-permission.md`). `build-catalog.mjs` calls it; on its own it prints what a
+build would do with the catalog on disk:
+
+    node scripts/scrydex-images.mjs            # coverage per set, what Scrydex lacks, name mismatches
+
+Scrydex asks never to assume image URLs and its ids differ from TCGdex's (`me06` is `me6`, the McDonald's
+sets are `mcd21`, the Trainer Kits `tk4a`…), so the ids, card names and image URLs are read from Scrydex's
+public expansion pages (`scrydex.com/pokemon/expansions/<slug>/<id>`). A set is paired with an expansion by
+id, by name or by the alias table at the top of the file; a card with the expansion's card of the same
+number **only when the names agree**, or by name alone where the two sources number a set differently and
+the name occurs once on both sides (the two Classic Collections). An id without a picture answers with HTTP
+200 and a card back, so the small picture is downloaded and compared with that placeholder; the file lands
+in `scripts/.cache/images/pokemon/<card id>.webp`, where `build-hashes.mjs` finds it (one download for both
+builds; the bytes are PNG whatever the name says). The card then gets `img: "<Scrydex's base URL>"`.
+
+Requests are paced at four per second and cached under `scripts/.cache/scrydex/` (expansion pages for a week,
+pictures for good): a first run makes about 1,400 requests (six minutes), a rerun inside the week none. The
+build fails if Scrydex cannot be reached, rather than write a catalog that silently lost these pictures and
+their scanner hashes. Today 1,335 of the 1,390 cards TCGdex lacks get a picture this way; the 55 others
+(My First Battle, eight Aquapolis variants, the Yellow A alternates and a few promos) keep the card back.
+After a catalog build that changes pictures, run `npm run hashes` and `npm run energy-refs`.
 
 ## build-ygo-catalog.mjs
 
@@ -97,7 +127,9 @@ per card image, the artwork-matching table the binder-page scanner uses beside O
 
 - **Pokémon** (`npm run hashes`) → `public/data/hashes.json`, keyed by card id. Every card with an image
   has its low-resolution TCGdex image (~245×337 WebP, ~16 KB) downloaded **once** into
-  `scripts/.cache/images/pokemon/<id>.webp` (`$CARDCODEX_CACHE_DIR/images/pokemon/` when set).
+  `scripts/.cache/images/pokemon/<id>.webp` (`$CARDCODEX_CACHE_DIR/images/pokemon/` when set). The cards
+  whose picture comes from Scrydex use its small size (~245×342 PNG, ~45 KB), normally cached already by
+  the catalog build; a card back sent in place of a picture is recognised and counted as missing.
 - **Yu-Gi-Oh!** (`npm run hashes:ygo`, i.e. `--game ygo`) → `public/data/ygo/hashes.json`, keyed by
   **passcode**: every printing of a card shares the picture, and an alternate artwork is its own passcode
   (and entry). Every card's YGOPRODeck small render (`cards_small/<passcode>.jpg`, 268×391, ~28 KB) is
@@ -113,14 +145,14 @@ Downloads are limited to 10 requests/s (`--rate`), 4 in flight (`--concurrency`)
 changed hash spec never re-downloads, and an interrupted build resumes (the output is also rewritten
 every 2,000 cards).
 
-    npm run hashes                                   # Pokémon: ≈ 35 min for a cold cache (19.7k images, 10/s)
+    npm run hashes                                   # Pokémon: ≈ 40 min for a cold cache (21.4k images, 10/s)
     npm run hashes:ygo                               # Yu-Gi-Oh!: ≈ 25 min for a cold cache (14.8k renders, 10/s)
     node scripts/build-hashes.mjs --first sv03.5,xy12  # these sets first (for early checks); --game ygo --first effect_pendulum: these frames first
     node scripts/build-hashes.mjs --limit 50           # smoke test
 
 The summary reports coverage (hashed / with image / catalog), download counts, image sizes and the file
-size. Expected: Pokémon ~19.7k hashes (92.5 % of the catalog; the rest have no image on TCGdex), ~630 KB
-raw (32 bytes per card), ~355 KB gzip; Yu-Gi-Oh! 14,825 hashes (14,653 cards + 172 alternate artworks,
+size. Expected: Pokémon ~21.4k hashes (99.7 % of the catalog; the rest have no image on TCGdex or Scrydex),
+~690 KB raw (32 bytes per card), ~383 KB gzip; Yu-Gi-Oh! 14,825 hashes (14,653 cards + 172 alternate artworks,
 100 %), ~530 KB raw, ~310 KB gzip. `builtAt` changes on every run: when it is the only diff,
 `git checkout -- public/data`. `scripts/fixtures/cards/` keeps two of the Pokémon reference images for
 `src/scanner/hash.test.ts`, which checks that hashing them reproduces their table entries; the Yu-Gi-Oh!

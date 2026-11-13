@@ -370,9 +370,10 @@ name, so without the picture the still would have offered a wrong card.
 ## Artwork matching (`hash.ts`, `scripts/build-hashes.mjs`)
 
 Commercial scanners identify a card by its picture, not its text. `hash.ts` adds that as a second,
-OCR-independent signal: every Pokémon card's TCGdex reference image is reduced offline to a 128-bit
-perceptual hash (`npm run hashes` → `public/data/hashes.json`, 32 bytes per card, ~355 KB gzip for
-19.7k cards; 1.6k cards have no image on TCGdex), and a pocket crop is hashed the same way and
+OCR-independent signal: every Pokémon card's reference image (TCGdex's, or Scrydex's for the
+1.3k cards TCGdex has no picture of) is reduced offline to a 128-bit
+perceptual hash (`npm run hashes` → `public/data/hashes.json`, 32 bytes per card, ~383 KB gzip for
+21.4k cards; 55 cards have no image at either source), and a pocket crop is hashed the same way and
 compared with every entry by Hamming distance (a linear scan of 20k × 128 bits is ~1 ms).
 
 **The hash** (one `HashSpec` per game; `HASH_SPEC` is the Pokémon id): two difference hashes of the
